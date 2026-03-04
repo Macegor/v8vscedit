@@ -75,18 +75,11 @@ export class MetadataNode extends vscode.TreeItem {
     public readonly ownershipTag?: 'OWN' | 'BORROWED'
   ) {
     super(label, collapsibleState);
-    this.contextValue = nodeKind;
+    // Суффикс -hasXml позволяет фильтровать пункты контекстного меню
+    this.contextValue = xmlPath ? `${nodeKind}-hasXml` : nodeKind;
 
     if (ownershipTag) {
       this.description = ownershipTag === 'OWN' ? '[свой]' : '[заим.]';
-    }
-
-    if (xmlPath) {
-      this.command = {
-        command: '1cNavigator.openFile',
-        title: 'Открыть файл',
-        arguments: [xmlPath],
-      };
     }
   }
 }

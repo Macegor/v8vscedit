@@ -279,6 +279,14 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
         ownershipTag
       );
 
+      if (kind === 'CommonModule' && xmlPath) {
+        node.command = {
+          command: '1cNavigator.openCommonModuleCode',
+          title: 'Открыть модуль общего модуля',
+          arguments: [node],
+        };
+      }
+
       // Tooltip как синоним — вычисляем лениво
       Object.defineProperty(node, 'tooltip', {
         get: getSynonym,

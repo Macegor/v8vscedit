@@ -38,8 +38,8 @@
         "icon": "$(refresh)"
       },
       {
-        "command": "1cNavigator.openFile",
-        "title": "Открыть файл"
+        "command": "1cNavigator.openXmlFile",
+        "title": "Открыть XML"
       }
     ],
     "menus": {
@@ -48,6 +48,13 @@
           "command": "1cNavigator.refresh",
           "when": "view == 1cMetadataTree",
           "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "1cNavigator.openXmlFile",
+          "when": "view == 1cMetadataTree && viewItem =~ /.*-hasXml$/",
+          "group": "navigation@1"
         }
       ]
     }
