@@ -1,11 +1,13 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 import { MetadataNode, NodeKind } from './MetadataNode';
 import { getIconPath } from './IconProvider';
 import { COMMON_SUBGROUPS, TOP_GROUPS, MetaGroup } from './MetadataGroups';
 import { ConfigInfo, parseConfigXml, parseObjectXml } from './ConfigParser';
 import { ConfigEntry } from './ConfigFinder';
 import { resolveObjectXmlPath } from './ModulePathResolver';
+import { buildNode } from './nodes/_base';
+import { getNodeDescriptor } from './nodes';
+import { CHILD_TAG_CONFIG, ChildTag } from './nodes/_types';
 
 // ---------------------------------------------------------------------------
 // Группы как в конфигураторе 1С
@@ -84,14 +86,15 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
 
     const nodeKind: NodeKind = entry.kind === 'cf' ? 'configuration' : 'extension';
 
-    const node = new MetadataNode(
+    const descriptor = getNodeDescriptor(nodeKind);
+    const node = buildNode(descriptor, {
       label,
-      nodeKind,
-      vscode.TreeItemCollapsibleState.Collapsed,
-      configXmlPath.replace(/\//g, '\\'),
-      () => this.buildConfigChildren(entry, info),
-      undefined
-    );
+      kind: nodeKind,
+      collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
+      xmlPath: configXmlPath.replace(/\//g, '\\'),
+      childrenLoader: () => this.buildConfigChildren(entry, info),
+      ownershipTag: undefined,
+    });
 
     if (entry.kind === 'cfe' && info.synonym) {
       node.tooltip = info.synonym;
@@ -111,13 +114,15 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
       sg.types.some((t) => (info.childObjects.get(t)?.length ?? 0) > 0)
     );
     if (commonItems.length > 0) {
-      const commonNode = new MetadataNode(
-        'Общие',
-        'group-common',
-        vscode.TreeItemCollapsibleState.Collapsed,
-        undefined,
-        () => this.buildCommonSubgroups(entry, info)
-      );
+      const descriptor = getNodeDescriptor('group-common');
+      const commonNode = buildNode(descriptor, {
+        label: 'Общие',
+        kind: 'group-common',
+        collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
+        xmlPath: undefined,
+        childrenLoader: () => this.buildCommonSubgroups(entry, info),
+        ownershipTag: undefined,
+      });
       result.push(commonNode);
     }
 
@@ -127,13 +132,15 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
       if (names.length === 0) {
         continue;
       }
-      const groupNode = new MetadataNode(
-        group.label,
-        group.kind,
-        vscode.TreeItemCollapsibleState.Collapsed,
-        undefined,
-        () => this.buildObjectNodes(entry, info, group.types[0] as NodeKind, names)
-      );
+      const descriptor = getNodeDescriptor(group.kind);
+      const groupNode = buildNode(descriptor, {
+        label: group.label,
+        kind: group.kind,
+        collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
+        xmlPath: undefined,
+        childrenLoader: () => this.buildObjectNodes(entry, info, group.types[0] as NodeKind, names),
+        ownershipTag: undefined,
+      });
       result.push(groupNode);
     }
 
@@ -146,13 +153,15 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
       .filter((sg) => sg.types.some((t) => (info.childObjects.get(t)?.length ?? 0) > 0))
       .map((sg) => {
         const names = this.collectNames(info, sg.types);
-        return new MetadataNode(
-          sg.label,
-          sg.kind,
-          vscode.TreeItemCollapsibleState.Collapsed,
-          undefined,
-          () => this.buildObjectNodes(entry, info, sg.kind, names)
-        );
+        const descriptor = getNodeDescriptor(sg.kind);
+        return buildNode(descriptor, {
+          label: sg.label,
+          kind: sg.kind,
+          collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
+          xmlPath: undefined,
+          childrenLoader: () => this.buildObjectNodes(entry, info, sg.kind, names),
+          ownershipTag: undefined,
+        });
       });
   }
 
@@ -201,22 +210,15 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
         return cachedSynonym;
       };
 
-      const node = new MetadataNode(
-        name,
+      const descriptor = getNodeDescriptor(kind);
+      const node = buildNode(descriptor, {
+        label: name,
         kind,
-        vscode.TreeItemCollapsibleState.Collapsed,
+        collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
         xmlPath,
-        xmlPath ? () => this.buildChildNodes(xmlPath, objectType ?? '') : undefined,
-        ownershipTag
-      );
-
-      if (kind === 'CommonModule' && xmlPath) {
-        node.command = {
-          command: '1cNavigator.openCommonModuleCode',
-          title: 'Открыть модуль общего модуля',
-          arguments: [node],
-        };
-      }
+        childrenLoader: xmlPath ? () => this.buildChildNodes(xmlPath, kind) : undefined,
+        ownershipTag,
+      });
 
       // Tooltip как синоним — вычисляем лениво
       Object.defineProperty(node, 'tooltip', {
@@ -230,7 +232,7 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
   }
 
   /** Строит дочерние узлы объекта (реквизиты, ТЧ, формы и т.д.) */
-  private buildChildNodes(xmlPath: string, _objectType: string): MetadataNode[] {
+  private buildChildNodes(xmlPath: string, objectKind: NodeKind): MetadataNode[] {
     const objInfo = parseObjectXml(xmlPath);
     if (!objInfo) {
       return [];
@@ -247,18 +249,14 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
       byTag.get(child.tag)!.push(child);
     }
 
-    const tagConfig: Array<{ tag: string; label: string; kind: NodeKind }> = [
-      { tag: 'Attribute', label: 'Реквизиты', kind: 'Attribute' },
-      { tag: 'TabularSection', label: 'Табличные части', kind: 'TabularSection' },
-      { tag: 'Form', label: 'Формы', kind: 'Form' },
-      { tag: 'Command', label: 'Команды', kind: 'Command' },
-      { tag: 'Template', label: 'Макеты', kind: 'Template' },
-      { tag: 'Dimension', label: 'Измерения', kind: 'Dimension' },
-      { tag: 'Resource', label: 'Ресурсы', kind: 'Resource' },
-      { tag: 'EnumValue', label: 'Значения', kind: 'EnumValue' },
-    ];
+    const objectDescriptor = getNodeDescriptor(objectKind);
+    const allowedTags: ChildTag[] =
+      objectDescriptor?.children && objectDescriptor.children.length > 0
+        ? [...objectDescriptor.children]
+        : (Object.keys(CHILD_TAG_CONFIG) as ChildTag[]);
 
-    for (const cfg of tagConfig) {
+    for (const tag of allowedTags) {
+      const cfg = CHILD_TAG_CONFIG[tag];
       const items = byTag.get(cfg.tag);
       if (!items || items.length === 0) {
         continue;
@@ -269,13 +267,15 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
         result.push(this.buildLeafNode(items[0], cfg.kind, xmlPath));
       } else {
         // Несколько элементов — группируем
-        const groupNode = new MetadataNode(
-          cfg.label,
-          'group-type',
-          vscode.TreeItemCollapsibleState.Collapsed,
-          undefined,
-          () => items.map((item) => this.buildLeafNode(item, cfg.kind, xmlPath))
-        );
+        const groupDescriptor = getNodeDescriptor('group-type');
+        const groupNode = buildNode(groupDescriptor, {
+          label: cfg.label,
+          kind: 'group-type',
+          collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
+          xmlPath: undefined,
+          childrenLoader: () => items.map((item) => this.buildLeafNode(item, cfg.kind, xmlPath)),
+          ownershipTag: undefined,
+        });
         result.push(groupNode);
       }
     }
@@ -291,28 +291,30 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
   ): MetadataNode {
     const hasColumns = kind === 'TabularSection' && child.columns && child.columns.length > 0;
 
-    const node = new MetadataNode(
-      child.name,
+    const descriptor = getNodeDescriptor(kind);
+    const node = buildNode(descriptor, {
+      label: child.name,
       kind,
-      hasColumns
+      collapsibleState: hasColumns
         ? vscode.TreeItemCollapsibleState.Collapsed
         : vscode.TreeItemCollapsibleState.None,
-      parentXmlPath,
-      hasColumns
+      xmlPath: parentXmlPath,
+      childrenLoader: hasColumns
         ? () =>
-            child.columns!.map((col) =>
-              new MetadataNode(
-                col.name,
-                'Column',
-                vscode.TreeItemCollapsibleState.None,
-                parentXmlPath,
-                undefined,
-                undefined
-              )
-            )
+            child.columns!.map((col) => {
+              const columnDescriptor = getNodeDescriptor('Column');
+              return buildNode(columnDescriptor, {
+                label: col.name,
+                kind: 'Column',
+                collapsibleState: vscode.TreeItemCollapsibleState.None,
+                xmlPath: parentXmlPath,
+                childrenLoader: undefined,
+                ownershipTag: undefined,
+              });
+            })
         : undefined,
-      undefined
-    );
+      ownershipTag: undefined,
+    });
 
     if (child.synonym) {
       node.tooltip = child.synonym;
