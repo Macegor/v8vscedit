@@ -1,59 +1,83 @@
 import * as vscode from 'vscode';
 import { NodeKind } from './MetadataNode';
 
-/** Возвращает путь к SVG-иконке для заданного типа узла */
-export function getIconPath(nodeKind: NodeKind, extensionUri: vscode.Uri): vscode.Uri {
-  const iconMap: Partial<Record<NodeKind, string>> = {
-    configuration: 'configuration.svg',
-    extension: 'extension.svg',
-    'group-common': 'folder-common.svg',
-    'group-type': 'folder-type.svg',
-    Subsystem: 'subsystem.svg',
-    CommonModule: 'common-module.svg',
-    Role: 'role.svg',
-    CommonForm: 'common-form.svg',
-    CommonCommand: 'common-command.svg',
-    CommonPicture: 'common-picture.svg',
-    StyleItem: 'style-item.svg',
-    DefinedType: 'defined-type.svg',
-    Constant: 'constant.svg',
-    Catalog: 'catalog.svg',
-    Document: 'document.svg',
-    Enum: 'enum.svg',
-    InformationRegister: 'information-register.svg',
-    AccumulationRegister: 'accumulation-register.svg',
-    AccountingRegister: 'accounting-register.svg',
-    CalculationRegister: 'calculation-register.svg',
-    Report: 'report.svg',
-    DataProcessor: 'data-processor.svg',
-    BusinessProcess: 'business-process.svg',
-    Task: 'task.svg',
-    ExchangePlan: 'exchange-plan.svg',
-    ChartOfCharacteristicTypes: 'chart-of-characteristic-types.svg',
-    ChartOfAccounts: 'chart-of-accounts.svg',
-    ChartOfCalculationTypes: 'chart-of-calculation-types.svg',
-    DocumentJournal: 'document-journal.svg',
-    ScheduledJob: 'scheduled-job.svg',
-    EventSubscription: 'event-subscription.svg',
-    HTTPService: 'http-service.svg',
-    WebService: 'web-service.svg',
-    FilterCriterion: 'filter-criterion.svg',
-    Sequence: 'sequence.svg',
-    SessionParameter: 'session-parameter.svg',
-    FunctionalOption: 'functional-option.svg',
-    Language: 'language.svg',
-    Attribute: 'attribute.svg',
-    TabularSection: 'tabular-section.svg',
-    Column: 'attribute.svg',
-    Form: 'form.svg',
-    Command: 'command.svg',
-    Template: 'template.svg',
-    Dimension: 'dimension.svg',
-    Resource: 'resource.svg',
-    EnumValue: 'enum-value.svg',
+/**
+ * Маппинг NodeKind → имя файла иконки (без расширения) из zerobig/vscode-1c-metadata-viewer.
+ * Для каждой иконки существуют варианты:
+ *   src/icons/light/<name>.svg        — для светлой темы
+ *   src/icons/dark/<name>.svg         — для тёмной темы
+ *   src/icons/light/<name>-borrowed.svg — заимствованный объект, светлая тема
+ *   src/icons/dark/<name>-borrowed.svg  — заимствованный объект, тёмная тема
+ */
+const ICON_MAP: Record<NodeKind, string> = {
+  // Корневые — configuration = набор настроек, extension = объект с правками
+  configuration:                   'common',
+  extension:                       'editObject',
+  // Группы
+  'group-common':                  'common',
+  'group-type':                    'folder',
+  // Объекты конфигурации
+  Subsystem:                       'subsystem',
+  CommonModule:                    'commonModule',
+  SessionParameter:                'sessionParameter',
+  Role:                            'role',
+  CommonForm:                      'form',
+  CommonCommand:                   'command',
+  CommonPicture:                   'picture',
+  StyleItem:                       'style',
+  DefinedType:                     'attribute',
+  Constant:                        'constant',
+  Catalog:                         'catalog',
+  Document:                        'document',
+  Enum:                            'enum',
+  InformationRegister:             'informationRegister',
+  AccumulationRegister:            'accumulationRegister',
+  AccountingRegister:              'accountingRegister',
+  CalculationRegister:             'calculationRegister',
+  Report:                          'report',
+  DataProcessor:                   'dataProcessor',
+  BusinessProcess:                 'businessProcess',
+  Task:                            'task',
+  ExchangePlan:                    'exchangePlan',
+  ChartOfCharacteristicTypes:      'chartsOfCharacteristicType',
+  ChartOfAccounts:                 'chartsOfAccount',
+  ChartOfCalculationTypes:         'chartsOfCalculationType',
+  DocumentJournal:                 'documentJournal',
+  ScheduledJob:                    'scheduledJob',
+  EventSubscription:               'eventSubscription',
+  HTTPService:                     'http',
+  WebService:                      'ws',
+  FilterCriterion:                 'filterCriteria',
+  Sequence:                        'sequence',
+  FunctionalOption:                'attribute',
+  Language:                        'attribute',
+  // Дочерние элементы
+  Attribute:                       'attribute',
+  TabularSection:                  'tabularSection',
+  Column:                          'column',
+  Form:                            'form',
+  Command:                         'command',
+  Template:                        'template',
+  Dimension:                       'dimension',
+  Resource:                        'resource',
+  EnumValue:                       'attribute',
+};
+
+/**
+ * Возвращает пару { light, dark } путей к SVG-иконке.
+ * Для заимствованных объектов расширения (ownershipTag === 'BORROWED')
+ * используется вариант *-borrowed.svg с жёлтой точкой.
+ */
+export function getIconPath(
+  nodeKind: NodeKind,
+  ownershipTag: 'OWN' | 'BORROWED' | undefined,
+  extensionUri: vscode.Uri
+): { light: vscode.Uri; dark: vscode.Uri } {
+  const base = ICON_MAP[nodeKind] ?? 'attribute';
+  const name = ownershipTag === 'BORROWED' ? `${base}-borrowed` : base;
+
+  return {
+    light: vscode.Uri.joinPath(extensionUri, 'src', 'icons', 'light', `${name}.svg`),
+    dark:  vscode.Uri.joinPath(extensionUri, 'src', 'icons', 'dark',  `${name}.svg`),
   };
-
-  const fileName = iconMap[nodeKind] ?? 'attribute.svg';
-  return vscode.Uri.joinPath(extensionUri, 'src', 'icons', fileName);
 }
-

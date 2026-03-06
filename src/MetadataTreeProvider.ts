@@ -41,7 +41,7 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
   }
 
   getTreeItem(element: MetadataNode): vscode.TreeItem {
-    element.iconPath = getIconPath(element.nodeKind, this.extensionUri);
+    element.iconPath = getIconPath(element.nodeKind, element.ownershipTag, this.extensionUri);
     return element;
   }
 
@@ -129,7 +129,7 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
       }
       const groupNode = new MetadataNode(
         group.label,
-        'group-type',
+        group.kind,
         vscode.TreeItemCollapsibleState.Collapsed,
         undefined,
         () => this.buildObjectNodes(entry, info, group.types[0] as NodeKind, names)
@@ -148,7 +148,7 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
         const names = this.collectNames(info, sg.types);
         return new MetadataNode(
           sg.label,
-          'group-type',
+          sg.kind,
           vscode.TreeItemCollapsibleState.Collapsed,
           undefined,
           () => this.buildObjectNodes(entry, info, sg.kind, names)
