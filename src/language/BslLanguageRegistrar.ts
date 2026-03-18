@@ -41,9 +41,11 @@ export function registerBslLanguage(
   );
 
   context.subscriptions.push(
+    // Применяем инкрементальные правки к дереву tree-sitter,
+    // не удаляя его — это сохраняет подсветку при наборе текста.
     vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.languageId === 'bsl') {
-        parserService.invalidate(e.document.uri.toString());
+        parserService.editTree(e.document.uri.toString(), e.contentChanges);
       }
     }),
     vscode.workspace.onDidCloseTextDocument((doc) => {

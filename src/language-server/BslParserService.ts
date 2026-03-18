@@ -33,25 +33,36 @@ export class BslParserService {
    * Возвращает AST документа. Если версия не изменилась — возвращает кэш.
    * version = -1 означает разовый парсинг без кэширования.
    */
+  /**
+   * Возвращает AST документа. Если версия не изменилась — возвращает кэш.
+   * version = -1 означает разовый парсинг без кэширования.
+   */
   parse(text: string, uri: string, version = -1): Tree {
     const cached = this.cache.get(uri);
+
+    // Cache-hit: версия совпадает — отдаём кешированное дерево
     if (cached && version !== -1 && cached.version === version) {
       return cached.tree;
     }
-    if (cached) {
-      cached.tree.delete();
-    }
 
-    const tree = this.parser.parse(text);
-    if (!tree) {
+    const newTree = this.parser.parse(text);
+
+    if (!newTree || !newTree.rootNode) {
+      if (newTree) { newTree.delete(); }
+      if (cached) { return cached.tree; }
       throw new Error(`Не удалось разобрать документ: ${uri}`);
     }
 
+    // При version=-1 (провайдеры без версии) НЕ трогаем кеш:
+    // нельзя удалять закешированное дерево — оно используется semantic tokens.
     if (version !== -1) {
-      this.cache.set(uri, { version, tree });
+      if (cached) {
+        cached.tree.delete();
+      }
+      this.cache.set(uri, { version, tree: newTree });
     }
 
-    return tree;
+    return newTree;
   }
 
   /** Освобождает кэш конкретного документа. */

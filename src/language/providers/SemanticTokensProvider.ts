@@ -65,16 +65,23 @@ export class BslSemanticTokensProvider implements vscode.DocumentSemanticTokensP
   async provideDocumentSemanticTokens(
     document: vscode.TextDocument,
   ): Promise<vscode.SemanticTokens> {
-    await this.parser.ensureInit();
-    const tree = this.parser.parse(document);
-    const builder = new vscode.SemanticTokensBuilder(BSL_LEGEND);
+    try {
+      await this.parser.ensureInit();
+      const tree = this.parser.parse(document);
+      const builder = new vscode.SemanticTokensBuilder(BSL_LEGEND);
 
-    // emitted: набор id узлов уже выданных как именованные токены,
-    // чтобы не эмитить повторно при общей рекурсии.
-    const emitted = new Set<number>();
+      // emitted: набор id узлов уже выданных как именованные токены,
+      // чтобы не эмитить повторно при общей рекурсии.
+      const emitted = new Set<number>();
 
-    this.walkNode(tree.rootNode, builder, emitted);
-    return builder.build();
+      this.walkNode(tree.rootNode, builder, emitted);
+      return builder.build();
+    } catch (error) {
+      // При ошибке парсера возвращаем пустой набор токенов вместо undefined,
+      // чтобы VS Code не убирал всю подсветку документа.
+      console.error('[BSL] Ошибка построения семантических токенов:', error);
+      return new vscode.SemanticTokensBuilder(BSL_LEGEND).build();
+    }
   }
 
   /**

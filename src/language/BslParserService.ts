@@ -1,4 +1,4 @@
-import { Parser, Language, Tree } from 'web-tree-sitter';
+import { Parser, Language, Tree, Point } from 'web-tree-sitter';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
@@ -37,6 +37,7 @@ export class BslParserService implements vscode.Disposable {
 
   /**
    * Парсит документ с использованием инкрементального обновления дерева.
+   * Освобождает WASM-память предыдущего дерева если оно больше не нужно.
    */
   parse(document: vscode.TextDocument): Tree {
     const uri = document.uri.toString();
@@ -45,12 +46,38 @@ export class BslParserService implements vscode.Disposable {
     if (!tree) {
       throw new Error(`Не удалось разобрать документ: ${uri}`);
     }
+    // Освобождаем WASM-память старого дерева, чтобы не было утечки
+    if (previous && previous !== tree) {
+      previous.delete();
+    }
     this.trees.set(uri, tree);
     return tree;
   }
 
   /**
-   * Инвалидирует кэш дерева по URI документа.
+   * Применяет инкрементальные правки к кэшированному дереву.
+   * Вызывать при каждом onDidChangeTextDocument — это позволяет
+   * tree-sitter переиспользовать дерево при следующем parse().
+   */
+  editTree(uri: string, changes: readonly vscode.TextDocumentContentChangeEvent[]): void {
+    const tree = this.trees.get(uri);
+    if (!tree || changes.length === 0) {
+      return;
+    }
+    for (const change of changes) {
+      tree.edit({
+        startIndex: change.rangeOffset,
+        oldEndIndex: change.rangeOffset + change.rangeLength,
+        newEndIndex: change.rangeOffset + change.text.length,
+        startPosition: toPoint(change.range.start),
+        oldEndPosition: toPoint(change.range.end),
+        newEndPosition: computeNewEnd(toPoint(change.range.start), change.text),
+      });
+    }
+  }
+
+  /**
+   * Инвалидирует кэш дерева по URI документа (при закрытии файла).
    */
   invalidate(uri: string): void {
     const tree = this.trees.get(uri);
@@ -66,4 +93,21 @@ export class BslParserService implements vscode.Disposable {
     }
     this.trees.clear();
   }
+}
+
+/** Конвертирует позицию VS Code в Point tree-sitter. */
+function toPoint(position: vscode.Position): Point {
+  return { row: position.line, column: position.character };
+}
+
+/**
+ * Вычисляет конечную позицию после вставки текста.
+ * Нужно для корректного tree.edit() при многострочных правках.
+ */
+function computeNewEnd(startPoint: Point, newText: string): Point {
+  const lines = newText.split('\n');
+  if (lines.length === 1) {
+    return { row: startPoint.row, column: startPoint.column + newText.length };
+  }
+  return { row: startPoint.row + lines.length - 1, column: lines[lines.length - 1].length };
 }
