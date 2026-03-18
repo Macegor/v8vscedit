@@ -3,6 +3,8 @@ import { Node } from 'web-tree-sitter';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { CompletionItem, CompletionItemKind, Position } from 'vscode-languageserver/node';
 import { BslParserService } from '../BslParserService';
+import { BslContextService } from '../BslContextService';
+import { getDocumentContext } from '../BslDocumentContext';
 import { uriToFsPath } from '../lspUtils';
 
 const CORE_KEYWORDS = [
@@ -69,7 +71,7 @@ const metaCache = new Map<string, CompletionItem[]>();
 
 /**
  * Возвращает элементы автодополнения: &аннотации, #препроцессор,
- * ключевые слова, локальные символы, объекты метаданных.
+ * ключевые слова, локальные символы, общие модули и объекты метаданных.
  */
 export async function provideCompletionItems(
   document: TextDocument,
@@ -77,6 +79,7 @@ export async function provideCompletionItems(
   triggerCharacter: string | undefined,
   parserService: BslParserService,
   workspaceRoots: string[],
+  contextService?: BslContextService,
 ): Promise<CompletionItem[]> {
   const lines = document.getText().split('\n');
   const linePrefix = (lines[position.line] ?? '').slice(0, position.character);
@@ -97,6 +100,18 @@ export async function provideCompletionItems(
     }));
   }
 
+  // Триггер '.' — ищем имя модуля перед точкой
+  if (triggerCharacter === '.' || /[\wа-яА-ЯёЁ_]+\.$/.test(linePrefix)) {
+    if (contextService) {
+      const dotItems = await buildDotCompletions(linePrefix, contextService);
+      if (dotItems.length > 0) {
+        return dotItems;
+      }
+    }
+    // Если модуль не найден — возвращаем объекты метаданных (Справочники.Xxx)
+    return buildMetaItems(workspaceRoots);
+  }
+
   const items: CompletionItem[] = CORE_KEYWORDS.map((kw) => ({
     label: kw,
     kind: CompletionItemKind.Keyword,
@@ -106,7 +121,139 @@ export async function provideCompletionItems(
   items.push(...extractLocalSymbols(document, parserService));
   items.push(...await buildMetaItems(workspaceRoots));
 
+  // Добавляем общие модули с учётом контекста документа и директивы курсора
+  if (contextService) {
+    items.push(...await buildCommonModuleItems(document, position, contextService, parserService));
+  }
+
   return items;
+}
+
+/**
+ * Строит подсказки после '.' — экспортные методы общего модуля.
+ * Парсит слово перед точкой: ИмяМодуля.{cursor}
+ */
+async function buildDotCompletions(
+  linePrefix: string,
+  contextService: BslContextService,
+): Promise<CompletionItem[]> {
+  // Ищем слово непосредственно перед точкой
+  const match = /([а-яА-ЯёЁa-zA-Z_][\wа-яА-ЯёЁ_]*)\.$/u.exec(linePrefix);
+  if (!match) {
+    return [];
+  }
+  const moduleName = match[1];
+
+  const info = contextService.getModuleByName(moduleName);
+  if (!info) {
+    return [];
+  }
+
+  const methods = await contextService.getExportMethods(info.name);
+  if (methods.length === 0) {
+    return [];
+  }
+
+  return methods.map((m) => ({
+    label: m.name,
+    kind: m.isFunction ? CompletionItemKind.Function : CompletionItemKind.Method,
+    detail: `${m.isFunction ? 'Функция' : 'Процедура'} (${m.params})`,
+    documentation: `${info.name}.${m.name}(${m.params})`,
+  }));
+}
+
+/**
+ * Строит элементы автодополнения для общих модулей с учётом контекста:
+ * - Не-глобальные доступные модули → CompletionItemKind.Module (имя модуля)
+ * - Методы глобальных доступных модулей → CompletionItemKind.Function (без префикса)
+ * Контекст определяется по свойствам модуля + директиве компиляции текущей функции.
+ */
+async function buildCommonModuleItems(
+  document: TextDocument,
+  position: Position,
+  contextService: BslContextService,
+  parserService: BslParserService,
+): Promise<CompletionItem[]> {
+  const ctx = await getDocumentContext(document.uri, document.getText(), position, contextService, parserService);
+  const items: CompletionItem[] = [];
+
+  for (const mod of contextService.getModules()) {
+    if (!isModuleAvailableInContext(mod, ctx)) {
+      continue;
+    }
+
+    if (mod.global) {
+      // Глобальный модуль: предлагаем экспортные методы без префикса
+      const methods = await contextService.getExportMethods(mod.name);
+      for (const method of methods) {
+        items.push({
+          label: method.name,
+          kind: method.isFunction ? CompletionItemKind.Function : CompletionItemKind.Method,
+          detail: `${mod.name} — ${method.isFunction ? 'Функция' : 'Процедура'} (${method.params})`,
+          documentation: `Глобальный модуль: ${mod.synonymRu || mod.name}`,
+        });
+      }
+    } else {
+      // Не-глобальный: предлагаем имя модуля
+      items.push({
+        label: mod.name,
+        kind: CompletionItemKind.Module,
+        detail: mod.synonymRu || mod.name,
+        documentation: buildModuleDocumentation(mod),
+      });
+    }
+  }
+
+  return items;
+}
+
+/**
+ * Проверяет, доступен ли общий модуль в контексте текущего документа.
+ *
+ * Правила доступности:
+ * - Серверный контекст: Server=true или ServerCall=true (ServerCall исполняется на сервере)
+ * - Управляемый клиент: ClientManagedApplication=true или ServerCall=true (вызов с клиента)
+ *
+ * ClientOrdinaryApplication НЕ используется — это отдельный несовместимый контекст
+ * обычного (толстого) клиента, который в современной разработке не смешивается
+ * с управляемым приложением.
+ */
+function isModuleAvailableInContext(
+  mod: { server: boolean; clientManagedApplication: boolean; serverCall: boolean },
+  ctx: { isServer: boolean; isClient: boolean },
+): boolean {
+  // Сервер видит: серверные модули и ServerCall-модули (они тоже исполняются на сервере)
+  if (ctx.isServer && (mod.server || mod.serverCall)) {
+    return true;
+  }
+  // Управляемый клиент видит: клиентские модули и ServerCall-модули (вызываются с клиента)
+  if (ctx.isClient && (mod.clientManagedApplication || mod.serverCall)) {
+    return true;
+  }
+  return false;
+}
+
+/** Формирует строку документации для модуля в подсказке. */
+function buildModuleDocumentation(mod: {
+  server: boolean;
+  clientManagedApplication: boolean;
+  serverCall: boolean;
+  privileged: boolean;
+}): string {
+  const flags: string[] = [];
+  if (mod.server) {
+    flags.push('Сервер');
+  }
+  if (mod.clientManagedApplication) {
+    flags.push('Клиент');
+  }
+  if (mod.serverCall) {
+    flags.push('ВызовСервера');
+  }
+  if (mod.privileged) {
+    flags.push('Привилегированный');
+  }
+  return flags.join(', ');
 }
 
 function extractLocalSymbols(document: TextDocument, parserService: BslParserService): CompletionItem[] {

@@ -10,6 +10,7 @@ import {
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { BslParserService } from './BslParserService';
+import { BslContextService } from './BslContextService';
 import { BSL_TOKEN_TYPES, BSL_TOKEN_MODIFIERS, provideSemanticTokens } from './providers/semanticTokens';
 import { computeDiagnostics } from './providers/diagnostics';
 import { provideDocumentSymbols } from './providers/symbols';
@@ -22,6 +23,7 @@ import { uriToFsPath } from './lspUtils';
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
 const parserService = new BslParserService();
+const contextService = new BslContextService(parserService);
 
 /** Пути корневых папок воркспейса — используются для поиска Configuration.xml и BSL-файлов. */
 let workspaceRoots: string[] = [];
@@ -37,7 +39,7 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
       textDocumentSync: TextDocumentSyncKind.Incremental,
 
       completionProvider: {
-        triggerCharacters: ['&', '#'],
+        triggerCharacters: ['&', '#', '.'],
         resolveProvider: false,
       },
 
@@ -71,6 +73,15 @@ connection.onInitialized(() => {
     const msg = err instanceof Error ? err.message : String(err);
     connection.console.error(`BSL: ошибка инициализации парсера: ${msg}`);
   });
+
+  // Загружаем метаданные общих модулей конфигурации
+  contextService.initialize(workspaceRoots).then(() => {
+    const count = contextService.getModules().length;
+    connection.console.log(`BSL: загружено общих модулей: ${count}`);
+  }).catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    connection.console.error(`BSL: ошибка загрузки контекста: ${msg}`);
+  });
 });
 
 // ── Синхронизация документов ────────────────────────────────────────────────
@@ -103,6 +114,12 @@ connection.onDidChangeWatchedFiles((params) => {
     }
     if (uri.endsWith('Configuration.xml')) {
       invalidateMetaCache(uri);
+      // Перезагружаем контекст общих модулей
+      contextService.invalidate();
+      contextService.initialize(workspaceRoots).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        connection.console.error(`BSL: ошибка перезагрузки контекста: ${msg}`);
+      });
     }
   }
 });
@@ -170,6 +187,7 @@ connection.onCompletion(async (params) => {
       params.context?.triggerCharacter,
       parserService,
       workspaceRoots,
+      contextService,
     );
   } catch {
     return [];
