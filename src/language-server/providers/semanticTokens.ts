@@ -125,12 +125,16 @@ function walkNode(node: Node, builder: LspSemanticTokensBuilder, emitted: Set<nu
   const t = node.type;
 
   if (t === 'line_comment') { emit(node, 'comment', builder, emitted); return; }
-  if (t === 'string') { emit(node, 'string', builder, emitted); return; }
-
-  if (t === 'multiline_string') {
-    for (const child of node.children) {
-      if (child?.type === 'string_content') {
-        emit(child, 'string', builder, emitted);
+  if (t === 'string') {
+    // Обычные однострочные строки подсвечиваем целиком,
+    // многострочные — по частям string_content на каждой строке.
+    if (node.startPosition.row === node.endPosition.row) {
+      emit(node, 'string', builder, emitted);
+    } else {
+      for (const child of node.children) {
+        if (child?.type === 'string_content') {
+          emit(child, 'string', builder, emitted);
+        }
       }
     }
     return;

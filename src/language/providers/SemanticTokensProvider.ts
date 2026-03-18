@@ -116,15 +116,15 @@ export class BslSemanticTokensProvider implements vscode.DocumentSemanticTokensP
     }
 
     if (t === 'string') {
-      this.emit(node, 'string', builder, emitted);
-      return;
-    }
-
-    // Многострочные строки: каждый string_content — отдельный токен
-    if (t === 'multiline_string') {
-      for (const child of node.children) {
-        if (child && child.type === 'string_content') {
-          this.emit(child, 'string', builder, emitted);
+      // Обычные однострочные строки подсвечиваем целиком,
+      // многострочные — по кускам string_content на каждой строке.
+      if (node.startPosition.row === node.endPosition.row) {
+        this.emit(node, 'string', builder, emitted);
+      } else {
+        for (const child of node.children) {
+          if (child && child.type === 'string_content') {
+            this.emit(child, 'string', builder, emitted);
+          }
         }
       }
       return;
