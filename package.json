@@ -156,6 +156,9 @@
           "function:bsl": {
             "foreground": "#DCDCAA"
           },
+          "method:bsl": {
+            "foreground": "#DCDCAA"
+          },
           "parameter:bsl": {
             "foreground": "#9CDCFE"
           }
