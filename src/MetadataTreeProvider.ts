@@ -254,30 +254,25 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
       objectDescriptor?.children && objectDescriptor.children.length > 0
         ? [...objectDescriptor.children]
         : (Object.keys(CHILD_TAG_CONFIG) as ChildTag[]);
-
     for (const tag of allowedTags) {
       const cfg = CHILD_TAG_CONFIG[tag];
-      const items = byTag.get(cfg.tag);
-      if (!items || items.length === 0) {
-        continue;
-      }
+      const items = byTag.get(cfg.tag) ?? [];
+      const hasItems = items.length > 0;
 
-      if (items.length === 1) {
-        // Одиночный элемент — показываем без подгруппы
-        result.push(this.buildLeafNode(items[0], cfg.kind, xmlPath));
-      } else {
-        // Несколько элементов — группируем
-        const groupDescriptor = getNodeDescriptor('group-type');
-        const groupNode = buildNode(groupDescriptor, {
-          label: cfg.label,
-          kind: 'group-type',
-          collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
-          xmlPath: undefined,
-          childrenLoader: () => items.map((item) => this.buildLeafNode(item, cfg.kind, xmlPath)),
-          ownershipTag: undefined,
-        });
-        result.push(groupNode);
-      }
+      const groupDescriptor = getNodeDescriptor('group-type');
+      const groupNode = buildNode(groupDescriptor, {
+        label: cfg.label,
+        kind: 'group-type',
+        collapsibleState: hasItems
+          ? vscode.TreeItemCollapsibleState.Collapsed
+          : vscode.TreeItemCollapsibleState.None,
+        xmlPath: undefined,
+        childrenLoader: hasItems
+          ? () => items.map((item) => this.buildLeafNode(item, cfg.kind, xmlPath))
+          : undefined,
+        ownershipTag: undefined,
+      });
+      result.push(groupNode);
     }
 
     return result;

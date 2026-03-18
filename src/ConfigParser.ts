@@ -115,57 +115,100 @@ export function parseObjectXml(xmlPath: string): ObjectInfo | null {
 }
 
 /**
- * Парсит блок <ChildObjects> объекта метаданных.
- * Извлекает Attribute, TabularSection, Form, Command, Template,
- * Dimension, Resource, EnumValue.
+ * Парсит содержимое объекта метаданных (Справочник, Документ и т.д.).
+ *
+ * Реальная структура выгрузки 1С:
+ * Все дочерние элементы находятся внутри единого <ChildObjects> корневого объекта.
+ * Внутри могут быть вложенные <ChildObjects> (для колонок ТЧ), поэтому для
+ * извлечения главного блока используется depth-aware парсинг (не non-greedy regex).
+ *
+ * Порядок элементов в <ChildObjects>:
+ *   Attribute... → TabularSection... → Form... → Command... → Template...
+ *
+ * Стратегия извлечения:
+ * - Attribute/Dimension/Resource/EnumValue: из части ДО первой TabularSection
+ * - TabularSection: из всего главного блока (рекурсивно извлекает Attribute колонки)
+ * - Form/Template: простые теги из всего главного блока
+ * - Command: сложный элемент с uuid из всего главного блока
  */
 function parseObjectChildObjects(xml: string): MetaChild[] {
   const result: MetaChild[] = [];
 
-  const childBlockMatch = xml.match(/<ChildObjects>([\s\S]*?)<\/ChildObjects>\s*<\/(?:Document|Catalog|InformationRegister|AccumulationRegister|AccountingRegister|CalculationRegister|Enum|Report|DataProcessor|BusinessProcess|Task|ExchangePlan|ChartOfCharacteristicTypes|DocumentJournal|Constant|CommonModule|Role|CommonForm|CommonCommand|CommonPicture|StyleItem|DefinedType|FilterCriterion|Sequence|SessionParameter|FunctionalOption|FunctionalOptionsParameter|ScheduledJob|EventSubscription|HTTPService|WebService|WSReference|XDTOPackage|Interface|Subsystem|Language)[>]/);
-
-  const block = childBlockMatch ? childBlockMatch[1] : extractLastChildObjects(xml);
-  if (!block) {
+  // Извлекаем главный <ChildObjects> с учётом вложенности
+  const mainBlock = extractNestingAwareBlock(xml, 'ChildObjects');
+  if (!mainBlock) {
     return result;
   }
 
-  // Простые ссылочные теги: <Form>, <Command>, <Template>
-  const simpleRe = /<(Form|Command|Template)>([^<]+)<\/\1>/g;
-  let m: RegExpExecArray | null;
-  while ((m = simpleRe.exec(block)) !== null) {
-    result.push({ tag: m[1], name: m[2].trim(), synonym: '' });
+  // Attribute/Dimension/Resource/EnumValue — только до первой TabularSection,
+  // чтобы не захватить колонки ТЧ которые идут после них
+  const tsStart = mainBlock.search(/<TabularSection(?=[\s/>])/);
+  const attrBlock = tsStart >= 0 ? mainBlock.slice(0, tsStart) : mainBlock;
+  for (const ctag of ['Attribute', 'Dimension', 'Resource', 'EnumValue']) {
+    extractComplexChildren(attrBlock, ctag, result);
   }
 
-  // Составные элементы с uuid: Attribute, TabularSection, Dimension, Resource, EnumValue
-  const complexTags = ['Attribute', 'TabularSection', 'Dimension', 'Resource', 'EnumValue'];
-  for (const ctag of complexTags) {
-    extractComplexChildren(block, ctag, result);
+  // TabularSection — из всего главного блока (колонки из вложенного <ChildObjects>)
+  extractComplexChildren(mainBlock, 'TabularSection', result);
+
+  // Form и Template — простые теги <Form>Имя</Form>
+  for (const tag of ['Form', 'Template'] as const) {
+    const simpleRe = new RegExp(`<${tag}>([^<]+)<\/${tag}>`, 'g');
+    let m: RegExpExecArray | null;
+    while ((m = simpleRe.exec(mainBlock)) !== null) {
+      result.push({ tag, name: m[1].trim(), synonym: '' });
+    }
   }
+
+  // Command — сложный элемент с uuid, как Attribute
+  extractComplexChildren(mainBlock, 'Command', result);
 
   return result;
 }
 
 /**
- * Извлекает последний блок <ChildObjects> в документе
- * (для случаев когда regexp с lookahead не сработал).
+ * Извлекает содержимое первого <tagName>...</tagName> с учётом вложенности.
+ * Необходимо для <ChildObjects>, который может содержать вложенные <ChildObjects>.
  */
-function extractLastChildObjects(xml: string): string | null {
-  const all: string[] = [];
-  const re = /<ChildObjects>([\s\S]*?)<\/ChildObjects>/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(xml)) !== null) {
-    all.push(m[1]);
+function extractNestingAwareBlock(xml: string, tagName: string): string | null {
+  const openTag = `<${tagName}>`;
+  const closeTag = `</${tagName}>`;
+  const openIdx = xml.indexOf(openTag);
+  if (openIdx === -1) {
+    return null;
   }
-  // Берём последний блок — он принадлежит корневому объекту
-  return all.length > 0 ? all[all.length - 1] : null;
+
+  let depth = 1;
+  let pos = openIdx + openTag.length;
+
+  while (depth > 0 && pos < xml.length) {
+    const nextOpen = xml.indexOf(openTag, pos);
+    const nextClose = xml.indexOf(closeTag, pos);
+    if (nextClose === -1) {
+      break;
+    }
+    if (nextOpen !== -1 && nextOpen < nextClose) {
+      depth++;
+      pos = nextOpen + openTag.length;
+    } else {
+      depth--;
+      if (depth === 0) {
+        return xml.substring(openIdx + openTag.length, nextClose);
+      }
+      pos = nextClose + closeTag.length;
+    }
+  }
+  return null;
 }
 
 /**
- * Извлекает дочерние элементы с атрибутом uuid из блока XML.
+ * Извлекает дочерние элементы с атрибутами из блока XML.
  * Для TabularSection также рекурсивно извлекает вложенные Attribute.
  */
 function extractComplexChildren(block: string, tag: string, result: MetaChild[]): void {
-  const openRe = new RegExp(`<${tag}\\s+uuid="[^"]*">`, 'g');
+  // Lookahead (?=[\s/>]) гарантирует, что имя тега не является частью более длинного имени
+  // (например, <Command> не должен матчить <CommandParameterType>)
+  const openRe = new RegExp(`<${tag}(?=[\\s/>])[^>]*>`, 'g');
   const closeTag = `</${tag}>`;
 
   let m: RegExpExecArray | null;
@@ -180,8 +223,12 @@ function extractComplexChildren(block: string, tag: string, result: MetaChild[])
     const synonym = extractSynonym(inner);
 
     if (tag === 'TabularSection') {
+      // Колонки ТЧ находятся в её собственном <ChildObjects>
+      const tsChildBlock = extractNestingAwareBlock(inner, 'ChildObjects');
       const columns: MetaChild[] = [];
-      extractComplexChildren(inner, 'Attribute', columns);
+      if (tsChildBlock) {
+        extractComplexChildren(tsChildBlock, 'Attribute', columns);
+      }
       result.push({ tag, name, synonym, columns });
     } else {
       result.push({ tag, name, synonym });
