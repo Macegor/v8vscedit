@@ -1,0 +1,21 @@
+{
+  "comments": {
+    "lineComment": "//"
+  },
+  "brackets": [["(", ")"], ["[", "]"]],
+  "autoClosingPairs": [
+    { "open": "(", "close": ")" },
+    { "open": "[", "close": "]" },
+    { "open": "\"", "close": "\"" }
+  ],
+  "surroundingPairs": [
+    ["(", ")"],
+    ["[", "]"],
+    ["\"", "\""]
+  ],
+  "indentationRules": {
+    "increaseIndentPattern": "(?i)\\b(Тогда|Then|Цикл|Do|Попытка|Try|Исключение|Except|Иначе|Else|ИначеЕсли|ElsIf)\\b|(?i)^\\s*(Процедура|Функция|Procedure|Function)\\b",
+    "decreaseIndentPattern": "(?i)\\b(КонецЕсли|EndIf|КонецЦикла|EndDo|КонецПопытки|EndTry|КонецПроцедуры|EndProcedure|КонецФункции|EndFunction|Иначе|Else|ИначеЕсли|ElsIf)\\b"
+  },
+  "wordPattern": "[\\wа-яА-Я_][\\wа-яА-Я_0-9]*"
+}

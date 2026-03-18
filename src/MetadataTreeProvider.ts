@@ -1,21 +1,14 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { MetadataNode, NodeKind } from './MetadataNode';
-import { getIconPath } from './IconProvider';
-import { COMMON_SUBGROUPS, TOP_GROUPS, MetaGroup } from './MetadataGroups';
+import { getIconUris } from './nodes/presentation/icon';
+import { COMMON_SUBGROUPS, TOP_GROUPS } from './MetadataGroups';
 import { ConfigInfo, parseConfigXml, parseObjectXml } from './ConfigParser';
 import { ConfigEntry } from './ConfigFinder';
 import { resolveObjectXmlPath } from './ModulePathResolver';
 import { buildNode } from './nodes/_base';
 import { getNodeDescriptor } from './nodes';
 import { CHILD_TAG_CONFIG, ChildTag } from './nodes/_types';
-
-// ---------------------------------------------------------------------------
-// Группы как в конфигураторе 1С
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// TreeDataProvider
-// ---------------------------------------------------------------------------
 
 export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNode> {
   private _onDidChangeTreeData = new vscode.EventEmitter<MetadataNode | undefined | null>();
@@ -43,7 +36,7 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
   }
 
   getTreeItem(element: MetadataNode): vscode.TreeItem {
-    element.iconPath = getIconPath(element.nodeKind, element.ownershipTag, this.extensionUri);
+    element.iconPath = getIconUris(element.nodeKind, element.ownershipTag, this.extensionUri);
     return element;
   }
 
@@ -76,8 +69,8 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
 
   /** Строит корневой узел конфигурации или расширения */
   private buildConfigNode(entry: ConfigEntry): MetadataNode {
-    const configXmlPath = `${entry.rootPath}/Configuration.xml`.replace(/\\/g, '/');
-    const info = parseConfigXml(configXmlPath.replace(/\//g, '\\'));
+    const configXmlPath = path.join(entry.rootPath, 'Configuration.xml');
+    const info = parseConfigXml(configXmlPath);
 
     const label =
       entry.kind === 'cf'
@@ -91,7 +84,7 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
       label,
       kind: nodeKind,
       collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
-      xmlPath: configXmlPath.replace(/\//g, '\\'),
+      xmlPath: configXmlPath,
       childrenLoader: () => this.buildConfigChildren(entry, info),
       ownershipTag: undefined,
     });

@@ -1,7 +1,9 @@
 import * as vscode from 'vscode';
-import { findConfigurations } from './ConfigFinder';
+import { findConfigurations, ConfigEntry } from './ConfigFinder';
 import { MetadataTreeProvider } from './MetadataTreeProvider';
 import { registerCommands } from './CommandRegistry';
+import { BslParserService } from './language/BslParserService';
+import { registerBslLanguage } from './language/BslLanguageRegistrar';
 
 export function activate(context: vscode.ExtensionContext): void {
   const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -20,8 +22,12 @@ export function activate(context: vscode.ExtensionContext): void {
   });
   context.subscriptions.push(treeView);
 
+  // Мутируемый список конфигураций — нужен CompletionProvider
+  let currentEntries: ConfigEntry[] = [];
+
   const reloadEntries = () => {
     findConfigurations(rootPath).then((entries) => {
+      currentEntries = entries;
       provider.updateEntries(entries);
     });
   };
@@ -29,6 +35,18 @@ export function activate(context: vscode.ExtensionContext): void {
   registerCommands(context, provider, workspaceFolder, reloadEntries);
 
   reloadEntries();
+
+  // BSL language support — парсер инициализируется немедленно при активации,
+  // до открытия первого файла, чтобы подсветка появилась сразу без задержки.
+  const parserService = new BslParserService(context);
+  context.subscriptions.push(parserService);
+
+  parserService.ensureInit()
+    .then(() => registerBslLanguage(context, parserService, () => currentEntries))
+    .catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(`1С BSL: ошибка инициализации парсера: ${msg}`);
+    });
 }
 
 export function deactivate(): void {

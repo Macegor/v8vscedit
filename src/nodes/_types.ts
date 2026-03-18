@@ -15,8 +15,6 @@ export interface NodeDescriptor {
   folderName?: string;
   /** Поддерживаемые дочерние теги XML */
   children?: ReadonlyArray<ChildTag>;
-  /** Доступные пункты контекстного меню для данного типа узла */
-  contextMenuCommands?: ReadonlyArray<CommandId>;
   /** Команда по одиночному клику по узлу, если задана */
   singleClickCommand?: CommandId;
 }
