@@ -44,6 +44,7 @@ export type NodeKind =
   | 'FilterCriterion'
   | 'Sequence'
   | 'SessionParameter'
+  | 'CommonAttribute'
   | 'FunctionalOption'
   | 'Language'
   // Дочерние элементы
@@ -95,6 +96,7 @@ const NODE_KIND_LABELS: Record<NodeKind, string> = {
   FilterCriterion: 'Критерий отбора',
   Sequence: 'Последовательность',
   SessionParameter: 'Параметр сеанса',
+  CommonAttribute: 'Общий реквизит',
   FunctionalOption: 'Функциональная опция',
   Language: 'Язык',
   Attribute: 'Реквизит',

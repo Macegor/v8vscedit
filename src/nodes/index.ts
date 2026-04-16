@@ -10,6 +10,7 @@ import { groupTypeDescriptor } from './groups/group-type';
 import { SubsystemDescriptor } from './common/Subsystem';
 import { CommonModuleDescriptor } from './common/CommonModule';
 import { SessionParameterDescriptor } from './common/SessionParameter';
+import { CommonAttributeDescriptor } from './common/CommonAttribute';
 import { RoleDescriptor } from './common/Role';
 import { DefinedTypeDescriptor } from './common/DefinedType';
 import { CommonFormDescriptor } from './common/CommonForm';
@@ -68,6 +69,7 @@ const NODE_DESCRIPTORS: Record<NodeKind, NodeDescriptor> = {
   Subsystem: SubsystemDescriptor,
   CommonModule: CommonModuleDescriptor,
   SessionParameter: SessionParameterDescriptor,
+  CommonAttribute: CommonAttributeDescriptor,
   Role: RoleDescriptor,
   CommonForm: CommonFormDescriptor,
   CommonCommand: CommonCommandDescriptor,

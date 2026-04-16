@@ -305,6 +305,7 @@ export function resolveObjectXmlPath(
     FilterCriterion: 'FilterCriteria',
     Sequence: 'Sequences',
     SessionParameter: 'SessionParameters',
+    CommonAttribute: 'CommonAttributes',
     FunctionalOption: 'FunctionalOptions',
     FunctionalOptionsParameter: 'FunctionalOptionsParameters',
     XDTOPackage: 'XDTOPackages',

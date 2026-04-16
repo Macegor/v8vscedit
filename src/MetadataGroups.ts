@@ -71,6 +71,7 @@ export const COMMON_SUBGROUPS: MetaGroup[] = [
   { label: 'Общие модули', types: ['CommonModule'], kind: 'CommonModule' },
   { label: 'Параметры сеанса', types: ['SessionParameter'], kind: 'SessionParameter' },
   { label: 'Роли', types: ['Role'], kind: 'Role' },
+  { label: 'Общие реквизиты', types: ['CommonAttribute'], kind: 'CommonAttribute' },
   { label: 'Определяемые типы', types: ['DefinedType'], kind: 'DefinedType' },
   { label: 'Общие команды', types: ['CommonCommand'], kind: 'CommonCommand' },
   { label: 'Группы команд', types: ['CommandGroup'], kind: 'CommonCommand' },
