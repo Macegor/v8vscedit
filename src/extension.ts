@@ -5,6 +5,7 @@ import { findConfigurations } from './ConfigFinder';
 import { MetadataTreeProvider } from './MetadataTreeProvider';
 import { registerCommands } from './CommandRegistry';
 import { PropertiesViewProvider } from './views/PropertiesViewProvider';
+import { OnecFileSystemProvider, ONEC_SCHEME } from './OnecFileSystemProvider';
 
 let client: LanguageClient | undefined;
 
@@ -18,6 +19,14 @@ export function activate(context: vscode.ExtensionContext): void {
   const rootPath = workspaceFolder.uri.fsPath;
 
   // ── Навигатор метаданных ────────────────────────────────────────────────
+  const fsp = new OnecFileSystemProvider();
+  context.subscriptions.push(
+    vscode.workspace.registerFileSystemProvider(ONEC_SCHEME, fsp, {
+      isCaseSensitive: false,
+      isReadonly: false,
+    })
+  );
+
   const provider = new MetadataTreeProvider([], context.extensionUri);
   const propertiesViewProvider = new PropertiesViewProvider();
   context.subscriptions.push(propertiesViewProvider);
@@ -34,7 +43,7 @@ export function activate(context: vscode.ExtensionContext): void {
     });
   };
 
-  registerCommands(context, provider, workspaceFolder, reloadEntries, propertiesViewProvider);
+  registerCommands(context, provider, workspaceFolder, reloadEntries, propertiesViewProvider, fsp);
   reloadEntries();
 
   // ── LSP-сервер языковой поддержки BSL ──────────────────────────────────
@@ -54,7 +63,10 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   const clientOptions: LanguageClientOptions = {
-    documentSelector: [{ scheme: 'file', language: 'bsl' }],
+    documentSelector: [
+      { scheme: 'file', language: 'bsl' },
+      { scheme: ONEC_SCHEME, language: 'bsl' },
+    ],
     synchronize: {
       fileEvents: vscode.workspace.createFileSystemWatcher('**/*.bsl'),
     },
