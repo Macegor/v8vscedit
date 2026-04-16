@@ -8,6 +8,7 @@ import { ConfigEntry } from './ConfigFinder';
 import { buildNode } from './nodes/_base';
 import { getNodeDescriptor } from './nodes';
 import { getObjectHandler } from './handlers';
+import { SupportInfoService, SupportMode } from './services/SupportInfoService';
 
 export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNode> {
   private _onDidChangeTreeData = new vscode.EventEmitter<MetadataNode | undefined | null>();
@@ -17,7 +18,8 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
 
   constructor(
     private entries: ConfigEntry[],
-    private readonly extensionUri: vscode.Uri
+    private readonly extensionUri: vscode.Uri,
+    private readonly supportService?: SupportInfoService
   ) {
     this.buildRoots();
   }
@@ -36,7 +38,25 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
 
   getTreeItem(element: MetadataNode): vscode.TreeItem {
     element.iconPath = getIconUris(element.nodeKind, element.ownershipTag, this.extensionUri);
+    this.applySupportDecoration(element);
     return element;
+  }
+
+  /**
+   * Добавляет к contextValue суффикс `-support{N}` (для inline-иконки при наведении)
+   * и метку режима поддержки в description (всегда видима).
+   * Вызывается только для узлов с xmlPath и только если для конфигурации
+   * загружены данные поддержки.
+   */
+  private applySupportDecoration(element: MetadataNode): void {
+    if (!element.xmlPath || !this.supportService) { return; }
+    if (!this.supportService.hasConfigData(element.xmlPath)) { return; }
+
+    const mode = this.supportService.getSupportMode(element.xmlPath);
+
+    // Суффикс contextValue для показа inline-иконки при наведении
+    const baseCtx = (element.contextValue ?? '').replace(/-support\d$/, '');
+    element.contextValue = `${baseCtx}-support${mode}`;
   }
 
   getChildren(element?: MetadataNode): MetadataNode[] {
@@ -67,6 +87,12 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
   // ---------------------------------------------------------------------------
 
   private buildRoots(): void {
+    // Предзагружаем данные поддержки для каждой найденной конфигурации
+    if (this.supportService) {
+      for (const entry of this.entries) {
+        this.supportService.loadConfig(entry.rootPath);
+      }
+    }
     this.roots = this.entries.map((entry) => this.buildConfigNode(entry));
   }
 
@@ -170,3 +196,4 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
     return result;
   }
 }
+

@@ -69,6 +69,30 @@
       {
         "command": "1cNavigator.showProperties",
         "title": "Свойства"
+      },
+      {
+        "command": "1cNavigator.support.none",
+        "title": "Не на поддержке",
+        "icon": {
+          "light": "./src/icons/light/support-none.svg",
+          "dark": "./src/icons/dark/support-none.svg"
+        }
+      },
+      {
+        "command": "1cNavigator.support.editable",
+        "title": "На поддержке, редактирование разрешено",
+        "icon": {
+          "light": "./src/icons/light/support-editable.svg",
+          "dark": "./src/icons/dark/support-editable.svg"
+        }
+      },
+      {
+        "command": "1cNavigator.support.locked",
+        "title": "На поддержке, редактирование запрещено",
+        "icon": {
+          "light": "./src/icons/light/support-locked.svg",
+          "dark": "./src/icons/dark/support-locked.svg"
+        }
       }
     ],
     "menus": {
@@ -82,48 +106,63 @@
       "view/item/context": [
         {
           "command": "1cNavigator.openXmlFile",
-          "when": "view == 1cMetadataTree && viewItem =~ /.*-hasXml$/",
+          "when": "view == 1cMetadataTree && viewItem =~ /-hasXml/",
           "group": "navigation@1"
         },
         {
           "command": "1cNavigator.openObjectModule",
-          "when": "view == 1cMetadataTree && viewItem =~ /(Catalog|Document|Report|DataProcessor|InformationRegister|AccumulationRegister|AccountingRegister|CalculationRegister|BusinessProcess|Task|ExchangePlan|ChartOfCharacteristicTypes|ChartOfAccounts|ChartOfCalculationTypes)-hasXml$/",
+          "when": "view == 1cMetadataTree && viewItem =~ /(Catalog|Document|Report|DataProcessor|InformationRegister|AccumulationRegister|AccountingRegister|CalculationRegister|BusinessProcess|Task|ExchangePlan|ChartOfCharacteristicTypes|ChartOfAccounts|ChartOfCalculationTypes)-hasXml/",
           "group": "navigation@2"
         },
         {
           "command": "1cNavigator.openManagerModule",
-          "when": "view == 1cMetadataTree && viewItem =~ /(Catalog|Document|Report|DataProcessor|InformationRegister|AccumulationRegister|AccountingRegister|CalculationRegister|BusinessProcess|Task|ExchangePlan|ChartOfCharacteristicTypes|ChartOfAccounts|ChartOfCalculationTypes|Enum|DocumentJournal)-hasXml$/",
+          "when": "view == 1cMetadataTree && viewItem =~ /(Catalog|Document|Report|DataProcessor|InformationRegister|AccumulationRegister|AccountingRegister|CalculationRegister|BusinessProcess|Task|ExchangePlan|ChartOfCharacteristicTypes|ChartOfAccounts|ChartOfCalculationTypes|Enum|DocumentJournal)-hasXml/",
           "group": "navigation@2"
         },
         {
           "command": "1cNavigator.openConstantModule",
-          "when": "view == 1cMetadataTree && viewItem == Constant-hasXml",
+          "when": "view == 1cMetadataTree && viewItem =~ /^Constant-hasXml/",
           "group": "navigation@2"
         },
         {
           "command": "1cNavigator.openFormModule",
-          "when": "view == 1cMetadataTree && (viewItem == CommonForm-hasXml || viewItem == Form-hasXml)",
+          "when": "view == 1cMetadataTree && viewItem =~ /^(CommonForm|Form)-hasXml/",
           "group": "navigation@3"
         },
         {
           "command": "1cNavigator.openCommandModule",
-          "when": "view == 1cMetadataTree && (viewItem == CommonCommand-hasXml || viewItem == Command-hasXml)",
+          "when": "view == 1cMetadataTree && viewItem =~ /^(CommonCommand|Command)-hasXml/",
           "group": "navigation@3"
         },
         {
           "command": "1cNavigator.openServiceModule",
-          "when": "view == 1cMetadataTree && (viewItem == WebService-hasXml || viewItem == HTTPService-hasXml)",
+          "when": "view == 1cMetadataTree && viewItem =~ /^(WebService|HTTPService)-hasXml/",
           "group": "navigation@3"
         },
         {
           "command": "1cNavigator.openCommonModuleCode",
-          "when": "view == 1cMetadataTree && viewItem == CommonModule-hasXml",
+          "when": "view == 1cMetadataTree && viewItem =~ /^CommonModule-hasXml/",
           "group": "navigation@2"
         },
         {
           "command": "1cNavigator.showProperties",
-          "when": "view == 1cMetadataTree && !(viewItem =~ /.*-propertiesHidden$/)",
+          "when": "view == 1cMetadataTree && !(viewItem =~ /-propertiesHidden/)",
           "group": "navigation@9"
+        },
+        {
+          "command": "1cNavigator.support.none",
+          "when": "view == 1cMetadataTree && viewItem =~ /-support0/",
+          "group": "inline"
+        },
+        {
+          "command": "1cNavigator.support.locked",
+          "when": "view == 1cMetadataTree && viewItem =~ /-support1/",
+          "group": "inline"
+        },
+        {
+          "command": "1cNavigator.support.editable",
+          "when": "view == 1cMetadataTree && viewItem =~ /-support2/",
+          "group": "inline"
         }
       ]
     },

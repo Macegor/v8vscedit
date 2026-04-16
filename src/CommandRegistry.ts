@@ -4,6 +4,7 @@ import { MetadataNode } from './MetadataNode';
 import { PropertiesViewProvider } from './views/PropertiesViewProvider';
 import { OnecFileSystemProvider } from './OnecFileSystemProvider';
 import { buildVirtualUri, buildFormModuleVirtualUri } from './OnecUriBuilder';
+import { SupportInfoService } from './services/SupportInfoService';
 import {
   getCommonCommandModulePath,
   getCommonFormModulePath,
@@ -19,25 +20,47 @@ import {
 type NodeArg = MetadataNode | { xmlPath?: string; nodeKind?: string; label?: string };
 
 /**
- * Открывает реальный BSL-файл под виртуальным URI onec://, чтобы
- * хлебные крошки редактора показывали читаемый путь метаданных.
- * Если виртуальный URI построить невозможно — открывает реальный файл.
+ * Открывает BSL-модуль и блокирует редактирование для объектов на поддержке.
+ *
+ * @param ownerXmlPath — путь к XML-файлу объекта-владельца (из дерева).
+ *   Используется для проверки поддержки ВМЕСТО обратного ресолва из BSL.
+ *   Для onec:// readonly ставится через stat() (permissions).
+ *   Для file:// — через setEditorReadonlyInSession.
  */
 async function openModule(
   fsp: OnecFileSystemProvider,
   modulePath: string,
   virtualUri: vscode.Uri | null,
+  supportService: SupportInfoService | undefined,
+  ownerXmlPath: string | undefined,
   preview = true
 ): Promise<void> {
+  const locked = ownerXmlPath ? supportService?.isLocked(ownerXmlPath) : false;
+  let editor: vscode.TextEditor;
+
   if (virtualUri) {
     fsp.register(virtualUri, modulePath);
+    // Сообщаем FSP о связи модуля с его владельцем для корректного stat()
+    if (ownerXmlPath) {
+      fsp.registerOwnerXml(virtualUri, ownerXmlPath);
+    }
     const doc = await vscode.workspace.openTextDocument(virtualUri);
-    // Без расширения .bsl язык нужно задать явно
     await vscode.languages.setTextDocumentLanguage(doc, 'bsl');
-    await vscode.window.showTextDocument(doc, { preview });
+    editor = await vscode.window.showTextDocument(doc, { preview });
   } else {
-    await vscode.window.showTextDocument(vscode.Uri.file(modulePath), { preview });
+    editor = await vscode.window.showTextDocument(vscode.Uri.file(modulePath), { preview });
   }
+
+  // Для обеих схем: если объект заблокирован, ставим readonly через команду
+  if (locked) {
+    await setEditorReadonly(editor);
+  }
+}
+
+/** Помечает активный редактор как readonly в текущей сессии */
+async function setEditorReadonly(editor: vscode.TextEditor): Promise<void> {
+  await vscode.window.showTextDocument(editor.document, { viewColumn: editor.viewColumn });
+  await vscode.commands.executeCommand('workbench.action.files.setActiveEditorReadonlyInSession');
 }
 
 /**
@@ -49,15 +72,20 @@ export function registerCommands(
   workspaceFolder: vscode.WorkspaceFolder,
   reloadEntries: () => void,
   propertiesViewProvider: PropertiesViewProvider,
-  fsp: OnecFileSystemProvider
+  fsp: OnecFileSystemProvider,
+  supportService?: SupportInfoService
 ): void {
   // Открыть XML-файл объекта метаданных
   context.subscriptions.push(
-    vscode.commands.registerCommand('1cNavigator.openXmlFile', (node: { xmlPath?: string }) => {
-      if (!node?.xmlPath) {
-        return;
+    vscode.commands.registerCommand('1cNavigator.openXmlFile', async (node: { xmlPath?: string }) => {
+      if (!node?.xmlPath) { return; }
+      const editor = await vscode.window.showTextDocument(
+        vscode.Uri.file(node.xmlPath),
+        { preview: false }
+      );
+      if (supportService?.isLocked(node.xmlPath)) {
+        await setEditorReadonly(editor);
       }
-      vscode.window.showTextDocument(vscode.Uri.file(node.xmlPath), { preview: false });
     })
   );
 
@@ -68,7 +96,7 @@ export function registerCommands(
       if (!modulePath) { return; }
       const xmlPath = (node as any).xmlPath as string | undefined;
       const vUri = xmlPath ? buildVirtualUri(xmlPath, 'module') : null;
-      await openModule(fsp, modulePath, vUri);
+      await openModule(fsp, modulePath, vUri, supportService, xmlPath);
     })
   );
 
@@ -79,7 +107,7 @@ export function registerCommands(
       if (!modulePath) { return; }
       const xmlPath = (node as any).xmlPath as string | undefined;
       const vUri = xmlPath ? buildVirtualUri(xmlPath, 'objectModule') : null;
-      await openModule(fsp, modulePath, vUri);
+      await openModule(fsp, modulePath, vUri, supportService, xmlPath);
     })
   );
 
@@ -90,7 +118,7 @@ export function registerCommands(
       if (!modulePath) { return; }
       const xmlPath = (node as any).xmlPath as string | undefined;
       const vUri = xmlPath ? buildVirtualUri(xmlPath, 'managerModule') : null;
-      await openModule(fsp, modulePath, vUri);
+      await openModule(fsp, modulePath, vUri, supportService, xmlPath);
     })
   );
 
@@ -101,7 +129,7 @@ export function registerCommands(
       if (!modulePath) { return; }
       const xmlPath = (node as any).xmlPath as string | undefined;
       const vUri = xmlPath ? buildVirtualUri(xmlPath, 'valueManagerModule') : null;
-      await openModule(fsp, modulePath, vUri);
+      await openModule(fsp, modulePath, vUri, supportService, xmlPath);
     })
   );
 
@@ -112,7 +140,7 @@ export function registerCommands(
       if (!modulePath) { return; }
       const xmlPath = (node as any).xmlPath as string | undefined;
       const vUri = xmlPath ? buildVirtualUri(xmlPath, 'module') : null;
-      await openModule(fsp, modulePath, vUri);
+      await openModule(fsp, modulePath, vUri, supportService, xmlPath);
     })
   );
 
@@ -133,7 +161,7 @@ export function registerCommands(
           ? buildVirtualUri(xmlPath, 'module')
           : buildFormModuleVirtualUri(xmlPath, String(nodeAny.label ?? ''));
       }
-      await openModule(fsp, modulePath, vUri);
+      await openModule(fsp, modulePath, vUri, supportService, xmlPath);
     })
   );
 
@@ -149,7 +177,7 @@ export function registerCommands(
 
       const xmlPath = nodeAny.xmlPath as string | undefined;
       const vUri = xmlPath ? buildVirtualUri(xmlPath, 'commandModule') : null;
-      await openModule(fsp, modulePath, vUri);
+      await openModule(fsp, modulePath, vUri, supportService, xmlPath);
     })
   );
 

@@ -6,6 +6,8 @@ import { MetadataTreeProvider } from './MetadataTreeProvider';
 import { registerCommands } from './CommandRegistry';
 import { PropertiesViewProvider } from './views/PropertiesViewProvider';
 import { OnecFileSystemProvider, ONEC_SCHEME } from './OnecFileSystemProvider';
+import { SupportInfoService } from './services/SupportInfoService';
+import { SupportDecorationProvider } from './services/SupportDecorationProvider';
 
 let client: LanguageClient | undefined;
 
@@ -18,8 +20,52 @@ export function activate(context: vscode.ExtensionContext): void {
   const workspaceFolder = workspaceFolders[0];
   const rootPath = workspaceFolder.uri.fsPath;
 
-  // ── Навигатор метаданных ────────────────────────────────────────────────
+  // ── Канал логирования ───────────────────────────────────────────────────
+  const outputChannel = vscode.window.createOutputChannel('1С Навигатор');
+  context.subscriptions.push(outputChannel);
+  outputChannel.appendLine('[init] Расширение активировано');
+
+  // ── Сервис поддержки 1С ─────────────────────────────────────────────────
+  const supportService = new SupportInfoService(outputChannel);
+
+  // ── Декорации поддержки в дереве ────────────────────────────────────────
+  const decorationProvider = new SupportDecorationProvider();
+  context.subscriptions.push(
+    vscode.window.registerFileDecorationProvider(decorationProvider),
+    decorationProvider
+  );
+
+  // Watcher: при изменении ParentConfigurations.bin сбрасываем кэш и обновляем дерево
+  const supportWatcher = vscode.workspace.createFileSystemWatcher(
+    new vscode.RelativePattern(workspaceFolder, '**/Ext/ParentConfigurations.bin'),
+    false,
+    false,
+    false
+  );
+  const onSupportFileChange = (uri: vscode.Uri) => {
+    const extDir = path.dirname(uri.fsPath);
+    const configRoot = path.dirname(extDir);
+    supportService.invalidate(configRoot);
+    supportService.loadConfig(configRoot);
+    provider.refresh();
+    decorationProvider.fireRefresh();
+  };
+  const onSupportFileDelete = (uri: vscode.Uri) => {
+    const extDir = path.dirname(uri.fsPath);
+    const configRoot = path.dirname(extDir);
+    supportService.invalidate(configRoot);
+    provider.refresh();
+    decorationProvider.fireRefresh();
+  };
+  supportWatcher.onDidCreate(onSupportFileChange, null, context.subscriptions);
+  supportWatcher.onDidChange(onSupportFileChange, null, context.subscriptions);
+  supportWatcher.onDidDelete(onSupportFileDelete, null, context.subscriptions);
+  context.subscriptions.push(supportWatcher);
+
+  // ── Виртуальная файловая система onec:// ────────────────────────────────
   const fsp = new OnecFileSystemProvider();
+  fsp.setSupportService(supportService);
+  fsp.setOutputChannel(outputChannel);
   context.subscriptions.push(
     vscode.workspace.registerFileSystemProvider(ONEC_SCHEME, fsp, {
       isCaseSensitive: false,
@@ -27,7 +73,8 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  const provider = new MetadataTreeProvider([], context.extensionUri);
+  // ── Навигатор метаданных ────────────────────────────────────────────────
+  const provider = new MetadataTreeProvider([], context.extensionUri, supportService);
   const propertiesViewProvider = new PropertiesViewProvider();
   context.subscriptions.push(propertiesViewProvider);
 
@@ -40,10 +87,51 @@ export function activate(context: vscode.ExtensionContext): void {
   const reloadEntries = () => {
     findConfigurations(rootPath).then((entries) => {
       provider.updateEntries(entries);
+      outputChannel.appendLine(`[init] Найдено конфигураций: ${entries.length}`);
     });
   };
 
-  registerCommands(context, provider, workspaceFolder, reloadEntries, propertiesViewProvider, fsp);
+  registerCommands(context, provider, workspaceFolder, reloadEntries, propertiesViewProvider, fsp, supportService);
+
+  // ── Readonly для BSL-файлов, открытых напрямую из ФС (схема file://) ───
+  // Для onec:// readonly обеспечивается через stat() → permissions.
+  // Для file:// нужно явно переключать editor в readonly-режим.
+  context.subscriptions.push(
+    vscode.workspace.onDidOpenTextDocument(async (doc) => {
+      if (doc.uri.scheme !== 'file') { return; }
+      if (!doc.fileName.toLowerCase().endsWith('.bsl')) { return; }
+      if (!supportService.isLocked(doc.fileName)) { return; }
+
+      outputChannel.appendLine(`[readonly] Блокировка file:// BSL: ${path.basename(doc.fileName)}`);
+
+      // Ждём, когда VS Code покажет редактор для этого документа
+      const disposable = vscode.window.onDidChangeVisibleTextEditors(async (editors) => {
+        const editor = editors.find(
+          (e) => e.document.uri.toString() === doc.uri.toString()
+        );
+        if (!editor) { return; }
+        disposable.dispose();
+        await vscode.window.showTextDocument(editor.document, { viewColumn: editor.viewColumn, preserveFocus: false });
+        await vscode.commands.executeCommand('workbench.action.files.setActiveEditorReadonlyInSession');
+      });
+      // Очистка через 5с если редактор так и не появился
+      setTimeout(() => disposable.dispose(), 5000);
+    })
+  );
+
+  // Команды-индикаторы поддержки (inline-кнопки в дереве)
+  context.subscriptions.push(
+    vscode.commands.registerCommand('1cNavigator.support.none', () => {
+      vscode.window.showInformationMessage('Объект не на поддержке.');
+    }),
+    vscode.commands.registerCommand('1cNavigator.support.editable', () => {
+      vscode.window.showInformationMessage('Объект на поддержке. Редактирование разрешено.');
+    }),
+    vscode.commands.registerCommand('1cNavigator.support.locked', () => {
+      vscode.window.showWarningMessage('Объект на поддержке. Редактирование запрещено.');
+    }),
+  );
+
   reloadEntries();
 
   // ── LSP-сервер языковой поддержки BSL ──────────────────────────────────
@@ -57,7 +145,6 @@ export function activate(context: vscode.ExtensionContext): void {
     debug: {
       module: serverModule,
       transport: TransportKind.ipc,
-      // Порт 6009 для подключения отладчика к серверному процессу
       options: { execArgv: ['--nolazy', '--inspect=6009'] },
     },
   };
