@@ -25,12 +25,6 @@
         {
           "id": "1cMetadataTree",
           "name": "Метаданные"
-        },
-        {
-          "id": "1cPropertiesView",
-          "name": "Свойства",
-          "type": "webview",
-          "visibility": "hidden"
         }
       ]
     },

@@ -3,53 +3,50 @@ import { getNodeKindLabel, MetadataNode } from '../MetadataNode';
 import {
   EnumPropertyValue,
   LocalizedStringValue,
-  ObjectPropertiesCollection,
   ObjectPropertyItem,
 } from '../handlers/_types';
 import { getHandlerForNode } from '../handlers';
-import { PropertiesSelectionService } from '../services/PropertiesSelectionService';
 
-/** Провайдер правой панели свойств */
-export class PropertiesViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
-  static readonly viewId = '1cPropertiesView';
+/** Управляет вкладкой свойств объекта метаданных (singleton WebviewPanel) */
+export class PropertiesViewProvider implements vscode.Disposable {
+  private panel: vscode.WebviewPanel | undefined;
 
-  private view: vscode.WebviewView | undefined;
-  private readonly selectionSubscription: vscode.Disposable;
-
-  constructor(private readonly selectionService: PropertiesSelectionService) {
-    this.selectionSubscription = this.selectionService.onDidChangeSelectedNode(() => {
-      this.renderCurrentState();
-    });
-  }
-
-  resolveWebviewView(webviewView: vscode.WebviewView): void {
-    this.view = webviewView;
-    webviewView.webview.options = {
-      enableScripts: false,
-    };
-    webviewView.onDidDispose(() => {
-      this.view = undefined;
-    });
-
-    this.renderCurrentState();
+  /**
+   * Открывает вкладку свойств для узла.
+   * Если вкладка уже открыта — заменяет содержимое и переключается на неё,
+   * новую группу редактора не создаёт.
+   */
+  show(node: MetadataNode): void {
+    if (this.panel) {
+      this.panel.title = this.buildTitle(node);
+      this.panel.webview.html = this.renderHtml(node);
+      this.panel.reveal(this.panel.viewColumn ?? vscode.ViewColumn.Active, false);
+    } else {
+      this.panel = vscode.window.createWebviewPanel(
+        '1cPropertiesView',
+        this.buildTitle(node),
+        { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
+        { enableScripts: false, retainContextWhenHidden: false }
+      );
+      this.panel.webview.html = this.renderHtml(node);
+      this.panel.onDidDispose(() => {
+        this.panel = undefined;
+      });
+    }
   }
 
   dispose(): void {
-    this.selectionSubscription.dispose();
+    this.panel?.dispose();
+    this.panel = undefined;
   }
 
-  /** Перерисовывает панель для текущего выбранного узла */
-  private renderCurrentState(): void {
-    if (!this.view) {
-      return;
-    }
-
-    const node = this.selectionService.getSelectedNode();
-    this.view.webview.html = this.renderHtml(node);
+  /** Формирует заголовок вкладки */
+  private buildTitle(node: MetadataNode): string {
+    return `${node.label} — Свойства`;
   }
 
-  /** Формирует HTML панели */
-  private renderHtml(node: MetadataNode | undefined): string {
+  /** Формирует HTML страницы */
+  private renderHtml(node: MetadataNode): string {
     const content = this.renderBody(node);
 
     return `<!DOCTYPE html>
@@ -62,25 +59,25 @@ export class PropertiesViewProvider implements vscode.WebviewViewProvider, vscod
       font-family: var(--vscode-font-family);
       color: var(--vscode-foreground);
       background: var(--vscode-editor-background);
-      padding: 0 12px 12px;
+      padding: 0 20px 20px;
+      max-width: 800px;
     }
     .header {
       position: sticky;
       top: 0;
       background: var(--vscode-editor-background);
-      padding: 12px 0 8px;
+      padding: 16px 0 10px;
       border-bottom: 1px solid var(--vscode-panel-border);
-      margin-bottom: 12px;
+      margin-bottom: 16px;
     }
     .title {
-      font-size: 16px;
+      font-size: 18px;
       font-weight: 600;
       margin: 0 0 4px;
     }
     .subtitle {
       color: var(--vscode-descriptionForeground);
       margin: 0;
-      word-break: break-word;
     }
     .message {
       color: var(--vscode-descriptionForeground);
@@ -94,8 +91,8 @@ export class PropertiesViewProvider implements vscode.WebviewViewProvider, vscod
     }
     .row {
       display: grid;
-      grid-template-columns: minmax(120px, 42%) minmax(0, 1fr);
-      gap: 8px;
+      grid-template-columns: minmax(160px, 35%) minmax(0, 1fr);
+      gap: 12px;
       align-items: start;
     }
     .label {
@@ -158,18 +155,14 @@ export class PropertiesViewProvider implements vscode.WebviewViewProvider, vscod
 </html>`;
   }
 
-  /** Формирует содержимое панели */
-  private renderBody(node: MetadataNode | undefined): string {
-    if (!node) {
-      return this.renderState('Свойства', 'Выберите элемент дерева и вызовите команду «Свойства».');
-    }
-
+  /** Формирует содержимое страницы */
+  private renderBody(node: MetadataNode): string {
     const handler = getHandlerForNode(node);
     const canShowProperties = handler?.canShowProperties?.(node) ?? false;
 
     if (!handler || !handler.getProperties || !canShowProperties) {
       return this.renderState(
-        `${escapeHtml(node.label)}`,
+        node.label,
         'Для выбранного объекта отсутствуют свойства',
         getNodeKindLabel(node.nodeKind)
       );
@@ -178,7 +171,7 @@ export class PropertiesViewProvider implements vscode.WebviewViewProvider, vscod
     const properties = handler.getProperties(node);
     if (properties.length === 0) {
       return this.renderState(
-        `${escapeHtml(node.label)}`,
+        node.label,
         'Для выбранного объекта отсутствуют свойства',
         getNodeKindLabel(node.nodeKind)
       );
@@ -195,7 +188,7 @@ export class PropertiesViewProvider implements vscode.WebviewViewProvider, vscod
     `;
   }
 
-  /** Формирует общий шаблон состояния панели */
+  /** Формирует шаблон пустого/ошибочного состояния */
   private renderState(title: string, message: string, subtitle?: string): string {
     return `
       <div class="header">
@@ -206,7 +199,7 @@ export class PropertiesViewProvider implements vscode.WebviewViewProvider, vscod
     `;
   }
 
-  /** Формирует строку свойства в виде обычной формы */
+  /** Формирует строку свойства */
   private renderProperty(property: ObjectPropertyItem): string {
     const valueHtml = this.renderPropertyValue(property);
     return `

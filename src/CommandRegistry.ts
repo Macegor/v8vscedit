@@ -2,7 +2,6 @@ import * as vscode from 'vscode';
 import { MetadataTreeProvider } from './MetadataTreeProvider';
 import { MetadataNode } from './MetadataNode';
 import { PropertiesViewProvider } from './views/PropertiesViewProvider';
-import { PropertiesSelectionService } from './services/PropertiesSelectionService';
 import {
   getCommonCommandModulePath,
   getCommonFormModulePath,
@@ -24,7 +23,7 @@ export function registerCommands(
   provider: MetadataTreeProvider,
   workspaceFolder: vscode.WorkspaceFolder,
   reloadEntries: () => void,
-  propertiesSelectionService: PropertiesSelectionService
+  propertiesViewProvider: PropertiesViewProvider
 ): void {
   // Открыть XML-файл объекта метаданных
   context.subscriptions.push(
@@ -155,17 +154,15 @@ export function registerCommands(
     })
   );
 
-  // Открыть панель свойств и передать выбранный узел
+  // Открыть вкладку свойств для выбранного узла
   context.subscriptions.push(
     vscode.commands.registerCommand(
       '1cNavigator.showProperties',
-      async (node: MetadataNode | undefined) => {
+      (node: MetadataNode | undefined) => {
         if (!node) {
           return;
         }
-
-        propertiesSelectionService.setSelectedNode(node);
-        await vscode.commands.executeCommand(`${PropertiesViewProvider.viewId}.focus`);
+        propertiesViewProvider.show(node);
       }
     )
   );
