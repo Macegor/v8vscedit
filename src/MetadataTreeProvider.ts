@@ -46,7 +46,11 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
           new MetadataNode(
             'Загрузка...',
             'group-type',
-            vscode.TreeItemCollapsibleState.None
+            vscode.TreeItemCollapsibleState.None,
+            undefined,
+            undefined,
+            undefined,
+            true
           ),
         ];
       }

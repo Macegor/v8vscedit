@@ -4,6 +4,8 @@ import { LanguageClient, LanguageClientOptions, ServerOptions, TransportKind } f
 import { findConfigurations } from './ConfigFinder';
 import { MetadataTreeProvider } from './MetadataTreeProvider';
 import { registerCommands } from './CommandRegistry';
+import { PropertiesSelectionService } from './services/PropertiesSelectionService';
+import { PropertiesViewProvider } from './views/PropertiesViewProvider';
 
 let client: LanguageClient | undefined;
 
@@ -18,6 +20,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // ── Навигатор метаданных ────────────────────────────────────────────────
   const provider = new MetadataTreeProvider([], context.extensionUri);
+  const propertiesSelectionService = new PropertiesSelectionService();
+  const propertiesViewProvider = new PropertiesViewProvider(propertiesSelectionService);
+  context.subscriptions.push(propertiesSelectionService, propertiesViewProvider);
 
   const treeView = vscode.window.createTreeView('1cMetadataTree', {
     treeDataProvider: provider,
@@ -25,13 +30,21 @@ export function activate(context: vscode.ExtensionContext): void {
   });
   context.subscriptions.push(treeView);
 
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(PropertiesViewProvider.viewId, propertiesViewProvider)
+  );
+
+  treeView.onDidChangeSelection((event) => {
+    propertiesSelectionService.setSelectedNode(event.selection[0]);
+  }, null, context.subscriptions);
+
   const reloadEntries = () => {
     findConfigurations(rootPath).then((entries) => {
       provider.updateEntries(entries);
     });
   };
 
-  registerCommands(context, provider, workspaceFolder, reloadEntries);
+  registerCommands(context, provider, workspaceFolder, reloadEntries, propertiesSelectionService);
   reloadEntries();
 
   // ── LSP-сервер языковой поддержки BSL ──────────────────────────────────

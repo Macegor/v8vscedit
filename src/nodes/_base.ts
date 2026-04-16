@@ -10,6 +10,7 @@ export interface BuildNodeParams {
   xmlPath?: string;
   childrenLoader?: () => MetadataNode[];
   ownershipTag?: 'OWN' | 'BORROWED';
+  hidePropertiesCommand?: boolean;
 }
 
 /**
@@ -23,7 +24,8 @@ export function buildNode(descriptor: NodeDescriptor | undefined, params: BuildN
     params.collapsibleState,
     params.xmlPath,
     params.childrenLoader,
-    params.ownershipTag
+    params.ownershipTag,
+    params.hidePropertiesCommand
   );
 
   if (descriptor?.singleClickCommand) {

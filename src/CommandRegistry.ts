@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import { MetadataTreeProvider } from './MetadataTreeProvider';
 import { MetadataNode } from './MetadataNode';
+import { PropertiesViewProvider } from './views/PropertiesViewProvider';
+import { PropertiesSelectionService } from './services/PropertiesSelectionService';
 import {
   getCommonCommandModulePath,
   getCommonFormModulePath,
@@ -21,7 +23,8 @@ export function registerCommands(
   context: vscode.ExtensionContext,
   provider: MetadataTreeProvider,
   workspaceFolder: vscode.WorkspaceFolder,
-  reloadEntries: () => void
+  reloadEntries: () => void,
+  propertiesSelectionService: PropertiesSelectionService
 ): void {
   // Открыть XML-файл объекта метаданных
   context.subscriptions.push(
@@ -150,6 +153,21 @@ export function registerCommands(
     vscode.commands.registerCommand('1cNavigator.refresh', async () => {
       reloadEntries();
     })
+  );
+
+  // Открыть панель свойств и передать выбранный узел
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      '1cNavigator.showProperties',
+      async (node: MetadataNode | undefined) => {
+        if (!node) {
+          return;
+        }
+
+        propertiesSelectionService.setSelectedNode(node);
+        await vscode.commands.executeCommand(`${PropertiesViewProvider.viewId}.focus`);
+      }
+    )
   );
 
   // FileSystemWatcher — перестраиваем дерево при изменении Configuration.xml
