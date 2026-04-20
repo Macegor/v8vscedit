@@ -2,6 +2,7 @@ import { MetadataNode, NodeKind } from '../MetadataNode';
 import { ObjectHandler } from './_types';
 import { commonAttributeHandler } from './commonAttribute';
 import { commonModuleHandler } from './commonModule';
+import { exchangePlanHandler } from './exchangePlan';
 import { createMetaObjectHandler } from './metaObjectTree';
 import { roleHandler } from './role';
 import { sessionParameterHandler } from './sessionParameter';
@@ -32,12 +33,7 @@ const TOP_GROUP_OBJECT_KINDS: NodeKind[] = [
   'Task',
 ];
 
-/** Типы только из подгрупп «Общие» (после общих реквизитов — планы обмена и т.п.) */
-const COMMON_SUBGROUP_META_KINDS: NodeKind[] = ['ExchangePlan'];
-
-const ALL_META_OBJECT_KINDS: NodeKind[] = [...TOP_GROUP_OBJECT_KINDS, ...COMMON_SUBGROUP_META_KINDS];
-
-const metaObjectHandlersEntries = ALL_META_OBJECT_KINDS.map(
+const metaObjectHandlersEntries = TOP_GROUP_OBJECT_KINDS.map(
   (kind) => [kind, createMetaObjectHandler(kind)] as const
 );
 
@@ -51,6 +47,7 @@ const HANDLER_REGISTRY = new Map<string, ObjectHandler>([
   ['SessionParameter', sessionParameterHandler],
   ['Role', roleHandler],
   ['CommonAttribute', commonAttributeHandler],
+  ['ExchangePlan', exchangePlanHandler],
   ...metaObjectHandlersEntries,
 ]);
 
