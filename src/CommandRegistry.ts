@@ -12,6 +12,7 @@ import {
   getCommonCommandModulePath,
   getCommonFormModulePath,
   getCommandModulePathForChild,
+  ensureCommonModuleCodePath,
   getCommonModuleCodePath,
   getConstantModulePath,
   getFormModulePathForChild,
@@ -101,7 +102,7 @@ export function registerCommands(
   // Открыть модуль общего модуля
   context.subscriptions.push(
     vscode.commands.registerCommand('v8vscedit.openCommonModuleCode', async (node: NodeArg) => {
-      const modulePath = getCommonModuleCodePath(node as any);
+      const modulePath = getCommonModuleCodePath(node as any) ?? ensureCommonModuleCodePath(node as any);
       if (!modulePath) { return; }
       const xmlPath = (node as any).xmlPath as string | undefined;
       const vUri = xmlPath ? buildVirtualUri(xmlPath, 'module') : null;

@@ -290,4 +290,32 @@ export function getCommonModuleCodePath(node: MetadataNode | { xmlPath?: string;
   return firstExisting(candidates);
 }
 
+/**
+ * Возвращает путь к модулю общего модуля и создает его при отсутствии.
+ * Используется для сценария, когда после создания объекта есть только XML.
+ */
+export function ensureCommonModuleCodePath(
+  node: MetadataNode | { xmlPath?: string; nodeKind?: string; label?: string }
+): string | null {
+  const existingPath = getCommonModuleCodePath(node);
+  if (existingPath) {
+    return existingPath;
+  }
+
+  const ctx = toContext(node);
+  if (!ctx || !ctx.xmlPath) {
+    return null;
+  }
+
+  const location = getObjectLocationFromXml(ctx.xmlPath);
+  const modulePath = path.join(location.objectDir, 'Ext', 'Module.bsl');
+
+  fs.mkdirSync(path.dirname(modulePath), { recursive: true });
+  if (!fs.existsSync(modulePath)) {
+    fs.writeFileSync(modulePath, '', { encoding: 'utf-8' });
+  }
+
+  return modulePath;
+}
+
 
