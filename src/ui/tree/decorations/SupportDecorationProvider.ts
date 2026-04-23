@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { SupportMode } from './SupportInfoService';
+import { SupportMode } from '../../../infra/support/SupportInfoService';
 
 export const SUPPORT_SCHEME = 'onec-support';
 

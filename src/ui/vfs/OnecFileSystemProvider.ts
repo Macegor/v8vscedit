@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as vscode from 'vscode';
-import { SupportInfoService } from './services/SupportInfoService';
+import { SupportInfoService } from '../../infra/support/SupportInfoService';
 
 export const ONEC_SCHEME = 'onec';
 

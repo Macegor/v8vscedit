@@ -1,11 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { MetadataNode, NodeKind } from '../MetadataNode';
+import { MetadataNode, NodeKind } from '../TreeNode';
 import {
   extractChildMetaElementXml,
   extractColumnXmlFromTabularSection,
-} from '../ConfigParser';
-import { getObjectLocationFromXml } from '../ModulePathResolver';
+} from '../../../infra/xml';
+import { getObjectLocationFromXml } from '../../../infra/fs/MetaPathResolver';
 import { ObjectHandler, ObjectPropertiesCollection } from './_types';
 import {
   buildCommandProperties,
@@ -14,7 +14,7 @@ import {
   buildTabularSectionProperties,
   buildTemplateMetaProperties,
   buildTypedFieldProperties,
-} from './metaXmlFragmentProperties';
+} from '../../views/properties/PropertyBuilder';
 
 /** Виды дочерних узлов, для которых есть общий разбор свойств из XML */
 const SUPPORTED_CHILD_KINDS = new Set<NodeKind>([

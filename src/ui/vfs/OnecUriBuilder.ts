@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { getObjectLocationFromXml } from './ModulePathResolver';
+import { getObjectLocationFromXml } from '../../infra/fs/MetaPathResolver';
 import { ONEC_SCHEME } from './OnecFileSystemProvider';
 
 /** Русские названия папок объектов метаданных */

@@ -2,8 +2,8 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { sessionParameterHandler } from '../../handlers/sessionParameter';
-import { MetadataNode } from '../../MetadataNode';
+import { sessionParameterHandler } from '../../ui/tree/nodeBuilders/sessionParameter';
+import { MetadataNode } from '../../ui/tree/TreeNode';
 
 const EXAMPLE_CF = path.resolve(__dirname, '../../../../example/cf');
 

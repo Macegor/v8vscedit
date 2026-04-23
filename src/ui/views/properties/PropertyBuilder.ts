@@ -1,4 +1,4 @@
-import { NodeKind } from '../MetadataNode';
+import { NodeKind } from '../../tree/TreeNode';
 import {
   EnumPropertyOption,
   EnumPropertyValue,
@@ -6,7 +6,7 @@ import {
   ObjectPropertyItem,
   ObjectPropertiesCollection,
 } from './_types';
-import { extractSimpleTag } from '../ConfigParser';
+import { extractSimpleTag } from '../../../infra/xml';
 
 /** Теги со строкой локализации (v8:item) */
 const LOCALIZED_PROPERTY_TAGS = new Set([

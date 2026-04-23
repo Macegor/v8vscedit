@@ -4,8 +4,8 @@ import {
   LanguageClient, LanguageClientOptions, ServerOptions,
   TransportKind, ErrorAction, CloseAction, Trace,
 } from 'vscode-languageclient/node';
-import { BslAnalyzerService } from './BslAnalyzerService';
-import { BslAnalyzerStatusBar } from './BslAnalyzerStatusBar';
+import { BslAnalyzerService } from './analyzer/BslAnalyzerService';
+import { BslAnalyzerStatusBar } from './analyzer/BslAnalyzerStatusBar';
 
 export type LspMode = 'built-in' | 'bsl-analyzer' | 'off';
 

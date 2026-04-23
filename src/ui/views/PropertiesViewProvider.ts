@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
-import { getNodeKindLabel, MetadataNode } from '../MetadataNode';
+import { getNodeKindLabel, MetadataNode } from '../tree/TreeNode';
 import {
   EnumPropertyValue,
   LocalizedStringValue,
   ObjectPropertyItem,
-} from '../handlers/_types';
-import { getHandlerForNode } from '../handlers';
+} from '../tree/nodeBuilders/_types';
+import { getHandlerForNode } from '../tree/nodeBuilders/index';
 
 /** Управляет вкладкой свойств объекта метаданных (singleton WebviewPanel) */
 export class PropertiesViewProvider implements vscode.Disposable {

@@ -1,4 +1,4 @@
-import { MetadataNode, NodeKind } from '../MetadataNode';
+import { MetadataNode, NodeKind } from '../TreeNode';
 import { createLeafMetaObjectHandler } from './createLeafMetaObjectHandler';
 import { ObjectHandler } from './_types';
 import { accountingRegisterHandler } from './accountingRegister';

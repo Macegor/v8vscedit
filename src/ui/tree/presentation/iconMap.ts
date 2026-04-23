@@ -1,5 +1,5 @@
-import { NodeKind } from '../../MetadataNode';
-import { getNodeDescriptor } from '../index';
+import { NodeKind } from '../TreeNode';
+import { getNodeDescriptor } from '../nodes/index';
 
 /**
  * Возвращает имя SVG-иконки для указанного типа узла.

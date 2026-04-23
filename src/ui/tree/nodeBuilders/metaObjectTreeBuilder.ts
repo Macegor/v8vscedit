@@ -6,13 +6,13 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import * as vscode from 'vscode';
-import { MetaTreeNodeContext, MetadataNode, NodeKind } from '../MetadataNode';
+import { MetaTreeNodeContext, MetadataNode, NodeKind } from '../TreeNode';
 import { buildNode } from '../nodes/_base';
-import { getNodeDescriptor } from '../nodes';
+import { getNodeDescriptor } from '../nodes/index';
 import { ChildTag, CHILD_TAG_CONFIG } from '../nodes/_types';
-import { MetaChild, parseObjectXml, resolveObjectXmlPath, extractSynonym } from '../ConfigParser';
-import { getObjectLocationFromXml } from '../ModulePathResolver';
-import { buildRootMetaObjectProperties } from './metaXmlFragmentProperties';
+import { MetaChild, parseObjectXml, resolveObjectXmlPath, extractSynonym } from '../../../infra/xml';
+import { getObjectLocationFromXml } from '../../../infra/fs/MetaPathResolver';
+import { buildRootMetaObjectProperties } from '../../views/properties/PropertyBuilder';
 import { HandlerContext, ObjectPropertiesCollection } from './_types';
 
 /** Строит плоский список узлов объекта без дочерней структуры ChildObjects */

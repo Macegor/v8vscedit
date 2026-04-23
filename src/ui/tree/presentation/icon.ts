@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { NodeKind } from '../../MetadataNode';
+import { NodeKind } from '../TreeNode';
 import { getIconName } from './iconMap';
 
 /**

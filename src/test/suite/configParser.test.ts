@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import * as path from 'path';
-import { parseConfigXml, parseObjectXml } from '../../ConfigParser';
+import { parseConfigXml, parseObjectXml } from '../../infra/xml';
 
 const EXAMPLE_CFE = path.resolve(__dirname, '../../../../example/cfe/EVOLC');
 const EXAMPLE_CF = path.resolve(__dirname, '../../../../example/cf');

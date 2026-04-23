@@ -1,14 +1,14 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { MetadataNode, NodeKind } from './MetadataNode';
-import { getIconUris } from './nodes/presentation/icon';
+import { MetadataNode, NodeKind } from './TreeNode';
+import { getIconUris } from './presentation/icon';
 import { COMMON_SUBGROUPS, TOP_GROUPS } from './MetadataGroups';
-import { ConfigInfo, parseConfigXml } from './ConfigParser';
-import { ConfigEntry } from './ConfigFinder';
+import { ConfigInfo, parseConfigXml } from '../../infra/xml';
+import { ConfigEntry } from '../../infra/fs/ConfigLocator';
 import { buildNode } from './nodes/_base';
-import { getNodeDescriptor } from './nodes';
-import { getObjectHandler } from './handlers';
-import { SupportInfoService, SupportMode } from './services/SupportInfoService';
+import { getNodeDescriptor } from './nodes/index';
+import { getObjectHandler } from './nodeBuilders/index';
+import { SupportInfoService, SupportMode } from '../../infra/support/SupportInfoService';
 
 export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNode> {
   private _onDidChangeTreeData = new vscode.EventEmitter<MetadataNode | undefined | null>();

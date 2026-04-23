@@ -2,8 +2,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { buildNode } from '../nodes/_base';
-import { getNodeDescriptor } from '../nodes';
-import { extractSynonym } from '../ConfigParser';
+import { getNodeDescriptor } from '../nodes/index';
+import { extractSynonym } from '../../../infra/xml';
 import {
   HandlerContext,
   ObjectHandler,
@@ -14,7 +14,7 @@ import {
   formatMetadataTypeDescription,
   formatUnknownPropertyInner,
   parseLocalizedStringSection,
-} from '../services/MetadataXmlPropertiesService';
+} from '../../views/properties/MetadataXmlPropertiesService';
 
 // ---------------------------------------------------------------------------
 // Свойства объекта «Параметр сеанса» (SessionParameter) в XML-выгрузке 1С:

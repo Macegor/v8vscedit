@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { MetadataNode } from '../MetadataNode';
+import { MetadataNode } from '../../tree/TreeNode';
 
 /** Хранит выбранный узел для панели свойств */
 export class PropertiesSelectionService {

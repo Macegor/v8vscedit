@@ -3,12 +3,12 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { spawn } from 'child_process';
 import { decode } from 'iconv-lite';
-import { MetadataTreeProvider } from './MetadataTreeProvider';
-import { MetadataNode } from './MetadataNode';
-import { PropertiesViewProvider } from './views/PropertiesViewProvider';
-import { OnecFileSystemProvider } from './OnecFileSystemProvider';
-import { buildVirtualUri, buildFormModuleVirtualUri } from './OnecUriBuilder';
-import { SupportInfoService } from './services/SupportInfoService';
+import { MetadataTreeProvider } from '../tree/MetadataTreeProvider';
+import { MetadataNode } from '../tree/TreeNode';
+import { PropertiesViewProvider } from '../views/PropertiesViewProvider';
+import { OnecFileSystemProvider } from '../vfs/OnecFileSystemProvider';
+import { buildVirtualUri, buildFormModuleVirtualUri } from '../vfs/OnecUriBuilder';
+import { SupportInfoService } from '../../infra/support/SupportInfoService';
 import {
   getCommonCommandModulePath,
   getCommonFormModulePath,
@@ -20,7 +20,7 @@ import {
   getManagerModulePath,
   getObjectModulePath,
   getServiceModulePath,
-} from './ModulePathResolver';
+} from '../../infra/fs/MetaPathResolver';
 
 type NodeArg = MetadataNode | { xmlPath?: string; nodeKind?: string; label?: string };
 

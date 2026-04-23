@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import * as path from 'path';
-import { findConfigurations } from '../../ConfigFinder';
+import { findConfigurations } from '../../infra/fs/ConfigLocator';
 
 /** Путь к папке с примерами конфигурации */
 const EXAMPLE_PATH = path.resolve(__dirname, '../../../../example');

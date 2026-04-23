@@ -1,4 +1,4 @@
-import { MetadataNode } from '../MetadataNode';
+import { MetadataNode } from '../TreeNode';
 import { HandlerContext, ObjectHandler, ObjectPropertiesCollection } from './_types';
 
 /**

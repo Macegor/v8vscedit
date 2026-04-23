@@ -1,4 +1,4 @@
-import { NodeKind } from './MetadataNode';
+import { NodeKind } from './TreeNode';
 
 /** Описание группы объектов верхнего уровня */
 export interface MetaGroup {

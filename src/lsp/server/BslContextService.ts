@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Node } from 'web-tree-sitter';
 import { BslParserService } from './BslParserService';
-import { findConfigurations } from '../ConfigFinder';
+import { findConfigurations } from '../../infra/fs/ConfigLocator';
 
 /** Тип конфигурации-источника общих модулей. */
 type ConfigKind = 'cf' | 'cfe';

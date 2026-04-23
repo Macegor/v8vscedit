@@ -1,5 +1,5 @@
-import { extractSimpleTag } from '../ConfigParser';
-import { LocalizedStringValue } from '../handlers/_types';
+import { extractSimpleTag } from '../../../infra/xml';
+import { LocalizedStringValue } from '../../tree/nodeBuilders/_types';
 
 /**
  * Разбор XML-выгрузки метаданных 1С для панели свойств:

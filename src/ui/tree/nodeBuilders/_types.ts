@@ -1,4 +1,4 @@
-import { MetadataNode } from '../MetadataNode';
+import { MetadataNode } from '../TreeNode';
 
 /**
  * Контекст, передаваемый обработчику при построении узлов навигатора.

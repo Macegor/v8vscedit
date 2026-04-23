@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { MetaTreeNodeContext, MetadataNode, NodeKind } from '../MetadataNode';
+import { MetaTreeNodeContext, MetadataNode, NodeKind } from '../TreeNode';
 import { CommandId, NodeDescriptor } from './_types';
 
 /** Параметры создания узла с применением дескриптора */

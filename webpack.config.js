@@ -8,7 +8,7 @@ module.exports = {
   target: 'node',
   entry: {
     extension: './src/extension.ts',
-    server: './src/language-server/server.ts',
+    server: './src/lsp/server/server.ts',
     'test/runTests': './src/test/runTests.ts',
   },
   output: {

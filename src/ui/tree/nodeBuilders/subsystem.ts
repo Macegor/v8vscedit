@@ -1,10 +1,10 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import * as vscode from 'vscode';
-import { MetadataNode } from '../MetadataNode';
+import { MetadataNode } from '../TreeNode';
 import { buildNode } from '../nodes/_base';
-import { getNodeDescriptor } from '../nodes';
-import { extractSimpleTag, extractSynonym } from '../ConfigParser';
+import { getNodeDescriptor } from '../nodes/index';
+import { extractSimpleTag, extractSynonym } from '../../../infra/xml';
 import {
   HandlerContext,
   LocalizedStringValue,
