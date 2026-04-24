@@ -1,10 +1,14 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { ChangedConfiguration } from '../../../infra/fs/ConfigurationChangeDetector';
+import { ConfigEntry } from '../../../domain/Configuration';
+import { parseConfigXml } from '../../../infra/xml';
 import { CommandServices, NodeArg } from '../_shared';
 import {
   extractExtensionTarget,
   runCompileExtension,
   runDecompileExtension,
+  runDecompileMainConfiguration,
   setConfigurationOperationStatus,
   runUpdateMainConfiguration,
   runUpdateExtension,
@@ -12,6 +16,12 @@ import {
 
 interface ActionItem extends vscode.QuickPickItem {
   actionId: 'decompileext' | 'updateext' | 'compileAndUpdateExt';
+}
+
+interface ImportTarget {
+  kind: 'cf' | 'cfe';
+  name: string;
+  rootPath: string;
 }
 
 let isUpdatingConfigurations = false;
@@ -22,9 +32,72 @@ export function registerExtensionCommands(
   services: CommandServices
 ): void {
   context.subscriptions.push(
-    vscode.commands.registerCommand('v8vscedit.updateChangedConfigurations', async () => {
+    vscode.commands.registerCommand('v8vscedit.importConfigurations', async () => {
       if (isUpdatingConfigurations) {
         return;
+      }
+
+      const targets = collectImportTargets(services.treeProvider.getEntries());
+      if (targets.length === 0) {
+        await vscode.window.showWarningMessage('Не найдены XML-выгрузки для импорта.');
+        return;
+      }
+
+      const selected = await pickImportTargets(targets);
+      if (!selected || selected.length === 0) {
+        return;
+      }
+
+      isUpdatingConfigurations = true;
+      await vscode.commands.executeCommand('setContext', 'v8vscedit.isUpdatingConfigurations', true);
+      setConfigurationOperationStatus('Импорт конфигураций', 'подготовка', true);
+      await yieldToUi();
+      const completedRootPaths: string[] = [];
+      try {
+        const ordered = orderImportTargets(selected);
+        for (let index = 0; index < ordered.length; index += 1) {
+          const target = ordered[index];
+          setConfigurationOperationStatus(
+            'Импорт конфигураций',
+            `${index + 1}/${ordered.length}: ${target.name}`,
+            true
+          );
+          const ok = target.kind === 'cf'
+            ? await runDecompileMainConfiguration(
+                target.name,
+                target.rootPath,
+                services.workspaceFolder,
+                services.outputChannel
+              )
+            : await runDecompileExtension(
+                target.name,
+                target.rootPath,
+                services.workspaceFolder,
+                services.outputChannel
+              );
+
+          if (!ok) {
+            setConfigurationOperationStatus('Импорт конфигураций', `остановлено на "${target.name}"`, false);
+            return;
+          }
+          completedRootPaths.push(target.rootPath);
+        }
+
+        if (ordered.length > 1) {
+          await vscode.window.showInformationMessage(`Импортировано конфигураций: ${ordered.length}.`);
+        }
+        setConfigurationOperationStatus('Импорт конфигураций', 'завершено', false);
+        await services.reloadEntries();
+      } finally {
+        isUpdatingConfigurations = false;
+        await vscode.commands.executeCommand('setContext', 'v8vscedit.isUpdatingConfigurations', false);
+        services.markConfigurationsClean(completedRootPaths);
+      }
+    }),
+
+    vscode.commands.registerCommand('v8vscedit.updateChangedConfigurations', async () => {
+      if (isUpdatingConfigurations) {
+        return false;
       }
 
       isUpdatingConfigurations = true;
@@ -38,7 +111,7 @@ export function registerExtensionCommands(
         if (changed.length === 0) {
           setConfigurationOperationStatus('Обновление конфигураций', 'изменений нет', false);
           await vscode.window.showInformationMessage('Изменений в конфигурациях не обнаружено.');
-          return;
+          return true;
         }
 
         const selected = changed.length === 1
@@ -46,7 +119,7 @@ export function registerExtensionCommands(
           : await pickChangedConfigurations(changed);
         if (!selected || selected.length === 0) {
           setConfigurationOperationStatus('Обновление конфигураций', 'отменено', false);
-          return;
+          return false;
         }
 
         const ordered = orderUpdateTargets(selected);
@@ -75,7 +148,7 @@ export function registerExtensionCommands(
 
           if (!ok) {
             setConfigurationOperationStatus('Обновление конфигураций', `остановлено на "${target.name}"`, false);
-            return;
+            return false;
           }
           completedRootPaths.push(target.rootPath);
         }
@@ -84,6 +157,7 @@ export function registerExtensionCommands(
           await vscode.window.showInformationMessage(`Обновлено конфигураций: ${ordered.length}.`);
         }
         setConfigurationOperationStatus('Обновление конфигураций', 'завершено', false);
+        return true;
       } finally {
         isUpdatingConfigurations = false;
         await vscode.commands.executeCommand('setContext', 'v8vscedit.isUpdatingConfigurations', false);
@@ -217,8 +291,127 @@ export function registerExtensionCommands(
   );
 }
 
+function collectImportTargets(entries: ConfigEntry[]): ImportTarget[] {
+  return entries.map((entry) => {
+    const name = readConfigName(entry);
+    return {
+      kind: entry.kind,
+      name,
+      rootPath: entry.rootPath,
+    };
+  }).sort((left, right) => {
+    if (left.kind !== right.kind) {
+      return left.kind === 'cf' ? -1 : 1;
+    }
+    return left.name.localeCompare(right.name);
+  });
+}
+
+function readConfigName(entry: ConfigEntry): string {
+  try {
+    const info = parseConfigXml(path.join(entry.rootPath, 'Configuration.xml'));
+    if (info.name) {
+      return info.name;
+    }
+  } catch {
+    // При повреждённом XML оставляем путь как диагностически полезное имя в списке выбора.
+  }
+  return path.basename(entry.rootPath);
+}
+
 function yieldToUi(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+interface ImportTargetPickItem extends vscode.QuickPickItem {
+  target?: ImportTarget;
+  selectAll?: boolean;
+}
+
+async function pickImportTargets(
+  targets: ImportTarget[]
+): Promise<ImportTarget[] | undefined> {
+  return new Promise((resolve) => {
+    const quickPick = vscode.window.createQuickPick<ImportTargetPickItem>();
+    let resolved = false;
+    const selectAllItem: ImportTargetPickItem = {
+      label: '$(check-all) Все',
+      description: `${targets.length}`,
+      selectAll: true,
+    };
+    const targetItems = targets.map((target): ImportTargetPickItem => ({
+      label: `${target.kind === 'cf' ? '$(database)' : '$(extensions)'} ${target.name}`,
+      description: target.kind === 'cf' ? 'Основная конфигурация' : 'Расширение',
+      detail: target.rootPath,
+      target,
+    }));
+
+    let applyingSelectAll = false;
+    let selectAllActive = false;
+    quickPick.canSelectMany = true;
+    quickPick.title = 'Что импортировать';
+    quickPick.placeholder = 'Выберите конфигурации для импорта из базы';
+    quickPick.items = [selectAllItem, ...targetItems];
+    quickPick.selectedItems = targets.length === 1 ? targetItems : [];
+
+    quickPick.onDidChangeSelection((selection) => {
+      if (applyingSelectAll) {
+        return;
+      }
+      const hasSelectAll = selection.some((item) => item.selectAll);
+      const selectedTargets = selection.filter((item) => item.target);
+      if (hasSelectAll && !selectAllActive) {
+        applyingSelectAll = true;
+        quickPick.selectedItems = [selectAllItem, ...targetItems];
+        selectAllActive = true;
+        applyingSelectAll = false;
+        return;
+      }
+      if (hasSelectAll && selectAllActive && selectedTargets.length < targetItems.length) {
+        applyingSelectAll = true;
+        quickPick.selectedItems = selectedTargets;
+        selectAllActive = false;
+        applyingSelectAll = false;
+        return;
+      }
+      if (!hasSelectAll && selectedTargets.length === targetItems.length) {
+        applyingSelectAll = true;
+        quickPick.selectedItems = [selectAllItem, ...targetItems];
+        selectAllActive = true;
+        applyingSelectAll = false;
+        return;
+      }
+      selectAllActive = hasSelectAll;
+    });
+
+    quickPick.onDidAccept(() => {
+      const selected = quickPick.selectedItems;
+      const result = selected.some((item) => item.selectAll)
+        ? targets
+        : selected
+            .map((item) => item.target)
+            .filter((item): item is ImportTarget => Boolean(item));
+      resolved = true;
+      quickPick.hide();
+      resolve(result);
+    });
+    quickPick.onDidHide(() => {
+      quickPick.dispose();
+      if (!resolved) {
+        resolve(undefined);
+      }
+    });
+    quickPick.show();
+  });
+}
+
+function orderImportTargets(targets: ImportTarget[]): ImportTarget[] {
+  return [...targets].sort((left, right) => {
+    if (left.kind !== right.kind) {
+      return left.kind === 'cf' ? -1 : 1;
+    }
+    return left.name.localeCompare(right.name);
+  });
 }
 
 interface ChangedConfigurationPickItem extends vscode.QuickPickItem {

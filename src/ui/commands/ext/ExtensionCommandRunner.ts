@@ -81,7 +81,53 @@ export async function runDecompileExtension(
         logPrefix: 'export-configuration',
         afterSuccess: async () => {
           syncDirectorySnapshot(tempConfigDir, extensionRoot);
-          await refreshExtensionHashCache(extensionName, extensionRoot, workspaceFolder, outputChannel);
+          await refreshConfigurationHashCache('cfe', extensionName, extensionRoot, workspaceFolder, outputChannel);
+        },
+      },
+      workspaceFolder,
+      outputChannel
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+export async function runDecompileMainConfiguration(
+  configName: string,
+  configRoot: string,
+  workspaceFolder: vscode.WorkspaceFolder,
+  outputChannel: vscode.OutputChannel
+): Promise<boolean> {
+  const settingsPath = resolveSettingsPath(workspaceFolder.uri.fsPath, configRoot);
+  const connection = resolveConnectionFromSettings(settingsPath);
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-import-cf-'));
+  const tempConfigDir = path.join(tempRoot, 'cf');
+  fs.mkdirSync(tempConfigDir, { recursive: true });
+  const cliArgs = [
+    'export-configuration',
+    '-ProjectRoot',
+    workspaceFolder.uri.fsPath,
+    '-Target',
+    'cf',
+    '-ConfigDir',
+    tempConfigDir,
+    '-Mode',
+    'Full',
+    ...buildConnectionCliArgs(connection),
+  ];
+  try {
+    return await runInternalCliCommand(
+      {
+        cliArgs,
+        progressTitle: `Выгрузка основной конфигурации ${configName} во внутренний XML`,
+        progressStartMessage: 'Импорт основной конфигурации: выгрузка во временный каталог...',
+        successMessage: `Импорт основной конфигурации "${configName}" успешно завершён.`,
+        errorTitle: `Ошибка импорта основной конфигурации "${configName}".`,
+        failureOperation: 'импорте основной конфигурации',
+        logPrefix: 'export-configuration',
+        afterSuccess: async () => {
+          syncDirectorySnapshot(tempConfigDir, configRoot);
+          await refreshConfigurationHashCache('cf', '', configRoot, workspaceFolder, outputChannel);
         },
       },
       workspaceFolder,
@@ -609,12 +655,15 @@ function extractFailureReason(details: string[], exitCode: number): string {
   return meaningful ?? lines[lines.length - 1] ?? `команда завершилась с кодом ${exitCode}`;
 }
 
-async function refreshExtensionHashCache(
+async function refreshConfigurationHashCache(
+  target: 'cf' | 'cfe',
   extensionName: string,
-  extensionRoot: string,
+  configRoot: string,
   workspaceFolder: vscode.WorkspaceFolder,
   outputChannel: vscode.OutputChannel
 ): Promise<void> {
+  const isExtension = target === 'cfe';
+  const name = isExtension ? extensionName : 'основная конфигурация';
   const refreshed = await runInternalCliCommand(
     {
       cliArgs: [
@@ -622,16 +671,15 @@ async function refreshExtensionHashCache(
         '-ProjectRoot',
         workspaceFolder.uri.fsPath,
         '-Target',
-        'cfe',
+        target,
         '-ConfigDir',
-        extensionRoot,
-        '-Extension',
-        extensionName,
+        configRoot,
+        ...(isExtension ? ['-Extension', extensionName] : []),
       ],
-      progressTitle: `Актуализация хеш-кэша ${extensionName}`,
-      progressStartMessage: 'Обновляю локальный хеш-кэш расширения...',
-      successMessage: `Хеш-кэш расширения "${extensionName}" успешно обновлён.`,
-      errorTitle: `Ошибка актуализации хеш-кэша расширения "${extensionName}".`,
+      progressTitle: `Актуализация хеш-кэша ${name}`,
+      progressStartMessage: 'Обновляю локальный хеш-кэш...',
+      successMessage: `Хеш-кэш "${name}" успешно обновлён.`,
+      errorTitle: `Ошибка актуализации хеш-кэша "${name}".`,
       failureOperation: 'актуализации хеш-кэша',
       logPrefix: 'refresh-hash-cache',
       showSuccessMessage: false,
@@ -640,6 +688,6 @@ async function refreshExtensionHashCache(
     outputChannel
   );
   if (!refreshed) {
-    outputChannel.appendLine('[refresh-hash-cache] Не удалось обновить кэш после импорта расширения.');
+    outputChannel.appendLine(`[refresh-hash-cache] Не удалось обновить кэш после импорта: ${name}.`);
   }
 }

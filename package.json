@@ -19,7 +19,7 @@
       "activitybar": [
         {
           "id": "v8vscedit",
-          "title": "Редактор 1С",
+          "title": "Навигатор",
           "icon": "src/icons/activity-bar.svg"
         }
       ]
@@ -37,6 +37,12 @@
         "command": "v8vscedit.refresh",
         "title": "Обновить",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "v8vscedit.importConfigurations",
+        "title": "Импортировать конфигурации из базы",
+        "enablement": "!v8vscedit.isUpdatingConfigurations",
+        "icon": "$(cloud-download)"
       },
       {
         "command": "v8vscedit.updateChangedConfigurations",
@@ -153,6 +159,11 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "v8vscedit.importConfigurations",
+          "when": "view == v8vsceditTree",
+          "group": "navigation@-1"
+        },
         {
           "command": "v8vscedit.updateChangedConfigurations",
           "when": "view == v8vsceditTree",
