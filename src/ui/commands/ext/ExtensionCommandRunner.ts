@@ -80,6 +80,7 @@ export async function runDecompileExtension(
         logPrefix: 'export-configuration',
         afterSuccess: async () => {
           syncDirectorySnapshot(tempConfigDir, extensionRoot);
+          await refreshExtensionHashCache(extensionName, workspaceFolder, outputChannel);
         },
       },
       workspaceFolder,
@@ -141,8 +142,6 @@ export async function runUpdateExtension(
     workspaceFolder.uri.fsPath,
     '-Target',
     'cfe',
-    '-Source',
-    'All',
     '-Extension',
     extensionName,
     ...buildConnectionCliArgs(connection),
@@ -152,9 +151,9 @@ export async function runUpdateExtension(
       extensionName,
       cliArgs: importChangedFilesArgs,
       progressTitle: `Подготовка обновления ${extensionName}`,
-      progressStartMessage: 'Поиск и загрузка изменённых файлов XML/BSL...',
-      successMessage: `Изменённые файлы расширения "${extensionName}" загружены.`,
-      errorTitle: `Ошибка загрузки изменённых файлов расширения "${extensionName}".`,
+      progressStartMessage: 'Поиск и загрузка изменённых файлов XML/BSL по хеш-кэшу...',
+      successMessage: `Изменённые файлы расширения "${extensionName}" загружены по хеш-кэшу.`,
+      errorTitle: `Ошибка загрузки изменённых файлов расширения "${extensionName}" по хеш-кэшу.`,
       failureOperation: 'быстрой загрузке изменённых файлов',
       logPrefix: 'import-git-changes',
       showSuccessModal: false,
@@ -164,7 +163,7 @@ export async function runUpdateExtension(
   );
   if (!imported) {
     outputChannel.appendLine(
-      `[update-configuration] Частичная загрузка по git недоступна, выполняю fallback на полную синхронизацию исходников.`
+      `[update-configuration] Частичная загрузка по хеш-кэшу недоступна, выполняю fallback на полную синхронизацию исходников.`
     );
     const fallbackArgs = [
       'sync-configuration-full',
@@ -182,9 +181,9 @@ export async function runUpdateExtension(
         cliArgs: fallbackArgs,
         progressTitle: `Обновление расширения ${extensionName} (fallback без git)`,
         progressStartMessage: 'Выполняется полная синхронизация исходников и применение в базе...',
-        successMessage: `Обновление расширения "${extensionName}" завершено через fallback без git.`,
+        successMessage: `Обновление расширения "${extensionName}" завершено через fallback без хеш-кэша.`,
         errorTitle: `Ошибка fallback-обновления расширения "${extensionName}".`,
-        failureOperation: 'fallback-обновлении без git',
+        failureOperation: 'fallback-обновлении без хеш-кэша',
         logPrefix: 'sync-configuration-full',
         showSuccessModal,
       },
@@ -501,4 +500,37 @@ function extractFailureReason(details: string[], exitCode: number): string {
     !/^(\[INFO\]|\[WARN\]|Getting |Git changes detected|Files for loading|Executing )/i.test(line)
   );
   return meaningful ?? lines[lines.length - 1] ?? `команда завершилась с кодом ${exitCode}`;
+}
+
+async function refreshExtensionHashCache(
+  extensionName: string,
+  workspaceFolder: vscode.WorkspaceFolder,
+  outputChannel: vscode.OutputChannel
+): Promise<void> {
+  const refreshed = await runInternalCliCommand(
+    {
+      extensionName,
+      cliArgs: [
+        'refresh-hash-cache',
+        '-ProjectRoot',
+        workspaceFolder.uri.fsPath,
+        '-Target',
+        'cfe',
+        '-Extension',
+        extensionName,
+      ],
+      progressTitle: `Актуализация хеш-кэша ${extensionName}`,
+      progressStartMessage: 'Обновляю локальный хеш-кэш расширения...',
+      successMessage: `Хеш-кэш расширения "${extensionName}" успешно обновлён.`,
+      errorTitle: `Ошибка актуализации хеш-кэша расширения "${extensionName}".`,
+      failureOperation: 'актуализации хеш-кэша',
+      logPrefix: 'refresh-hash-cache',
+      showSuccessModal: false,
+    },
+    workspaceFolder,
+    outputChannel
+  );
+  if (!refreshed) {
+    outputChannel.appendLine('[refresh-hash-cache] Не удалось обновить кэш после импорта расширения.');
+  }
 }

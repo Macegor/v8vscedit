@@ -232,7 +232,7 @@ export function registerCommands(
         });
         actions.push({
           actionId: 'updateext',
-          label: '$(sync) Обновить (быстро: нужен Git)',
+          label: '$(sync) Обновить',
         });
         actions.push({
           actionId: 'compileAndUpdateExt',

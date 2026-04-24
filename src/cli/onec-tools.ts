@@ -27,7 +27,7 @@ async function main(): Promise<void> {
 
 function printUsage(): void {
   console.log('Usage: node dist/cli/onec-tools.js <command>');
-  console.log('Commands: export-configuration, import-configuration, sync-configuration-partial, sync-configuration-full, update-configuration, import-git-changes');
+  console.log('Commands: export-configuration, import-configuration, sync-configuration-partial, sync-configuration-full, update-configuration, import-git-changes, refresh-hash-cache');
   console.log('Aliases: db-dump-xml, db-load-xml, db-load-git, db-update, update-partial, update-full');
 }
 

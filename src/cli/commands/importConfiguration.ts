@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getBool, getString } from '../core/args';
 import { resolveConnection } from '../core/connection';
+import { buildHashSnapshot, buildScopeKey, collectCurrentHashes, loadHashCache, patchHashSnapshot, saveHashCache } from '../core/hashCache';
 import { createTempDir, printLogFile, runDesignerAndPrintResult, safeRemoveDir, writeUtf8BomLines } from '../core/onecCommon';
 import { resolveConfigDir } from '../core/projectLayout';
 import { CliArgs } from '../core/types';
@@ -39,16 +40,19 @@ export async function importConfiguration(args: CliArgs): Promise<number> {
   try {
     console.log('Загрузка исходников');
     const designerArgs: string[] = ['/LoadConfigFromFiles', configDir];
+    let partialFiles: string[] = [];
     if (mode !== 'Full') {
       let listFile = listFileFromArgs;
       if (listFile) {
         if (!fs.existsSync(listFile)) {
           throw new Error(`Error: list file not found: ${listFile}`);
         }
+        partialFiles = readListFile(listFile);
       } else {
         const fileList = files.split(',').map((item) => item.trim()).filter(Boolean);
         listFile = path.join(tempDir, 'load_list.txt');
         writeUtf8BomLines(listFile, fileList);
+        partialFiles = fileList;
         if (verbose) {
           console.log(`Files to load: ${fileList.length}`);
         }
@@ -75,6 +79,9 @@ export async function importConfiguration(args: CliArgs): Promise<number> {
     if (verbose) {
       printLogFile(outFile);
     }
+    if (exitCode === 0) {
+      refreshHashCacheAfterImport(projectRoot, configDir, target, extension, mode, partialFiles);
+    }
     return exitCode;
   } finally {
     safeRemoveDir(tempDir);
@@ -83,4 +90,37 @@ export async function importConfiguration(args: CliArgs): Promise<number> {
 
 function isConfigurationOnSupport(configDir: string): boolean {
   return fs.existsSync(path.join(configDir, 'Ext', 'ParentConfigurations.bin'));
+}
+
+function refreshHashCacheAfterImport(
+  projectRoot: string,
+  configDir: string,
+  target: string,
+  extension: string,
+  mode: string,
+  partialFiles: string[]
+): void {
+  const normalizedTarget = target === 'cfe' ? 'cfe' : 'cf';
+  const scopeKey = buildScopeKey(normalizedTarget, configDir, extension);
+  if (mode === 'Full') {
+    const snapshot = buildHashSnapshot(scopeKey, configDir);
+    saveHashCache(projectRoot, snapshot);
+    return;
+  }
+  const previous = loadHashCache(projectRoot, scopeKey);
+  const changedHashes = collectCurrentHashes(configDir, partialFiles);
+  const deletedFiles = partialFiles.filter((file) => !changedHashes[file]);
+  const patched = patchHashSnapshot(previous, changedHashes, deletedFiles);
+  saveHashCache(projectRoot, patched);
+}
+
+function readListFile(listFilePath: string): string[] {
+  let text = fs.readFileSync(listFilePath, 'utf-8');
+  if (text.charCodeAt(0) === 0xfeff) {
+    text = text.slice(1);
+  }
+  return text
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
