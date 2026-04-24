@@ -7,6 +7,11 @@
  */
 export type {
   PropertyValueKind,
+  MetadataTypeValue,
+  MetadataTypeItem,
+  MetadataStringQualifiers,
+  MetadataNumberQualifiers,
+  MetadataDateQualifiers,
   EnumPropertyOption,
   EnumPropertyValue,
   LocalizedStringValue,

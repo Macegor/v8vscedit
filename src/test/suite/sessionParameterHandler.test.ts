@@ -28,10 +28,15 @@ suite('sessionParameterHandler', () => {
     assert.deepStrictEqual(keys, ['Name', 'Synonym', 'Comment', 'Type']);
 
     const typeProp = props.find((p) => p.key === 'Type');
-    assert.ok(typeProp && typeof typeProp.value === 'string');
+    assert.ok(typeProp && typeProp.kind === 'metadataType');
+    const typeValue = typeProp!.value as {
+      presentation: string;
+      items: Array<{ canonical: string }>;
+    };
     assert.ok(
-      String(typeProp!.value).includes('CatalogRef.Пользователи'),
+      typeValue.items.some((item) => item.canonical === 'CatalogRef.Пользователи'),
       'Ожидался составной тип с ссылкой на справочник Пользователи'
     );
+    assert.ok(typeValue.presentation.includes('СправочникСсылка.Пользователи'));
   });
 });

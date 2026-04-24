@@ -85,7 +85,7 @@
       },
       {
         "command": "v8vscedit.updateExtensionInDb",
-        "title": "Обновить расширение в БД"
+        "title": "Обновить расширение в БД (быстро: нужен Git)"
       },
       {
         "command": "v8vscedit.compileAndUpdateExtensionInDb",

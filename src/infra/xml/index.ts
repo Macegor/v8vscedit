@@ -35,6 +35,19 @@ export function parseObjectXml(xmlPath: string): MetaObject | null {
   return objectReader.read(xmlPath);
 }
 
+/** Обновляет XML-блок `<Type>` для выбранного элемента метаданных */
+export function updateObjectTypeProperty(
+  xmlPath: string,
+  options: {
+    targetKind: 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column' | 'SessionParameter' | 'CommonAttribute';
+    targetName: string;
+    tabularSectionName?: string;
+    typeInnerXml: string;
+  }
+): boolean {
+  return objectReader.updateTypeInObject(xmlPath, options);
+}
+
 /**
  * Находит XML-файл объекта в структуре выгрузки конфигурации.
  * Делегирует в {@link MetaPathResolver}.

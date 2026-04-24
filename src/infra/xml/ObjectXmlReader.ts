@@ -1,6 +1,8 @@
 import * as fs from 'fs';
 import { MetaObject, MetaChild } from '../../domain/MetaObject';
 import {
+  extractChildMetaElementXml,
+  extractColumnXmlFromTabularSection,
   extractMainChildObjectsInnerXml,
   extractNestingAwareBlock,
   extractSimpleTag,
@@ -103,4 +105,85 @@ export class ObjectXmlReader {
       }
     }
   }
+
+  /**
+   * Обновляет блок `<Type>` у выбранного элемента метаданных.
+   * Возвращает `true`, если файл был изменён и сохранён.
+   */
+  updateTypeInObject(
+    xmlPath: string,
+    options: {
+      targetKind: 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column' | 'SessionParameter' | 'CommonAttribute';
+      targetName: string;
+      tabularSectionName?: string;
+      typeInnerXml: string;
+    }
+  ): boolean {
+    let xml: string;
+    try {
+      xml = fs.readFileSync(xmlPath, 'utf-8');
+    } catch {
+      return false;
+    }
+
+    const normalizedType = indentTypeInner(options.typeInnerXml);
+    let targetXml: string | null = null;
+    if (options.targetKind === 'Column') {
+      if (!options.tabularSectionName) {
+        return false;
+      }
+      targetXml = extractColumnXmlFromTabularSection(xml, options.tabularSectionName, options.targetName);
+    } else if (options.targetKind === 'SessionParameter' || options.targetKind === 'CommonAttribute') {
+      targetXml = xml;
+    } else {
+      targetXml = extractChildMetaElementXml(xml, options.targetKind, options.targetName);
+    }
+
+    if (!targetXml) {
+      return false;
+    }
+
+    const updatedTarget = updateTypeInElement(targetXml, normalizedType);
+    if (updatedTarget === targetXml) {
+      return false;
+    }
+
+    const updatedXml = xml.replace(targetXml, updatedTarget);
+    if (updatedXml === xml) {
+      return false;
+    }
+
+    fs.writeFileSync(xmlPath, updatedXml, 'utf-8');
+    return true;
+  }
+}
+
+function updateTypeInElement(elementXml: string, typeInnerXml: string): string {
+  const typeBlock = `<Type>\n${typeInnerXml}\n</Type>`;
+  if (/<Type>[\s\S]*?<\/Type>/.test(elementXml)) {
+    return elementXml.replace(/<Type>[\s\S]*?<\/Type>/, typeBlock);
+  }
+  const propertiesMatch = /<Properties>([\s\S]*?)<\/Properties>/.exec(elementXml);
+  if (!propertiesMatch) {
+    return elementXml;
+  }
+  const propsInner = propertiesMatch[1];
+  let nextPropsInner = propsInner;
+  if (/<Comment[\s\S]*?<\/Comment>/.test(propsInner)) {
+    nextPropsInner = propsInner.replace(/(<Comment[\s\S]*?<\/Comment>)/, `$1\n${typeBlock}`);
+  } else if (/<Name[\s\S]*?<\/Name>/.test(propsInner)) {
+    nextPropsInner = propsInner.replace(/(<Name[\s\S]*?<\/Name>)/, `$1\n${typeBlock}`);
+  } else {
+    nextPropsInner = `${propsInner}\n${typeBlock}`;
+  }
+  return elementXml.replace(propsInner, nextPropsInner);
+}
+
+function indentTypeInner(typeInnerXml: string): string {
+  return typeInnerXml
+    .split('\n')
+    .map((line) => line.replace(/\r/g, '').trimEnd())
+    .filter((line) => line.length > 0)
+    .map((line) => `\t\t\t${line}`)
+    .join('\n');
 }

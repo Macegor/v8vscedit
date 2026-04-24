@@ -11,10 +11,10 @@ import {
 } from './_types';
 import {
   extractTopLevelPropertiesChildren,
-  formatMetadataTypeDescription,
   formatUnknownPropertyInner,
   parseLocalizedStringSection,
 } from '../../views/properties/MetadataXmlPropertiesService';
+import { parseMetadataType } from '../../views/properties/MetadataTypeService';
 
 // ---------------------------------------------------------------------------
 // Свойства объекта «Параметр сеанса» (SessionParameter) в XML-выгрузке 1С:
@@ -122,8 +122,8 @@ export const sessionParameterHandler: ObjectHandler = {
         props.push({
           key: 'Type',
           title: 'Тип',
-          kind: 'string',
-          value: formatMetadataTypeDescription(inner),
+          kind: 'metadataType',
+          value: parseMetadataType(inner),
         });
         continue;
       }

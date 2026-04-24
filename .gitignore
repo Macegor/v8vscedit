@@ -14,3 +14,5 @@ example/
 # Логи и временные файлы
 *.log
 npm-debug.log*
+
+.vscode-test/

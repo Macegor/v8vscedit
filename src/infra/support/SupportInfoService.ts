@@ -140,6 +140,22 @@ export class SupportInfoService {
     return this.getSupportMode(filePath) === SupportMode.Locked;
   }
 
+  /**
+   * Возвращает режим поддержки конкретного UUID в рамках конфигурации,
+   * к которой принадлежит filePath.
+   */
+  getSupportModeByUuid(filePath: string, uuid: string): SupportMode {
+    const normFilePath = normPath(filePath);
+    const normalizedUuid = uuid.toLowerCase();
+    for (const data of this.cache.values()) {
+      if (!normFilePath.startsWith(data.normalizedRoot + '/')) {
+        continue;
+      }
+      return data.uuidToMode.get(normalizedUuid) ?? SupportMode.None;
+    }
+    return SupportMode.None;
+  }
+
   // ── private ─────────────────────────────────────────────────────────────
 
   private clearPathUuidCacheForRoot(normalizedRoot: string): void {

@@ -14,8 +14,48 @@ export interface HandlerContext {
   names: string[];
 }
 
+/** Квалификаторы строкового типа */
+export interface MetadataStringQualifiers {
+  length?: number;
+  allowedLength?: 'Variable' | 'Fixed';
+}
+
+/** Квалификаторы числового типа */
+export interface MetadataNumberQualifiers {
+  digits?: number;
+  fractionDigits?: number;
+  allowedSign?: 'Any' | 'Nonnegative';
+}
+
+/** Квалификаторы типа даты */
+export interface MetadataDateQualifiers {
+  dateFractions?: 'Date' | 'DateTime' | 'Time';
+}
+
+/** Один элемент типа (примитив или ссылочный тип конфигурации) */
+export interface MetadataTypeItem {
+  /** Каноническая запись типа для XML (`String`, `CatalogRef.Номенклатура`) */
+  canonical: string;
+  /** Человекочитаемое представление (`Строка`, `СправочникСсылка.Номенклатура`) */
+  display: string;
+  /** Группа для дерева выбора типов */
+  group: 'primitive' | 'reference' | 'defined';
+}
+
+/** Структурированное значение свойства `Type` */
+export interface MetadataTypeValue {
+  items: MetadataTypeItem[];
+  stringQualifiers?: MetadataStringQualifiers;
+  numberQualifiers?: MetadataNumberQualifiers;
+  dateQualifiers?: MetadataDateQualifiers;
+  /** Человекочитаемое представление состава типов через запятую */
+  presentation: string;
+  /** Исходный XML блока `<Type>...</Type>` без внешнего тега */
+  rawInnerXml: string;
+}
+
 /** Допустимые виды значений свойства объекта метаданных */
-export type PropertyValueKind = 'string' | 'boolean' | 'enum' | 'localizedString';
+export type PropertyValueKind = 'string' | 'boolean' | 'enum' | 'localizedString' | 'metadataType';
 
 /** Значение перечислимого свойства */
 export interface EnumPropertyOption {
@@ -40,7 +80,7 @@ export interface LocalizedStringValue {
 }
 
 /** Значение свойства объекта метаданных */
-export type PropertyValue = string | boolean | EnumPropertyValue | LocalizedStringValue;
+export type PropertyValue = string | boolean | EnumPropertyValue | LocalizedStringValue | MetadataTypeValue;
 
 /** Описание одного свойства объекта метаданных */
 export interface ObjectPropertyItem {

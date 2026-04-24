@@ -102,6 +102,7 @@ async function ensureGitAvailable(): Promise<void> {
 
 async function collectGitChanges(configDir: string, source: SourceMode, commitRange: string): Promise<string[]> {
   const out: string[] = [];
+  const gitRoot = await detectGitRoot(configDir);
   if (source === 'Staged') {
     console.log('Getting staged changes...');
     out.push(...await runGit(configDir, ['diff', '--cached', '--name-only']));
@@ -118,7 +119,10 @@ async function collectGitChanges(configDir: string, source: SourceMode, commitRa
     out.push(...await runGit(configDir, ['diff', '--name-only']));
     out.push(...await runGit(configDir, ['ls-files', '--others', '--exclude-standard']));
   }
-  return Array.from(new Set(out.map((item) => item.trim()).filter(Boolean)));
+  const normalized = out
+    .map((item) => normalizeGitPathForConfig(configDir, gitRoot, item))
+    .filter((item): item is string => Boolean(item));
+  return Array.from(new Set(normalized));
 }
 
 async function runGit(configDir: string, args: string[]): Promise<string[]> {
@@ -137,6 +141,45 @@ async function runGit(configDir: string, args: string[]): Promise<string[]> {
     },
   });
   return result.exitCode === 0 ? lines : [];
+}
+
+async function detectGitRoot(configDir: string): Promise<string | null> {
+  const lines = await runGit(configDir, ['rev-parse', '--show-toplevel']);
+  if (lines.length === 0) {
+    return null;
+  }
+  return path.resolve(lines[0]);
+}
+
+function normalizeGitPathForConfig(configDir: string, gitRoot: string | null, gitPath: string): string | null {
+  const trimmed = gitPath.trim().replace(/\\/g, '/');
+  if (!trimmed) {
+    return null;
+  }
+  const configAbs = path.resolve(configDir);
+
+  // Если git уже вернул путь относительно configDir.
+  const directCandidate = path.resolve(configAbs, trimmed);
+  if (isWithin(directCandidate, configAbs)) {
+    return path.relative(configAbs, directCandidate).replace(/\\/g, '/');
+  }
+
+  // Чаще git возвращает путь от корня репозитория — нормализуем в относительный к configDir.
+  if (gitRoot) {
+    const fromRoot = path.resolve(gitRoot, trimmed);
+    if (isWithin(fromRoot, configAbs)) {
+      return path.relative(configAbs, fromRoot).replace(/\\/g, '/');
+    }
+  }
+  return null;
+}
+
+function isWithin(candidate: string, baseDir: string): boolean {
+  const rel = path.relative(baseDir, candidate);
+  if (!rel) {
+    return true;
+  }
+  return !rel.startsWith('..') && !path.isAbsolute(rel);
 }
 
 function collectConfigFiles(configDir: string, changedFiles: string[]): string[] {

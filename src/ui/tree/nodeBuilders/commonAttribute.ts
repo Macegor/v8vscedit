@@ -13,10 +13,10 @@ import {
 } from './_types';
 import {
   extractTopLevelPropertiesChildren,
-  formatMetadataTypeDescription,
   formatUnknownPropertyInner,
   parseLocalizedStringSection,
 } from '../../views/properties/MetadataXmlPropertiesService';
+import { parseMetadataType } from '../../views/properties/MetadataTypeService';
 
 // ---------------------------------------------------------------------------
 // Общий реквизит (CommonAttribute) в выгрузке 1С:
@@ -232,8 +232,8 @@ export const commonAttributeHandler: ObjectHandler = {
         props.push({
           key: 'Type',
           title,
-          kind: 'string',
-          value: formatMetadataTypeDescription(inner),
+          kind: 'metadataType',
+          value: parseMetadataType(inner),
         });
         continue;
       }

@@ -57,7 +57,7 @@ export class Container {
     );
 
     this.treeProvider = new MetadataTreeProvider([], context.extensionUri, this.supportService);
-    this.propertiesProvider = new PropertiesViewProvider();
+    this.propertiesProvider = new PropertiesViewProvider(this.supportService);
     context.subscriptions.push(this.propertiesProvider);
 
     this.lspManager = new LspManager(context, this.outputChannel, ONEC_SCHEME);

@@ -7,6 +7,7 @@ import {
   ObjectPropertiesCollection,
 } from './_types';
 import { extractSimpleTag } from '../../../infra/xml';
+import { parseMetadataType } from './MetadataTypeService';
 
 /** Теги со строкой локализации (v8:item) */
 const LOCALIZED_PROPERTY_TAGS = new Set([
@@ -329,8 +330,7 @@ function summarizeTypeBlock(propertiesSource: string): string {
   if (!m) {
     return '';
   }
-  const compact = m[1].replace(/\s+/g, ' ').trim();
-  return compact.length > 900 ? `${compact.slice(0, 900)}…` : compact;
+  return m[1].trim();
 }
 
 function propertyTitle(key: string): string {
@@ -360,15 +360,15 @@ export function buildPropertyItemsForKeys(
 
   for (const key of orderedKeys) {
     if (key === 'Type') {
-      const typeStr = summarizeTypeBlock(typeSource.includes('<Properties>') ? typeSource : propsInner);
-      if (!typeStr) {
+      const typeInner = summarizeTypeBlock(typeSource.includes('<Properties>') ? typeSource : propsInner);
+      if (!typeInner) {
         continue;
       }
       items.push({
         key: 'Type',
         title: propertyTitle('Type'),
-        kind: 'string',
-        value: typeStr,
+        kind: 'metadataType',
+        value: parseMetadataType(typeInner),
       });
       continue;
     }

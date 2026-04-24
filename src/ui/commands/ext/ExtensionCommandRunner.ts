@@ -14,6 +14,8 @@ interface RunCliOptions {
   progressStartMessage: string;
   successMessage: string;
   errorTitle: string;
+  /** Человекочитаемое описание операции для текста причины ошибки */
+  failureOperation?: string;
   logPrefix: string;
   showSuccessModal?: boolean;
   afterSuccess?: () => Promise<void>;
@@ -74,6 +76,7 @@ export async function runDecompileExtension(
         progressStartMessage: 'Импорт расширения: выгрузка во временный каталог...',
         successMessage: `Импорт расширения "${extensionName}" успешно завершен.`,
         errorTitle: `Ошибка импорта расширения "${extensionName}".`,
+        failureOperation: 'импорте расширения',
         logPrefix: 'export-configuration',
         afterSuccess: async () => {
           syncDirectorySnapshot(tempConfigDir, extensionRoot);
@@ -114,6 +117,7 @@ export async function runCompileExtension(
       progressStartMessage: 'Загрузка исходников, применение изменений...',
       successMessage: `Полное обновление расширения "${extensionName}" успешно завершено.`,
       errorTitle: `Ошибка загрузки или применения расширения "${extensionName}" в БД.`,
+      failureOperation: 'полном обновлении расширения',
       logPrefix: 'sync-configuration-full',
       showSuccessModal,
     },
@@ -131,7 +135,65 @@ export async function runUpdateExtension(
 ): Promise<boolean> {
   const settingsPath = resolveSettingsPath(workspaceFolder.uri.fsPath, extensionRoot);
   const connection = resolveConnectionFromSettings(settingsPath);
-  const cliArgs = [
+  const importChangedFilesArgs = [
+    'import-git-changes',
+    '-ProjectRoot',
+    workspaceFolder.uri.fsPath,
+    '-Target',
+    'cfe',
+    '-Source',
+    'All',
+    '-Extension',
+    extensionName,
+    ...buildConnectionCliArgs(connection),
+  ];
+  const imported = await runInternalCliCommand(
+    {
+      extensionName,
+      cliArgs: importChangedFilesArgs,
+      progressTitle: `Подготовка обновления ${extensionName}`,
+      progressStartMessage: 'Поиск и загрузка изменённых файлов XML/BSL...',
+      successMessage: `Изменённые файлы расширения "${extensionName}" загружены.`,
+      errorTitle: `Ошибка загрузки изменённых файлов расширения "${extensionName}".`,
+      failureOperation: 'быстрой загрузке изменённых файлов',
+      logPrefix: 'import-git-changes',
+      showSuccessModal: false,
+    },
+    workspaceFolder,
+    outputChannel
+  );
+  if (!imported) {
+    outputChannel.appendLine(
+      `[update-configuration] Частичная загрузка по git недоступна, выполняю fallback на полную синхронизацию исходников.`
+    );
+    const fallbackArgs = [
+      'sync-configuration-full',
+      '-ProjectRoot',
+      workspaceFolder.uri.fsPath,
+      '-Target',
+      'cfe',
+      '-Extension',
+      extensionName,
+      ...buildConnectionCliArgs(connection),
+    ];
+    return runInternalCliCommand(
+      {
+        extensionName,
+        cliArgs: fallbackArgs,
+        progressTitle: `Обновление расширения ${extensionName} (fallback без git)`,
+        progressStartMessage: 'Выполняется полная синхронизация исходников и применение в базе...',
+        successMessage: `Обновление расширения "${extensionName}" завершено через fallback без git.`,
+        errorTitle: `Ошибка fallback-обновления расширения "${extensionName}".`,
+        failureOperation: 'fallback-обновлении без git',
+        logPrefix: 'sync-configuration-full',
+        showSuccessModal,
+      },
+      workspaceFolder,
+      outputChannel
+    );
+  }
+
+  const updateArgs = [
     'update-configuration',
     '-Extension',
     extensionName,
@@ -140,11 +202,12 @@ export async function runUpdateExtension(
   return runInternalCliCommand(
     {
       extensionName,
-      cliArgs,
+      cliArgs: updateArgs,
       progressTitle: `Обновление расширения ${extensionName} в БД`,
-      progressStartMessage: 'Запуск внутреннего update-configuration...',
+      progressStartMessage: 'Применение загруженных изменений в базе...',
       successMessage: `Обновление расширения "${extensionName}" в БД успешно завершено.`,
       errorTitle: `Ошибка обновления расширения "${extensionName}" в БД.`,
+      failureOperation: 'обновлении расширения',
       logPrefix: 'update-configuration',
       showSuccessModal,
     },
@@ -201,10 +264,10 @@ async function runInternalCliCommand(
 
         if (result.exitCode !== 0) {
           const details = [lastStderr || result.lastStderr, lastStdout || result.lastStdout]
-            .filter(Boolean)
-            .join('\n');
-          const suffix = details ? `\n\n${details}` : '';
-          throw new Error(`Команда завершилась с кодом ${result.exitCode}.${suffix}`);
+            .filter(Boolean);
+          const reason = extractFailureReason(details, result.exitCode);
+          const operation = options.failureOperation ?? options.progressTitle.toLowerCase();
+          throw new Error(`Ошибка при ${operation} по причине: ${reason}`);
         }
       }
     );
@@ -419,4 +482,23 @@ function trimStatusMessage(text: string): string {
     return oneLine;
   }
   return `${oneLine.slice(0, 77)}...`;
+}
+
+function extractFailureReason(details: string[], exitCode: number): string {
+  const merged = details
+    .map((item) => item.replace(/\r/g, '').trim())
+    .filter(Boolean);
+  if (merged.length === 0) {
+    return `команда завершилась с кодом ${exitCode}`;
+  }
+
+  const lines = merged
+    .flatMap((block) => block.split('\n'))
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const meaningful = lines.find((line) =>
+    !/^(\[INFO\]|\[WARN\]|Getting |Git changes detected|Files for loading|Executing )/i.test(line)
+  );
+  return meaningful ?? lines[lines.length - 1] ?? `команда завершилась с кодом ${exitCode}`;
 }
