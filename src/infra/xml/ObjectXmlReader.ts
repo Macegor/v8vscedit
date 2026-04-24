@@ -156,6 +156,59 @@ export class ObjectXmlReader {
     fs.writeFileSync(xmlPath, updatedXml, 'utf-8');
     return true;
   }
+
+  /**
+   * Обновляет значение свойства в блоке `<Properties>` выбранного элемента метаданных.
+   * Возвращает `true`, если файл был изменён и сохранён.
+   */
+  updatePropertyInObject(
+    xmlPath: string,
+    options: {
+      targetKind: 'Self' | 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column' | 'TabularSection' | 'EnumValue';
+      targetName: string;
+      tabularSectionName?: string;
+      propertyKey: string;
+      valueKind: 'string' | 'boolean' | 'localizedString';
+      value: string | boolean;
+    }
+  ): boolean {
+    let xml: string;
+    try {
+      xml = fs.readFileSync(xmlPath, 'utf-8');
+    } catch {
+      return false;
+    }
+
+    let targetXml: string | null;
+    if (options.targetKind === 'Self') {
+      targetXml = xml;
+    } else if (options.targetKind === 'Column') {
+      if (!options.tabularSectionName) {
+        return false;
+      }
+      targetXml = extractColumnXmlFromTabularSection(xml, options.tabularSectionName, options.targetName);
+    } else {
+      targetXml = extractChildMetaElementXml(xml, options.targetKind, options.targetName);
+    }
+
+    if (!targetXml) {
+      return false;
+    }
+
+    const updatedTarget = updatePropertyInElement(targetXml, options.propertyKey, options.valueKind, options.value);
+    if (updatedTarget === targetXml) {
+      return false;
+    }
+
+    const updatedXml = options.targetKind === 'Self'
+      ? updatedTarget
+      : xml.replace(targetXml, updatedTarget);
+    if (updatedXml === xml) {
+      return false;
+    }
+    fs.writeFileSync(xmlPath, updatedXml, 'utf-8');
+    return true;
+  }
 }
 
 function updateTypeInElement(elementXml: string, typeInnerXml: string): string {
@@ -186,4 +239,64 @@ function indentTypeInner(typeInnerXml: string): string {
     .filter((line) => line.length > 0)
     .map((line) => `\t\t\t${line}`)
     .join('\n');
+}
+
+function updatePropertyInElement(
+  elementXml: string,
+  propertyKey: string,
+  valueKind: 'string' | 'boolean' | 'localizedString',
+  value: string | boolean
+): string {
+  const propertiesMatch = /<Properties>([\s\S]*?)<\/Properties>/.exec(elementXml);
+  if (!propertiesMatch) {
+    return elementXml;
+  }
+  const propsInner = propertiesMatch[1];
+  const nextValueBlock = buildPropertyValueBlock(propertyKey, valueKind, value);
+  const propertyRe = new RegExp(`<${propertyKey}>[\\s\\S]*?<\\/${propertyKey}>`);
+
+  let nextPropsInner = propsInner;
+  if (propertyRe.test(propsInner)) {
+    nextPropsInner = propsInner.replace(propertyRe, nextValueBlock);
+  } else if (/<Comment[\s\S]*?<\/Comment>/.test(propsInner)) {
+    nextPropsInner = propsInner.replace(/(<Comment[\s\S]*?<\/Comment>)/, `$1\n${nextValueBlock}`);
+  } else if (/<Name[\s\S]*?<\/Name>/.test(propsInner)) {
+    nextPropsInner = propsInner.replace(/(<Name[\s\S]*?<\/Name>)/, `$1\n${nextValueBlock}`);
+  } else {
+    nextPropsInner = `${propsInner}\n${nextValueBlock}`;
+  }
+
+  if (nextPropsInner === propsInner) {
+    return elementXml;
+  }
+  return elementXml.replace(propsInner, nextPropsInner);
+}
+
+function buildPropertyValueBlock(
+  propertyKey: string,
+  valueKind: 'string' | 'boolean' | 'localizedString',
+  value: string | boolean
+): string {
+  if (valueKind === 'boolean') {
+    return `<${propertyKey}>${value === true ? 'true' : 'false'}</${propertyKey}>`;
+  }
+  if (valueKind === 'localizedString') {
+    const content = escapeXmlText(String(value ?? ''));
+    return [
+      `<${propertyKey}>`,
+      '\t\t\t\t\t<v8:item>',
+      '\t\t\t\t\t\t<v8:lang>ru</v8:lang>',
+      `\t\t\t\t\t\t<v8:content>${content}</v8:content>`,
+      '\t\t\t\t\t</v8:item>',
+      `</${propertyKey}>`,
+    ].join('\n');
+  }
+  return `<${propertyKey}>${escapeXmlText(String(value ?? ''))}</${propertyKey}>`;
+}
+
+function escapeXmlText(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }

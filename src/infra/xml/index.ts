@@ -14,6 +14,7 @@ import { MetaKind } from '../../domain/MetaTypes';
 export * from './XmlUtils';
 export * from './ConfigXmlReader';
 export * from './ObjectXmlReader';
+export * from './ConfigurationXmlEditor';
 export * from './PropertySchema';
 export type { ConfigInfo } from '../../domain/Configuration';
 export type { MetaObject, MetaChild } from '../../domain/MetaObject';
@@ -46,6 +47,21 @@ export function updateObjectTypeProperty(
   }
 ): boolean {
   return objectReader.updateTypeInObject(xmlPath, options);
+}
+
+/** Обновляет скалярное/локализованное свойство в блоке `<Properties>` */
+export function updateObjectProperty(
+  xmlPath: string,
+  options: {
+    targetKind: 'Self' | 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column' | 'TabularSection' | 'EnumValue';
+    targetName: string;
+    tabularSectionName?: string;
+    propertyKey: string;
+    valueKind: 'string' | 'boolean' | 'localizedString';
+    value: string | boolean;
+  }
+): boolean {
+  return objectReader.updatePropertyInObject(xmlPath, options);
 }
 
 /**

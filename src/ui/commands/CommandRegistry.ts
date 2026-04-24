@@ -5,6 +5,7 @@ import { PropertiesViewProvider } from '../views/PropertiesViewProvider';
 import { OnecFileSystemProvider } from '../vfs/OnecFileSystemProvider';
 import { buildVirtualUri, buildFormModuleVirtualUri } from '../vfs/OnecUriBuilder';
 import { SupportInfoService } from '../../infra/support/SupportInfoService';
+import { runDbClientFromWorkspace } from './db/DbRunCommandRunner';
 import {
   extractExtensionTarget,
   runCompileExtension,
@@ -198,6 +199,20 @@ export function registerCommands(
   context.subscriptions.push(
     vscode.commands.registerCommand('v8vscedit.refresh', () => {
       reloadEntries();
+    })
+  );
+
+  // Запуск тонкого клиента 1С из настроек env.json
+  context.subscriptions.push(
+    vscode.commands.registerCommand('v8vscedit.runThinClient', async () => {
+      await runDbClientFromWorkspace(workspaceFolder, outputChannel, { mode: 'ENTERPRISE' });
+    })
+  );
+
+  // Запуск конфигуратора 1С из настроек env.json
+  context.subscriptions.push(
+    vscode.commands.registerCommand('v8vscedit.runConfigurator', async () => {
+      await runDbClientFromWorkspace(workspaceFolder, outputChannel, { mode: 'DESIGNER' });
     })
   );
 

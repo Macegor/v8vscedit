@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as path from 'path';
 import { getNodeKindLabel, MetadataNode } from '../tree/TreeNode';
 import {
   EnumPropertyValue,
@@ -11,9 +12,10 @@ import {
 import { getHandlerForNode } from '../tree/nodeBuilders/index';
 import { TypeRegistryService } from './properties/TypeRegistryService';
 import { buildMetadataTypeInnerXml, ensureDefaultQualifiers } from './properties/MetadataTypeService';
-import { updateObjectTypeProperty } from '../../infra/xml';
+import { ConfigurationXmlEditor } from '../../infra/xml';
 import { extractChildMetaElementXml, extractColumnXmlFromTabularSection } from '../../infra/xml';
 import { SupportInfoService, SupportMode } from '../../infra/support/SupportInfoService';
+import { getObjectLocationFromXml } from '../../infra/fs';
 
 /** Управляет вкладкой свойств объекта метаданных (singleton WebviewPanel) */
 export class PropertiesViewProvider implements vscode.Disposable {
@@ -22,6 +24,7 @@ export class PropertiesViewProvider implements vscode.Disposable {
   private activeProperties: ObjectPropertiesCollection = [];
   private editSession = new Map<string, unknown>();
   private readonly typeRegistry = new TypeRegistryService();
+  private readonly xmlEditor = new ConfigurationXmlEditor();
   constructor(private readonly supportService?: SupportInfoService) {}
 
   /**
@@ -269,9 +272,12 @@ export class PropertiesViewProvider implements vscode.Disposable {
 
   /** Формирует HTML значения свойства */
   private renderPropertyValue(property: ObjectPropertyItem, isEditLockedBySupport: boolean): string {
+    const editedValue = this.editSession.get(property.key);
+    const isEditable = !isEditLockedBySupport && property.key !== '_note';
+    const disabledAttr = isEditable ? '' : 'disabled';
     switch (property.kind) {
       case 'boolean':
-        return `<div class="checkbox-row"><input class="checkbox" type="checkbox" ${property.value === true ? 'checked' : ''} disabled /></div>`;
+        return `<div class="checkbox-row"><input class="checkbox" data-prop-key="${escapeHtml(property.key)}" type="checkbox" ${(editedValue ?? property.value) === true ? 'checked' : ''} ${disabledAttr} /></div>`;
       case 'enum': {
         const enumValue = property.value as EnumPropertyValue;
         const options = enumValue.allowedValues
@@ -283,6 +289,7 @@ export class PropertiesViewProvider implements vscode.Disposable {
       }
       case 'localizedString': {
         const localized = property.value as LocalizedStringValue;
+        const renderValue = String(editedValue ?? localized.presentation);
         const items = localized.values
           .map((item) => {
             return `<div class="localized-item"><strong>${escapeHtml(item.lang)}:</strong> ${escapeHtml(item.content)}</div>`;
@@ -290,7 +297,7 @@ export class PropertiesViewProvider implements vscode.Disposable {
           .join('');
 
         return `
-          <input class="input" type="text" value="${escapeHtml(localized.presentation)}" readonly />
+          <input class="input" data-prop-key="${escapeHtml(property.key)}" data-prop-kind="localizedString" type="text" value="${escapeHtml(renderValue)}" ${isEditable ? '' : 'readonly'} />
           ${items ? `<div class="property-note">Локализации:</div>${items}` : ''}
         `;
       }
@@ -299,7 +306,21 @@ export class PropertiesViewProvider implements vscode.Disposable {
         if (property.kind === 'metadataType') {
           return this.renderMetadataTypeControl(property, isEditLockedBySupport);
         }
-        return `<input class="input" type="text" value="${escapeHtml(String(property.value ?? ''))}" readonly />`;
+        const canRenameFromProperty = property.key === 'Name'
+          && this.activeNode
+          && (() => {
+            const target = resolvePropertyTarget(this.activeNode!);
+            return target ? isRootObjectNode(this.activeNode!, target) : false;
+          })();
+        if (canRenameFromProperty) {
+          return `
+            <div class="type-row">
+              <input class="input" type="text" value="${escapeHtml(String(property.value ?? ''))}" readonly />
+              <button class="btn" id="renameObjectBtn" ${isEditLockedBySupport ? 'disabled' : ''}>Переименовать</button>
+            </div>
+          `;
+        }
+        return `<input class="input" data-prop-key="${escapeHtml(property.key)}" data-prop-kind="string" type="text" value="${escapeHtml(String(editedValue ?? property.value ?? ''))}" ${isEditable ? '' : 'readonly'} />`;
     }
   }
 
@@ -370,7 +391,9 @@ export class PropertiesViewProvider implements vscode.Disposable {
       const cancelBtn = document.getElementById('cancelBtn');
       const typePresentation = document.getElementById('typePresentation');
       const isEditLockedBySupport = ${isEditLockedBySupport ? 'true' : 'false'};
+      const isValidMetadataName = (value) => /^[\\p{L}][\\p{L}\\p{Nd}_]*$/u.test(value);
       let isDirty = false;
+      const lastValidByKey = new Map();
       const setDirty = (dirty) => {
         isDirty = dirty;
         if (saveBtn) saveBtn.disabled = !dirty || isEditLockedBySupport;
@@ -399,13 +422,42 @@ export class PropertiesViewProvider implements vscode.Disposable {
           vscode.postMessage({ type: 'updateTypeQualifiers', qualifiers: collectQualifiers() });
         });
       }
+      document.querySelectorAll('[data-prop-key]').forEach((el) => {
+        const key = el.getAttribute('data-prop-key');
+        const kind = el.getAttribute('data-prop-kind') || (el.type === 'checkbox' ? 'boolean' : 'string');
+        if (!key || isEditLockedBySupport) return;
+        if (el.type !== 'checkbox') {
+          lastValidByKey.set(key, String(el.value ?? ''));
+        }
+        const eventName = el.type === 'checkbox' ? 'change' : 'input';
+        el.addEventListener(eventName, () => {
+          if (key === 'Name' && el.type !== 'checkbox') {
+            const current = String(el.value ?? '');
+            if (!isValidMetadataName(current)) {
+              el.value = String(lastValidByKey.get(key) ?? '');
+              return;
+            }
+            lastValidByKey.set(key, current);
+          }
+          const value = el.type === 'checkbox' ? Boolean(el.checked) : String(el.value ?? '');
+          setDirty(true);
+          vscode.postMessage({ type: 'propertyChanged', key, kind, value });
+        });
+      });
       if (saveBtn) saveBtn.addEventListener('click', () => {
         if (isEditLockedBySupport) return;
-        vscode.postMessage({ type: 'saveType' });
+        vscode.postMessage({ type: 'saveChanges' });
       });
+      const renameObjectBtn = document.getElementById('renameObjectBtn');
+      if (renameObjectBtn) {
+        renameObjectBtn.addEventListener('click', () => {
+          if (isEditLockedBySupport) return;
+          vscode.postMessage({ type: 'renameObject' });
+        });
+      }
       if (cancelBtn) cancelBtn.addEventListener('click', () => {
         if (isEditLockedBySupport) return;
-        vscode.postMessage({ type: 'cancelTypeChanges' });
+        vscode.postMessage({ type: 'cancelChanges' });
       });
       setDirty(${this.editSession.size > 0 ? 'true' : 'false'});
       window.addEventListener('message', (event) => {
@@ -422,12 +474,12 @@ export class PropertiesViewProvider implements vscode.Disposable {
   }
 
   private async handleWebviewMessage(message: unknown): Promise<void> {
-    const msg = message as { type?: string; qualifiers?: Record<string, string>; presentation?: string };
+    const msg = message as { type?: string; qualifiers?: Record<string, string>; presentation?: string; key?: string; value?: string | boolean; kind?: string };
     if (!this.activeNode || !this.panel) {
       return;
     }
     if (this.isEditLockedBySupport(this.activeNode)) {
-      if (msg.type === 'openTypePicker' || msg.type === 'updateTypeQualifiers' || msg.type === 'saveType' || msg.type === 'cancelTypeChanges') {
+      if (msg.type === 'openTypePicker' || msg.type === 'updateTypeQualifiers' || msg.type === 'saveChanges' || msg.type === 'cancelChanges' || msg.type === 'propertyChanged') {
         void vscode.window.showWarningMessage('Редактирование свойств запрещено поддержкой для этого объекта.');
       }
       return;
@@ -440,11 +492,21 @@ export class PropertiesViewProvider implements vscode.Disposable {
       this.applyQualifierChanges(msg.qualifiers ?? {});
       return;
     }
-    if (msg.type === 'saveType') {
-      await this.saveTypeChanges();
+    if (msg.type === 'propertyChanged') {
+      if (msg.key) {
+        this.editSession.set(msg.key, msg.value);
+      }
       return;
     }
-    if (msg.type === 'cancelTypeChanges') {
+    if (msg.type === 'saveChanges') {
+      await this.saveChanges();
+      return;
+    }
+    if (msg.type === 'renameObject') {
+      await this.promptAndRenameObject();
+      return;
+    }
+    if (msg.type === 'cancelChanges') {
       this.editSession.clear();
       this.panel.webview.html = this.renderHtml(this.activeNode);
       this.panel.webview.postMessage({ type: 'resetDirty' });
@@ -554,34 +616,136 @@ export class PropertiesViewProvider implements vscode.Disposable {
     return ensureDefaultQualifiers(property.value as MetadataTypeValue);
   }
 
-  private async saveTypeChanges(): Promise<void> {
+  private async saveChanges(): Promise<void> {
     if (!this.activeNode) {
       return;
     }
+    if (this.editSession.size === 0) {
+      return;
+    }
+
     const typeValue = this.editSession.get('Type') as MetadataTypeValue | undefined;
-    if (!typeValue) {
+    if (typeValue) {
+      const typeTarget = resolveTypeTarget(this.activeNode);
+      if (!typeTarget) {
+        vscode.window.showWarningMessage('Для выбранного узла сохранение типа пока не поддерживается.');
+        return;
+      }
+      const typeSaved = this.xmlEditor.modifyObjectType(typeTarget.xmlPath, {
+        targetKind: typeTarget.targetKind,
+        targetName: typeTarget.targetName,
+        tabularSectionName: typeTarget.tabularSectionName,
+        typeInnerXml: buildMetadataTypeInnerXml(typeValue),
+      });
+      if (!typeSaved.success) {
+        vscode.window.showErrorMessage(typeSaved.errors[0] ?? 'Не удалось сохранить изменение типа.');
+        return;
+      }
+    }
+
+    const propertyTarget = resolvePropertyTarget(this.activeNode);
+    if (!propertyTarget) {
+      vscode.window.showWarningMessage('Для выбранного узла сохранение свойств пока не поддерживается.');
       return;
     }
-    const target = resolveTypeTarget(this.activeNode);
-    if (!target) {
-      vscode.window.showWarningMessage('Для выбранного узла сохранение типа пока не поддерживается.');
+    let changedCount = 0;
+    const currentXmlPath = propertyTarget.xmlPath;
+    for (const property of this.activeProperties) {
+      if (property.key === 'Type' || property.key === 'Name' || !this.editSession.has(property.key)) {
+        continue;
+      }
+      if (property.kind !== 'string' && property.kind !== 'boolean' && property.kind !== 'localizedString') {
+        continue;
+      }
+      const nextValue = this.editSession.get(property.key);
+      const saved = this.xmlEditor.modifyObjectProperty(currentXmlPath, {
+        targetKind: propertyTarget.targetKind,
+        targetName: propertyTarget.targetName,
+        tabularSectionName: propertyTarget.tabularSectionName,
+        propertyKey: property.key,
+        valueKind: property.kind,
+        value: property.kind === 'boolean' ? nextValue === true : String(nextValue ?? ''),
+      });
+      if (saved.success && saved.changed) {
+        changedCount++;
+      }
+    }
+
+    if (!typeValue && changedCount === 0) {
+      vscode.window.showWarningMessage('Изменения свойств не обнаружены.');
       return;
     }
-    const saved = updateObjectTypeProperty(target.xmlPath, {
-      targetKind: target.targetKind,
-      targetName: target.targetName,
-      tabularSectionName: target.tabularSectionName,
-      typeInnerXml: buildMetadataTypeInnerXml(typeValue),
-    });
-    if (!saved) {
-      vscode.window.showErrorMessage('Не удалось сохранить изменение типа.');
-      return;
-    }
+
     this.editSession.clear();
     this.activeProperties = [];
     this.panel?.webview.postMessage({ type: 'resetDirty' });
     this.panel!.webview.html = this.renderHtml(this.activeNode);
-    vscode.window.showInformationMessage('Тип успешно изменён.');
+    vscode.window.showInformationMessage('Свойства успешно изменены.');
+  }
+
+  private async promptAndRenameObject(): Promise<void> {
+    if (!this.activeNode) {
+      return;
+    }
+    const target = resolvePropertyTarget(this.activeNode);
+    if (!target || !isRootObjectNode(this.activeNode, target)) {
+      void vscode.window.showWarningMessage('Переименование доступно только для корневого объекта метаданных.');
+      return;
+    }
+    const newName = await vscode.window.showInputBox({
+      title: 'Переименование объекта',
+      prompt: 'Введите новое имя объекта',
+      value: this.activeNode.label,
+      validateInput: (value) => {
+        if (!value || !value.trim()) {
+          return 'Имя не может быть пустым.';
+        }
+        if (!isValidMetadataName(value.trim())) {
+          return 'Имя должно начинаться с буквы и содержать только буквы, цифры и "_".';
+        }
+        return null;
+      },
+    });
+    if (!newName) {
+      return;
+    }
+    const trimmed = newName.trim();
+    const validation = this.xmlEditor.validateRenameMetadataObject(target.xmlPath, this.activeNode.nodeKind, trimmed);
+    if (!validation.success) {
+      void vscode.window.showErrorMessage(validation.errors[0] ?? 'Переименование не прошло проверку.');
+      return;
+    }
+    const result = this.xmlEditor.renameMetadataObject(target.xmlPath, this.activeNode.nodeKind, trimmed);
+    if (!result.success) {
+      void vscode.window.showErrorMessage(result.errors[0] ?? 'Не удалось переименовать объект.');
+      return;
+    }
+    const renamedPath = result.changedFiles
+      .filter((item) => item.endsWith('.xml'))
+      .find((item) => !item.endsWith('Configuration.xml'));
+    if (!renamedPath) {
+      void vscode.window.showErrorMessage('Переименование выполнено частично: не найден новый XML-файл объекта.');
+      return;
+    }
+
+    this.activeNode = new MetadataNode(
+      trimmed,
+      this.activeNode.nodeKind,
+      this.activeNode.collapsibleState ?? vscode.TreeItemCollapsibleState.None,
+      renamedPath,
+      this.activeNode.childrenLoader,
+      this.activeNode.ownershipTag,
+      this.activeNode.hidePropertiesCommand,
+      this.activeNode.metaContext
+    );
+    this.editSession.delete('Name');
+    this.activeProperties = [];
+    if (this.panel) {
+      this.panel.title = this.buildTitle(this.activeNode);
+      this.panel.webview.html = this.renderHtml(this.activeNode);
+      this.panel.webview.postMessage({ type: 'resetDirty' });
+    }
+    void vscode.window.showInformationMessage('Объект успешно переименован.');
   }
 
   private isEditLockedBySupport(node: MetadataNode): boolean {
@@ -688,6 +852,78 @@ function resolveTypeTarget(node: MetadataNode): {
   };
 }
 
+function resolvePropertyTarget(node: MetadataNode): {
+  xmlPath: string;
+  targetKind: 'Self' | 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column' | 'TabularSection' | 'EnumValue';
+  targetName: string;
+  tabularSectionName?: string;
+} | null {
+  if (!node.xmlPath) {
+    return null;
+  }
+  const directKinds: Record<string, 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column' | 'TabularSection' | 'EnumValue'> = {
+    Attribute: 'Attribute',
+    AddressingAttribute: 'AddressingAttribute',
+    Dimension: 'Dimension',
+    Resource: 'Resource',
+    Column: 'Column',
+    TabularSection: 'TabularSection',
+    EnumValue: 'EnumValue',
+  };
+  const mapped = directKinds[node.nodeKind];
+  if (mapped) {
+    return {
+      xmlPath: node.metaContext?.ownerObjectXmlPath ?? node.xmlPath,
+      targetKind: mapped,
+      targetName: node.label,
+      tabularSectionName: node.metaContext?.tabularSectionName,
+    };
+  }
+  if (node.nodeKind === 'Form') {
+    const filePath = resolveNestedObjectDefinitionPath(node, 'Forms');
+    if (!filePath) {
+      return null;
+    }
+    return { xmlPath: filePath, targetKind: 'Self', targetName: node.label };
+  }
+  if (node.nodeKind === 'Command') {
+    const filePath = resolveNestedObjectDefinitionPath(node, 'Commands');
+    if (!filePath) {
+      return null;
+    }
+    return { xmlPath: filePath, targetKind: 'Self', targetName: node.label };
+  }
+  if (node.nodeKind === 'Template') {
+    const filePath = resolveNestedObjectDefinitionPath(node, 'Templates');
+    if (!filePath) {
+      return null;
+    }
+    return { xmlPath: filePath, targetKind: 'Self', targetName: node.label };
+  }
+  return { xmlPath: node.xmlPath, targetKind: 'Self', targetName: node.label };
+}
+
+function resolveNestedObjectDefinitionPath(
+  node: MetadataNode,
+  folderName: 'Forms' | 'Commands' | 'Templates'
+): string | null {
+  const ownerXmlPath = node.metaContext?.ownerObjectXmlPath ?? node.xmlPath;
+  if (!ownerXmlPath) {
+    return null;
+  }
+  const location = getObjectLocationFromXml(ownerXmlPath);
+  const candidates = [
+    path.join(location.objectDir, folderName, node.label, `${node.label}.xml`),
+    path.join(location.objectDir, folderName, `${node.label}.xml`),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
 function extractUuidFromXml(xml: string | null): string | null {
   if (!xml) {
     return null;
@@ -695,3 +931,24 @@ function extractUuidFromXml(xml: string | null): string | null {
   const match = /uuid="([0-9a-fA-F-]{36})"/.exec(xml);
   return match?.[1]?.toLowerCase() ?? null;
 }
+
+function isValidMetadataName(value: string): boolean {
+  return /^[\p{L}][\p{L}\p{Nd}_]*$/u.test(value);
+}
+
+function isRootObjectNode(
+  node: MetadataNode,
+  target: { targetKind: 'Self' | 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column' | 'TabularSection' | 'EnumValue' }
+): boolean {
+  if (target.targetKind !== 'Self') {
+    return false;
+  }
+  if (node.metaContext) {
+    return false;
+  }
+  if (node.nodeKind === 'configuration' || node.nodeKind === 'extension' || node.nodeKind.startsWith('group-')) {
+    return false;
+  }
+  return node.nodeKind !== 'NumeratorsBranch' && node.nodeKind !== 'SequencesBranch';
+}
+

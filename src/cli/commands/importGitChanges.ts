@@ -37,6 +37,8 @@ export async function importGitChanges(args: CliArgs): Promise<number> {
   const previousSnapshot = loadHashCache(projectRoot, scopeKey);
   const currentSnapshot = buildHashSnapshot(scopeKey, configDir);
   const diff = diffHashSnapshots(previousSnapshot, currentSnapshot);
+  const hasRename = detectPotentialRename(previousSnapshot.files, currentSnapshot.files, diff.added, diff.deleted);
+  const forceFullLoad = hasRename;
 
   const changedFiles = [...diff.added, ...diff.modified];
   if (changedFiles.length === 0 && diff.deleted.length === 0) {
@@ -45,19 +47,28 @@ export async function importGitChanges(args: CliArgs): Promise<number> {
   }
 
   console.log(`Hash changes detected: added=${diff.added.length}, modified=${diff.modified.length}, deleted=${diff.deleted.length}`);
-  const configFiles = collectConfigFiles(configDir, changedFiles, false);
-  const deletedFilesForTry = collectConfigFiles(configDir, diff.deleted, true);
-  const filesForLoad = Array.from(new Set([...configFiles, ...deletedFilesForTry]));
-
-  if (filesForLoad.length === 0 && diff.deleted.length === 0) {
-    console.log('No configuration files found in changes');
-    return 0;
+  if (forceFullLoad) {
+    console.log('Обнаружено переименование объектов. Включен принудительный полный режим загрузки.');
   }
-  console.log(`Files for loading: ${filesForLoad.length}`);
-  filesForLoad.forEach((item) => console.log(`  ${item}`));
+  const configFiles = collectConfigFiles(configDir, changedFiles, false);
+  const filesForLoad = Array.from(new Set(configFiles));
+
+  if (!forceFullLoad) {
+    if (filesForLoad.length === 0 && diff.deleted.length === 0) {
+      console.log('No configuration files found in changes');
+      return 0;
+    }
+    console.log(`Files for loading: ${filesForLoad.length}`);
+    filesForLoad.forEach((item) => console.log(`  ${item}`));
+  }
 
   if (dryRun) {
     console.log('');
+    if (forceFullLoad) {
+      console.log('DryRun mode - full load will be executed');
+    } else {
+      console.log('DryRun mode - partial load will be executed');
+    }
     console.log('DryRun mode - no changes applied');
     return 0;
   }
@@ -65,18 +76,18 @@ export async function importGitChanges(args: CliArgs): Promise<number> {
   const connection = resolveConnection(args);
   const tempDir = createTempDir('db_load_git_');
   try {
-    const listFile = path.join(tempDir, 'load_list.txt');
-    writeUtf8BomLines(listFile, filesForLoad);
     const designerArgs: string[] = [
       '/LoadConfigFromFiles',
       configDir,
-      '-listFile',
-      listFile,
       '-Format',
       format,
-      '-partial',
       '-updateConfigDumpInfo',
     ];
+    if (!forceFullLoad) {
+      const listFile = path.join(tempDir, 'load_list.txt');
+      writeUtf8BomLines(listFile, filesForLoad);
+      designerArgs.push('-listFile', listFile, '-partial');
+    }
 
     if (target === 'cfe' || extension) {
       designerArgs.push('-Extension', extension);
@@ -88,7 +99,7 @@ export async function importGitChanges(args: CliArgs): Promise<number> {
     designerArgs.push('/Out', outFile, '/DisableStartupDialogs');
 
     console.log('');
-    console.log('Executing partial configuration load...');
+    console.log(forceFullLoad ? 'Executing full configuration load...' : 'Executing partial configuration load...');
     const exitCode = await runDesignerAndPrintResult(
       connection,
       designerArgs,
@@ -97,9 +108,13 @@ export async function importGitChanges(args: CliArgs): Promise<number> {
     );
     printLogFile(outFile);
     if (exitCode === 0) {
-      const changedHashes = collectCurrentHashes(configDir, [...changedFiles, ...deletedFilesForTry]);
-      const patched = patchHashSnapshot(previousSnapshot, changedHashes, diff.deleted);
-      saveHashCache(projectRoot, patched);
+      if (forceFullLoad) {
+        saveHashCache(projectRoot, currentSnapshot);
+      } else {
+        const changedHashes = collectCurrentHashes(configDir, changedFiles);
+        const patched = patchHashSnapshot(previousSnapshot, changedHashes, diff.deleted);
+        saveHashCache(projectRoot, patched);
+      }
     }
     return exitCode;
   } finally {
@@ -175,4 +190,52 @@ function walkFiles(rootDir: string): string[] {
     }
   }
   return out;
+}
+
+function detectPotentialRename(
+  previousFiles: Record<string, string>,
+  currentFiles: Record<string, string>,
+  added: string[],
+  deleted: string[]
+): boolean {
+  if (added.length === 0 || deleted.length === 0) {
+    return false;
+  }
+
+  const deletedSignatures = new Set(deleted.map((item) => buildRenameSignature(item)).filter((item) => item.length > 0));
+  for (const item of added) {
+    const signature = buildRenameSignature(item);
+    if (signature && deletedSignatures.has(signature)) {
+      return true;
+    }
+  }
+
+  const deletedHashes = new Set(
+    deleted
+      .map((item) => previousFiles[item])
+      .filter((item): item is string => Boolean(item))
+  );
+  for (const item of added) {
+    const hash = currentFiles[item];
+    if (hash && deletedHashes.has(hash)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function buildRenameSignature(relativePath: string): string {
+  const normalized = relativePath.replace(/\\/g, '/');
+  const parts = normalized.split('/').filter((item) => item.length > 0);
+  if (parts.length < 2) {
+    return '';
+  }
+  const section = parts[0];
+  if (parts.length === 2 && normalized.endsWith('.xml')) {
+    return `${section}|root-xml`;
+  }
+  if (parts.length >= 4) {
+    return `${section}|${parts.slice(2).join('/')}`;
+  }
+  return `${section}|${parts[parts.length - 1]}`;
 }
