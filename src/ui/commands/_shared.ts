@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { ChangedConfiguration } from '../../infra/fs/ConfigurationChangeDetector';
 import { SupportInfoService } from '../../infra/support/SupportInfoService';
 import { MetadataTreeProvider } from '../tree/MetadataTreeProvider';
 import { MetadataNode } from '../tree/TreeNode';
@@ -10,9 +11,12 @@ export type NodeArg = MetadataNode | { xmlPath?: string; nodeKind?: string; labe
 export interface CommandServices {
   treeProvider: MetadataTreeProvider;
   workspaceFolder: vscode.WorkspaceFolder;
-  reloadEntries: () => void;
+  reloadEntries: () => void | Promise<void>;
   propertiesViewProvider: PropertiesViewProvider;
   vfs: OnecFileSystemProvider;
   outputChannel: vscode.OutputChannel;
   supportService?: SupportInfoService;
+  refreshChangedConfigurationState: () => void;
+  getChangedConfigurations: () => ChangedConfiguration[];
+  markConfigurationsClean: (rootPaths: string[]) => void;
 }

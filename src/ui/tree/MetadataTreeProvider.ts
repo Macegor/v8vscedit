@@ -43,6 +43,11 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
     this.refresh();
   }
 
+  /** Возвращает найденные корни конфигураций для команд уровня рабочей области. */
+  getEntries(): ConfigEntry[] {
+    return [...this.entries];
+  }
+
   getTreeItem(element: MetadataNode): vscode.TreeItem {
     element.iconPath = getIconUris(element.nodeKind, element.ownershipTag, this.extensionUri);
     this.applySupportDecoration(element);

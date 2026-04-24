@@ -8,12 +8,12 @@ import { Container } from './Container';
  */
 let container: Container | undefined;
 
-export function activate(context: vscode.ExtensionContext): void {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) {
     return;
   }
-  container = Container.bootstrap(context, folders[0]);
+  container = await Container.bootstrap(context, folders[0]);
 }
 
 export function deactivate(): Promise<void> | undefined {

@@ -8,7 +8,6 @@ import { decodeProcessOutput, runProcess } from '../../../infra/process';
 type NodeArg = MetadataNode | { xmlPath?: string; nodeKind?: string; label?: string };
 
 interface RunCliOptions {
-  extensionName: string;
   cliArgs: string[];
   progressTitle: string;
   progressStartMessage: string;
@@ -17,7 +16,7 @@ interface RunCliOptions {
   /** Человекочитаемое описание операции для текста причины ошибки */
   failureOperation?: string;
   logPrefix: string;
-  showSuccessModal?: boolean;
+  showSuccessMessage?: boolean;
   afterSuccess?: () => Promise<void>;
 }
 
@@ -28,6 +27,9 @@ interface ConnectionParams {
   userName?: string;
   password?: string;
 }
+
+let statusBarItem: vscode.StatusBarItem | undefined;
+let clearStatusTimer: NodeJS.Timeout | undefined;
 
 export function extractExtensionTarget(node: NodeArg): { extensionName: string; extensionRoot: string } | null {
   const nodeKind = node?.nodeKind;
@@ -70,7 +72,6 @@ export async function runDecompileExtension(
   try {
     return await runInternalCliCommand(
       {
-        extensionName,
         cliArgs,
         progressTitle: `Выгрузка расширения ${extensionName} во внутренний XML`,
         progressStartMessage: 'Импорт расширения: выгрузка во временный каталог...',
@@ -80,7 +81,7 @@ export async function runDecompileExtension(
         logPrefix: 'export-configuration',
         afterSuccess: async () => {
           syncDirectorySnapshot(tempConfigDir, extensionRoot);
-          await refreshExtensionHashCache(extensionName, workspaceFolder, outputChannel);
+          await refreshExtensionHashCache(extensionName, extensionRoot, workspaceFolder, outputChannel);
         },
       },
       workspaceFolder,
@@ -96,7 +97,7 @@ export async function runCompileExtension(
   extensionRoot: string,
   workspaceFolder: vscode.WorkspaceFolder,
   outputChannel: vscode.OutputChannel,
-  showSuccessModal = true
+  showSuccessMessage = true
 ): Promise<boolean> {
   const settingsPath = resolveSettingsPath(workspaceFolder.uri.fsPath, extensionRoot);
   const connection = resolveConnectionFromSettings(settingsPath);
@@ -106,13 +107,14 @@ export async function runCompileExtension(
     workspaceFolder.uri.fsPath,
     '-Target',
     'cfe',
+    '-ConfigDir',
+    extensionRoot,
     '-Extension',
     extensionName,
     ...buildConnectionCliArgs(connection),
   ];
   return runInternalCliCommand(
     {
-      extensionName,
       cliArgs,
       progressTitle: `Полное обновление расширения ${extensionName} в БД`,
       progressStartMessage: 'Загрузка исходников, применение изменений...',
@@ -120,7 +122,7 @@ export async function runCompileExtension(
       errorTitle: `Ошибка загрузки или применения расширения "${extensionName}" в БД.`,
       failureOperation: 'полном обновлении расширения',
       logPrefix: 'sync-configuration-full',
-      showSuccessModal,
+      showSuccessMessage,
     },
     workspaceFolder,
     outputChannel
@@ -132,7 +134,7 @@ export async function runUpdateExtension(
   extensionRoot: string,
   workspaceFolder: vscode.WorkspaceFolder,
   outputChannel: vscode.OutputChannel,
-  showSuccessModal = true
+  showSuccessMessage = true
 ): Promise<boolean> {
   const settingsPath = resolveSettingsPath(workspaceFolder.uri.fsPath, extensionRoot);
   const connection = resolveConnectionFromSettings(settingsPath);
@@ -142,13 +144,14 @@ export async function runUpdateExtension(
     workspaceFolder.uri.fsPath,
     '-Target',
     'cfe',
+    '-ConfigDir',
+    extensionRoot,
     '-Extension',
     extensionName,
     ...buildConnectionCliArgs(connection),
   ];
   const imported = await runInternalCliCommand(
     {
-      extensionName,
       cliArgs: importChangedFilesArgs,
       progressTitle: `Подготовка обновления ${extensionName}`,
       progressStartMessage: 'Поиск и загрузка изменённых файлов XML/BSL по хеш-кэшу...',
@@ -156,7 +159,7 @@ export async function runUpdateExtension(
       errorTitle: `Ошибка загрузки изменённых файлов расширения "${extensionName}" по хеш-кэшу.`,
       failureOperation: 'быстрой загрузке изменённых файлов',
       logPrefix: 'import-git-changes',
-      showSuccessModal: false,
+      showSuccessMessage: false,
     },
     workspaceFolder,
     outputChannel
@@ -171,13 +174,14 @@ export async function runUpdateExtension(
       workspaceFolder.uri.fsPath,
       '-Target',
       'cfe',
+      '-ConfigDir',
+      extensionRoot,
       '-Extension',
       extensionName,
       ...buildConnectionCliArgs(connection),
     ];
     return runInternalCliCommand(
       {
-        extensionName,
         cliArgs: fallbackArgs,
         progressTitle: `Обновление расширения ${extensionName} (fallback без git)`,
         progressStartMessage: 'Выполняется полная синхронизация исходников и применение в базе...',
@@ -185,7 +189,7 @@ export async function runUpdateExtension(
         errorTitle: `Ошибка fallback-обновления расширения "${extensionName}".`,
         failureOperation: 'fallback-обновлении без хеш-кэша',
         logPrefix: 'sync-configuration-full',
-        showSuccessModal,
+        showSuccessMessage,
       },
       workspaceFolder,
       outputChannel
@@ -200,7 +204,6 @@ export async function runUpdateExtension(
   ];
   return runInternalCliCommand(
     {
-      extensionName,
       cliArgs: updateArgs,
       progressTitle: `Обновление расширения ${extensionName} в БД`,
       progressStartMessage: 'Применение загруженных изменений в базе...',
@@ -208,7 +211,90 @@ export async function runUpdateExtension(
       errorTitle: `Ошибка обновления расширения "${extensionName}" в БД.`,
       failureOperation: 'обновлении расширения',
       logPrefix: 'update-configuration',
-      showSuccessModal,
+      showSuccessMessage,
+    },
+    workspaceFolder,
+    outputChannel
+  );
+}
+
+export async function runUpdateMainConfiguration(
+  configName: string,
+  configRoot: string,
+  workspaceFolder: vscode.WorkspaceFolder,
+  outputChannel: vscode.OutputChannel,
+  showSuccessMessage = true
+): Promise<boolean> {
+  const settingsPath = resolveSettingsPath(workspaceFolder.uri.fsPath, configRoot);
+  const connection = resolveConnectionFromSettings(settingsPath);
+  const importChangedFilesArgs = [
+    'import-git-changes',
+    '-ProjectRoot',
+    workspaceFolder.uri.fsPath,
+    '-Target',
+    'cf',
+    '-ConfigDir',
+    configRoot,
+    ...buildConnectionCliArgs(connection),
+  ];
+  const imported = await runInternalCliCommand(
+    {
+      cliArgs: importChangedFilesArgs,
+      progressTitle: `Подготовка обновления ${configName}`,
+      progressStartMessage: 'Поиск и загрузка изменённых файлов XML/BSL по хеш-кэшу...',
+      successMessage: `Изменённые файлы конфигурации "${configName}" загружены по хеш-кэшу.`,
+      errorTitle: `Ошибка загрузки изменённых файлов конфигурации "${configName}" по хеш-кэшу.`,
+      failureOperation: 'быстрой загрузке изменённых файлов',
+      logPrefix: 'import-git-changes',
+      showSuccessMessage: false,
+    },
+    workspaceFolder,
+    outputChannel
+  );
+  if (!imported) {
+    outputChannel.appendLine(
+      '[update-configuration] Частичная загрузка основной конфигурации недоступна, выполняю fallback на полную синхронизацию исходников.'
+    );
+    const fallbackArgs = [
+      'sync-configuration-full',
+      '-ProjectRoot',
+      workspaceFolder.uri.fsPath,
+      '-Target',
+      'cf',
+      '-ConfigDir',
+      configRoot,
+      ...buildConnectionCliArgs(connection),
+    ];
+    return runInternalCliCommand(
+      {
+        cliArgs: fallbackArgs,
+        progressTitle: `Обновление конфигурации ${configName} (fallback без git)`,
+        progressStartMessage: 'Выполняется полная синхронизация исходников и применение в базе...',
+        successMessage: `Обновление конфигурации "${configName}" завершено через fallback без хеш-кэша.`,
+        errorTitle: `Ошибка fallback-обновления конфигурации "${configName}".`,
+        failureOperation: 'fallback-обновлении без хеш-кэша',
+        logPrefix: 'sync-configuration-full',
+        showSuccessMessage,
+      },
+      workspaceFolder,
+      outputChannel
+    );
+  }
+
+  const updateArgs = [
+    'update-configuration',
+    ...buildConnectionCliArgs(connection),
+  ];
+  return runInternalCliCommand(
+    {
+      cliArgs: updateArgs,
+      progressTitle: `Обновление конфигурации ${configName} в БД`,
+      progressStartMessage: 'Применение загруженных изменений в базе...',
+      successMessage: `Обновление конфигурации "${configName}" в БД успешно завершено.`,
+      errorTitle: `Ошибка обновления конфигурации "${configName}" в БД.`,
+      failureOperation: 'обновлении конфигурации',
+      logPrefix: 'update-configuration',
+      showSuccessMessage,
     },
     workspaceFolder,
     outputChannel
@@ -224,66 +310,87 @@ async function runInternalCliCommand(
   const processArgs = [cliPath, ...options.cliArgs];
   const commandAsText = `node ${processArgs.join(' ')}`;
   outputChannel.appendLine(`[actions] Старт: ${commandAsText}`);
+  setOperationStatus(options.progressTitle, options.progressStartMessage, true);
 
   try {
     let lastStdout = '';
     let lastStderr = '';
 
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Window,
-        title: options.progressTitle,
-        cancellable: false,
-      },
-      async (progress) => {
-        progress.report({ message: options.progressStartMessage });
-
-        const result = await runProcess({
-          command: process.execPath,
-          args: processArgs,
-          cwd: workspaceFolder.uri.fsPath,
-          shell: false,
-          onStdout: (chunk) => {
-            const text = decodeProcessOutput(chunk).trim();
-            if (text.length > 0) {
-              lastStdout = text;
-              outputChannel.appendLine(`[${options.logPrefix}] ${text}`);
-              progress.report({ message: trimStatusMessage(text) });
-            }
-          },
-          onStderr: (chunk) => {
-            const text = decodeProcessOutput(chunk).trim();
-            if (text.length > 0) {
-              lastStderr = text;
-              outputChannel.appendLine(`[${options.logPrefix}][stderr] ${text}`);
-              progress.report({ message: trimStatusMessage(`stderr: ${text}`) });
-            }
-          },
-        });
-
-        if (result.exitCode !== 0) {
-          const details = [lastStderr || result.lastStderr, lastStdout || result.lastStdout]
-            .filter(Boolean);
-          const reason = extractFailureReason(details, result.exitCode);
-          const operation = options.failureOperation ?? options.progressTitle.toLowerCase();
-          throw new Error(`Ошибка при ${operation} по причине: ${reason}`);
+    const result = await runProcess({
+      command: process.execPath,
+      args: processArgs,
+      cwd: workspaceFolder.uri.fsPath,
+      shell: false,
+      onStdout: (chunk) => {
+        const text = decodeProcessOutput(chunk).trim();
+        if (text.length > 0) {
+          lastStdout = text;
+          outputChannel.appendLine(`[${options.logPrefix}] ${text}`);
+          setOperationStatus(options.progressTitle, trimStatusMessage(text), true);
         }
-      }
-    );
+      },
+      onStderr: (chunk) => {
+        const text = decodeProcessOutput(chunk).trim();
+        if (text.length > 0) {
+          lastStderr = text;
+          outputChannel.appendLine(`[${options.logPrefix}][stderr] ${text}`);
+          setOperationStatus(options.progressTitle, trimStatusMessage(`stderr: ${text}`), true);
+        }
+      },
+    });
+
+    if (result.exitCode !== 0) {
+      const details = [lastStderr || result.lastStderr, lastStdout || result.lastStdout]
+        .filter(Boolean);
+      const reason = extractFailureReason(details, result.exitCode);
+      const operation = options.failureOperation ?? options.progressTitle.toLowerCase();
+      throw new Error(`Ошибка при ${operation} по причине: ${reason}`);
+    }
 
     outputChannel.appendLine(`[actions] Завершено: ${commandAsText}`);
     if (options.afterSuccess) {
       await options.afterSuccess();
     }
-    if (options.showSuccessModal !== false) {
-      await vscode.window.showInformationMessage(options.successMessage, { modal: true });
+    setOperationStatus(options.progressTitle, 'завершено', false);
+    if (options.showSuccessMessage !== false) {
+      void vscode.window.showInformationMessage(options.successMessage);
     }
     return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     outputChannel.appendLine(`[actions][error] ${message}`);
-    await vscode.window.showErrorMessage(`${options.errorTitle}\n${message}`, { modal: true });
+    setOperationStatus(options.progressTitle, 'ошибка', false);
+    await vscode.window.showErrorMessage(`${options.errorTitle}\n${message}`);
     return false;
+  }
+}
+
+export function setConfigurationOperationStatus(title: string, message: string, running: boolean): void {
+  setOperationStatus(title, message, running);
+}
+
+function setOperationStatus(title: string, message: string, running: boolean): void {
+  if (!statusBarItem) {
+    statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+    statusBarItem.name = '1С: операция с конфигурацией';
+  }
+  if (clearStatusTimer) {
+    clearTimeout(clearStatusTimer);
+    clearStatusTimer = undefined;
+  }
+
+  const text = `${title}: ${message}`;
+  statusBarItem.text = running
+    ? `$(sync~spin) ${trimStatusMessage(text)}`
+    : `$(check) ${trimStatusMessage(text)}`;
+  statusBarItem.tooltip = text;
+  statusBarItem.show();
+
+  if (!running) {
+    clearStatusTimer = setTimeout(() => {
+      statusBarItem?.hide();
+      clearStatusTimer = undefined;
+    }, 5_000);
   }
 }
 
@@ -504,18 +611,20 @@ function extractFailureReason(details: string[], exitCode: number): string {
 
 async function refreshExtensionHashCache(
   extensionName: string,
+  extensionRoot: string,
   workspaceFolder: vscode.WorkspaceFolder,
   outputChannel: vscode.OutputChannel
 ): Promise<void> {
   const refreshed = await runInternalCliCommand(
     {
-      extensionName,
       cliArgs: [
         'refresh-hash-cache',
         '-ProjectRoot',
         workspaceFolder.uri.fsPath,
         '-Target',
         'cfe',
+        '-ConfigDir',
+        extensionRoot,
         '-Extension',
         extensionName,
       ],
@@ -525,7 +634,7 @@ async function refreshExtensionHashCache(
       errorTitle: `Ошибка актуализации хеш-кэша расширения "${extensionName}".`,
       failureOperation: 'актуализации хеш-кэша',
       logPrefix: 'refresh-hash-cache',
-      showSuccessModal: false,
+      showSuccessMessage: false,
     },
     workspaceFolder,
     outputChannel

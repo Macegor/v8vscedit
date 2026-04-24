@@ -25,6 +25,7 @@ export class OnecFileSystemProvider implements vscode.FileSystemProvider {
 
   private supportService: SupportInfoService | undefined;
   private log: vscode.OutputChannel | undefined;
+  private onDidWriteRealFile: ((realPath: string) => void) | undefined;
 
   setSupportService(service: SupportInfoService): void {
     this.supportService = service;
@@ -32,6 +33,10 @@ export class OnecFileSystemProvider implements vscode.FileSystemProvider {
 
   setOutputChannel(channel: vscode.OutputChannel): void {
     this.log = channel;
+  }
+
+  setOnDidWriteRealFile(handler: (realPath: string) => void): void {
+    this.onDidWriteRealFile = handler;
   }
 
   /** Регистрирует виртуальный URI для реального BSL-файла */
@@ -100,6 +105,7 @@ export class OnecFileSystemProvider implements vscode.FileSystemProvider {
     }
     fs.writeFileSync(realPath, content);
     this._emitter.fire([{ type: vscode.FileChangeType.Changed, uri }]);
+    this.onDidWriteRealFile?.(realPath);
   }
 
   delete(): void {}

@@ -39,6 +39,15 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "v8vscedit.updateChangedConfigurations",
+        "title": "Обновить изменённые конфигурации",
+        "enablement": "v8vscedit.hasChangedConfigurations && !v8vscedit.isUpdatingConfigurations",
+        "icon": {
+          "light": "./src/icons/light/externalDataSource.svg",
+          "dark": "./src/icons/dark/externalDataSource.svg"
+        }
+      },
+      {
         "command": "v8vscedit.runThinClient",
         "title": "Запустить тонкий клиент",
         "icon": "$(run)"
@@ -145,19 +154,24 @@
     "menus": {
       "view/title": [
         {
-          "command": "v8vscedit.runThinClient",
+          "command": "v8vscedit.updateChangedConfigurations",
           "when": "view == v8vsceditTree",
           "group": "navigation@0"
         },
         {
-          "command": "v8vscedit.runConfigurator",
+          "command": "v8vscedit.runThinClient",
           "when": "view == v8vsceditTree",
           "group": "navigation@1"
         },
         {
-          "command": "v8vscedit.refresh",
+          "command": "v8vscedit.runConfigurator",
           "when": "view == v8vsceditTree",
           "group": "navigation@2"
+        },
+        {
+          "command": "v8vscedit.refresh",
+          "when": "view == v8vsceditTree",
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [
@@ -220,11 +234,6 @@
           "command": "v8vscedit.showProperties",
           "when": "view == v8vsceditTree && !(viewItem =~ /-propertiesHidden/)",
           "group": "navigation@9"
-        },
-        {
-          "command": "v8vscedit.showConfigActions",
-          "when": "view == v8vsceditTree && viewItem =~ /^(configuration|extension)-hasXml/",
-          "group": "inline"
         },
         {
           "command": "v8vscedit.support.none",
