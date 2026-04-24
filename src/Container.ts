@@ -68,6 +68,7 @@ export class Container {
     const c = new Container(context, folder);
     c.wireTreeView();
     c.wireSupportWatcher();
+    c.wireConfigurationWatcher();
     c.wireCommands();
     c.wireReadonlyGuard();
     c.wireLsp();
@@ -103,17 +104,34 @@ export class Container {
   }
 
   private wireCommands(): void {
-    registerCommands(
-      this.context,
-      this.treeProvider,
-      this.workspaceFolder,
-      () => this.reloadEntries(),
-      this.propertiesProvider,
-      this.vfs,
-      this.outputChannel,
-      this.supportService
-    );
+    registerCommands(this.context, {
+      treeProvider: this.treeProvider,
+      workspaceFolder: this.workspaceFolder,
+      reloadEntries: () => this.reloadEntries(),
+      propertiesViewProvider: this.propertiesProvider,
+      vfs: this.vfs,
+      outputChannel: this.outputChannel,
+      supportService: this.supportService,
+    });
     registerSupportIndicatorCommands(this.context);
+  }
+
+  private wireConfigurationWatcher(): void {
+    const watcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(this.workspaceFolder, '**/Configuration.xml'),
+      false,
+      false,
+      false
+    );
+
+    const onConfigChange = () => {
+      this.reloadEntries();
+    };
+
+    watcher.onDidCreate(onConfigChange, null, this.context.subscriptions);
+    watcher.onDidDelete(onConfigChange, null, this.context.subscriptions);
+    watcher.onDidChange(onConfigChange, null, this.context.subscriptions);
+    this.context.subscriptions.push(watcher);
   }
 
   private wireReadonlyGuard(): void {

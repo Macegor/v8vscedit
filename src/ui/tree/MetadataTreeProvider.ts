@@ -1,18 +1,25 @@
-import * as vscode from 'vscode';
 import * as path from 'path';
-import { MetadataNode, NodeKind } from './TreeNode';
-import { getIconUris } from './presentation/icon';
-import { COMMON_SUBGROUPS, TOP_GROUPS } from './MetadataGroups';
-import { ConfigInfo, parseConfigXml } from '../../infra/xml';
+import * as vscode from 'vscode';
+import { getMetaTypesByGroup } from '../../domain/MetaTypes';
 import { ConfigEntry } from '../../infra/fs/ConfigLocator';
+import { ConfigInfo, parseConfigXml } from '../../infra/xml';
+import { SupportInfoService } from '../../infra/support/SupportInfoService';
+import { getObjectHandler } from './nodeBuilders/index';
 import { buildNode } from './nodes/_base';
 import { getNodeDescriptor } from './nodes/index';
-import { getObjectHandler } from './nodeBuilders/index';
-import { SupportInfoService, SupportMode } from '../../infra/support/SupportInfoService';
+import { getIconUris } from './presentation/icon';
+import { MetadataNode, NodeKind } from './TreeNode';
+
+interface RootGroupDef {
+  label: string;
+  kind: NodeKind;
+  types: NodeKind[];
+  mergeTypes?: boolean;
+}
 
 export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNode> {
-  private _onDidChangeTreeData = new vscode.EventEmitter<MetadataNode | undefined | null>();
-  readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+  private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<MetadataNode | undefined | null>();
+  readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
 
   private roots: MetadataNode[] = [];
 
@@ -24,13 +31,13 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
     this.buildRoots();
   }
 
-  /** Пересобирает корневые узлы */
+  /** Перестраивает корневые узлы дерева */
   refresh(): void {
     this.buildRoots();
-    this._onDidChangeTreeData.fire(undefined);
+    this.onDidChangeTreeDataEmitter.fire(undefined);
   }
 
-  /** Обновляет список конфигураций и пересобирает дерево */
+  /** Обновляет найденные конфигурации и перестраивает дерево */
   updateEntries(entries: ConfigEntry[]): void {
     this.entries = entries;
     this.refresh();
@@ -42,78 +49,61 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
     return element;
   }
 
-  /**
-   * Добавляет к contextValue суффикс `-support{N}` (для inline-иконки при наведении)
-   * и метку режима поддержки в description (всегда видима).
-   * Вызывается только для узлов с xmlPath и только если для конфигурации
-   * загружены данные поддержки.
-   */
-  private applySupportDecoration(element: MetadataNode): void {
-    if (!element.xmlPath || !this.supportService) { return; }
-    if (!this.supportService.hasConfigData(element.xmlPath)) { return; }
-
-    const mode = this.supportService.getSupportMode(element.xmlPath);
-
-    // Суффикс contextValue для показа inline-иконки при наведении
-    const baseCtx = (element.contextValue ?? '').replace(/-support\d$/, '');
-    element.contextValue = `${baseCtx}-support${mode}`;
-  }
-
   getChildren(element?: MetadataNode): MetadataNode[] {
     if (!element) {
       if (this.roots.length === 0) {
         return [
-          new MetadataNode(
-            'Загрузка...',
-            'group-type',
-            vscode.TreeItemCollapsibleState.None,
-            undefined,
-            undefined,
-            undefined,
-            true
-          ),
+          new MetadataNode({
+            label: 'Загрузка...',
+            nodeKind: 'group-type',
+            hidePropertiesCommand: true,
+          }, vscode.TreeItemCollapsibleState.None),
         ];
       }
       return this.roots;
     }
-    if (element.childrenLoader) {
-      return element.childrenLoader();
-    }
-    return [];
+
+    return element.childrenLoader ? element.childrenLoader() : [];
   }
 
-  // ---------------------------------------------------------------------------
-  // Построение дерева
-  // ---------------------------------------------------------------------------
+  /**
+   * Добавляет к `contextValue` суффикс режима поддержки для inline-индикаторов.
+   */
+  private applySupportDecoration(element: MetadataNode): void {
+    if (!element.xmlPath || !this.supportService) {
+      return;
+    }
+    if (!this.supportService.hasConfigData(element.xmlPath)) {
+      return;
+    }
+
+    const mode = this.supportService.getSupportMode(element.xmlPath);
+    const baseContextValue = (element.contextValue ?? '').replace(/-support\d$/, '');
+    element.contextValue = `${baseContextValue}-support${mode}`;
+  }
 
   private buildRoots(): void {
-    // Предзагружаем данные поддержки для каждой найденной конфигурации
     if (this.supportService) {
       for (const entry of this.entries) {
         this.supportService.loadConfig(entry.rootPath);
       }
     }
+
     this.roots = this.entries.map((entry) => this.buildConfigNode(entry));
   }
 
-  /** Строит корневой узел конфигурации или расширения */
   private buildConfigNode(entry: ConfigEntry): MetadataNode {
     const configXmlPath = path.join(entry.rootPath, 'Configuration.xml');
     const info = parseConfigXml(configXmlPath);
-
-    // Для корневого узла показываем только имя, без префикса "Конфигурация".
-    const label = info.name;
-
     const nodeKind: NodeKind = entry.kind === 'cf' ? 'configuration' : 'extension';
-
     const descriptor = getNodeDescriptor(nodeKind);
+
     const node = buildNode(descriptor, {
-      label,
+      label: info.name,
       kind: nodeKind,
       collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
       xmlPath: configXmlPath,
       childrenLoader: () => this.buildConfigChildren(entry, info),
-      ownershipTag: undefined,
     });
 
     if (info.synonym) {
@@ -123,59 +113,31 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
     return node;
   }
 
-  /**
-   * Строит полный набор корневых групп: «Общие» + остальные.
-   * Группы создаются безусловно — наполнение реализуется через обработчики.
-   */
   private buildConfigChildren(entry: ConfigEntry, info: ConfigInfo): MetadataNode[] {
-    const result: MetadataNode[] = [];
-
-    const commonDescriptor = getNodeDescriptor('group-common');
-    result.push(
-      buildNode(commonDescriptor, {
+    const result: MetadataNode[] = [
+      buildNode(getNodeDescriptor('group-common'), {
         label: 'Общие',
         kind: 'group-common',
         collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
-        xmlPath: undefined,
         childrenLoader: () => this.buildCommonSubgroups(entry, info),
-        ownershipTag: undefined,
-      })
-    );
+      }),
+    ];
 
-    for (const group of TOP_GROUPS) {
+    for (const group of this.getTopGroups()) {
       const descriptor = getNodeDescriptor(group.kind);
       const mergeTypes = Boolean(group.mergeTypes && group.types.length > 1);
-
-      let mergedChildren: MetadataNode[] | undefined;
       const handler = mergeTypes ? undefined : getObjectHandler(group.types[0]);
       const names = !mergeTypes && handler ? this.collectNames(info, group.types) : [];
 
+      let mergedChildren: MetadataNode[] | undefined;
       if (mergeTypes) {
-        if (group.kind === 'Document') {
-          // Как в конфигураторе: сначала ветка «Нумераторы», затем «Последовательности», потом документы
-          mergedChildren = this.buildDocumentsBranchChildren(entry, info);
-        } else {
-          const parts: MetadataNode[] = [];
-          for (const t of group.types) {
-            const h = getObjectHandler(t);
-            const typeNames = info.childObjects.get(t) ?? [];
-            if (h && typeNames.length > 0) {
-              parts.push(
-                ...h.buildTreeNodes({
-                  configRoot: entry.rootPath,
-                  configKind: entry.kind,
-                  namePrefix: info.namePrefix,
-                  names: typeNames,
-                })
-              );
-            }
-          }
-          mergedChildren = parts;
-        }
+        mergedChildren = group.kind === 'Document'
+          ? this.buildDocumentsBranchChildren(entry, info)
+          : this.buildMergedTypeChildren(entry, info, group.types);
       }
 
       const hasChildren = mergeTypes
-        ? Boolean(mergedChildren && mergedChildren.length > 0)
+        ? Boolean(mergedChildren?.length)
         : Boolean(handler && names.length > 0);
 
       result.push(
@@ -185,19 +147,16 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
           collapsibleState: hasChildren
             ? vscode.TreeItemCollapsibleState.Collapsed
             : vscode.TreeItemCollapsibleState.None,
-          xmlPath: undefined,
           childrenLoader: hasChildren
-            ? () =>
-                mergeTypes && mergedChildren
-                  ? mergedChildren
-                  : handler!.buildTreeNodes({
-                      configRoot: entry.rootPath,
-                      configKind: entry.kind,
-                      namePrefix: info.namePrefix,
-                      names,
-                    })
+            ? () => mergeTypes
+              ? (mergedChildren ?? [])
+              : handler!.buildTreeNodes({
+                  configRoot: entry.rootPath,
+                  configKind: entry.kind,
+                  namePrefix: info.namePrefix,
+                  names,
+                })
             : undefined,
-          ownershipTag: undefined,
         })
       );
     }
@@ -205,74 +164,62 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
     return result;
   }
 
-  /**
-   * Дочерние узлы группы «Документы»: подветки нумераторов и последовательностей,
-   * затем объекты документов (плоский merge давал неверный вид без промежуточных папок).
-   */
   private buildDocumentsBranchChildren(entry: ConfigEntry, info: ConfigInfo): MetadataNode[] {
     const children: MetadataNode[] = [];
-    const numNames = info.childObjects.get('DocumentNumerator') ?? [];
-    const seqNames = info.childObjects.get('Sequence') ?? [];
-    const docNames = info.childObjects.get('Document') ?? [];
 
-    const numHandler = getObjectHandler('DocumentNumerator');
-    const numDesc = getNodeDescriptor('NumeratorsBranch')!;
-    const hasNum = Boolean(numHandler && numNames.length > 0);
+    const numeratorNames = info.childObjects.get('DocumentNumerator') ?? [];
+    const numeratorHandler = getObjectHandler('DocumentNumerator');
+    const hasNumerators = Boolean(numeratorHandler && numeratorNames.length > 0);
     children.push(
-      buildNode(numDesc, {
+      buildNode(getNodeDescriptor('NumeratorsBranch'), {
         label: 'Нумераторы',
         kind: 'NumeratorsBranch',
-        collapsibleState: hasNum
+        collapsibleState: hasNumerators
           ? vscode.TreeItemCollapsibleState.Collapsed
           : vscode.TreeItemCollapsibleState.None,
-        xmlPath: undefined,
-        childrenLoader: hasNum
-          ? () =>
-              numHandler!.buildTreeNodes({
-                configRoot: entry.rootPath,
-                configKind: entry.kind,
-                namePrefix: info.namePrefix,
-                names: numNames,
-              })
+        childrenLoader: hasNumerators
+          ? () => numeratorHandler!.buildTreeNodes({
+              configRoot: entry.rootPath,
+              configKind: entry.kind,
+              namePrefix: info.namePrefix,
+              names: numeratorNames,
+            })
           : undefined,
-        ownershipTag: undefined,
         hidePropertiesCommand: true,
       })
     );
 
-    const seqHandler = getObjectHandler('Sequence');
-    const seqDesc = getNodeDescriptor('SequencesBranch')!;
-    const hasSeq = Boolean(seqHandler && seqNames.length > 0);
+    const sequenceNames = info.childObjects.get('Sequence') ?? [];
+    const sequenceHandler = getObjectHandler('Sequence');
+    const hasSequences = Boolean(sequenceHandler && sequenceNames.length > 0);
     children.push(
-      buildNode(seqDesc, {
+      buildNode(getNodeDescriptor('SequencesBranch'), {
         label: 'Последовательности',
         kind: 'SequencesBranch',
-        collapsibleState: hasSeq
+        collapsibleState: hasSequences
           ? vscode.TreeItemCollapsibleState.Collapsed
           : vscode.TreeItemCollapsibleState.None,
-        xmlPath: undefined,
-        childrenLoader: hasSeq
-          ? () =>
-              seqHandler!.buildTreeNodes({
-                configRoot: entry.rootPath,
-                configKind: entry.kind,
-                namePrefix: info.namePrefix,
-                names: seqNames,
-              })
+        childrenLoader: hasSequences
+          ? () => sequenceHandler!.buildTreeNodes({
+              configRoot: entry.rootPath,
+              configKind: entry.kind,
+              namePrefix: info.namePrefix,
+              names: sequenceNames,
+            })
           : undefined,
-        ownershipTag: undefined,
         hidePropertiesCommand: true,
       })
     );
 
-    const docHandler = getObjectHandler('Document');
-    if (docHandler && docNames.length > 0) {
+    const documentHandler = getObjectHandler('Document');
+    const documentNames = info.childObjects.get('Document') ?? [];
+    if (documentHandler && documentNames.length > 0) {
       children.push(
-        ...docHandler.buildTreeNodes({
+        ...documentHandler.buildTreeNodes({
           configRoot: entry.rootPath,
           configKind: entry.kind,
           namePrefix: info.namePrefix,
-          names: docNames,
+          names: documentNames,
         })
       );
     }
@@ -280,42 +227,94 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
     return children;
   }
 
-  /** Строит полный набор подгрупп внутри «Общие» */
   private buildCommonSubgroups(entry: ConfigEntry, info: ConfigInfo): MetadataNode[] {
-    return COMMON_SUBGROUPS.map((sg) => {
-      const descriptor = getNodeDescriptor(sg.kind);
-      const handler = getObjectHandler(sg.types[0]);
-      const names = handler ? this.collectNames(info, sg.types) : [];
+    return this.getCommonSubgroups().map((group) => {
+      const handler = getObjectHandler(group.types[0]);
+      const names = handler ? this.collectNames(info, group.types) : [];
       const hasChildren = Boolean(handler && names.length > 0);
 
-      return buildNode(descriptor, {
-        label: sg.label,
-        kind: sg.kind,
+      return buildNode(getNodeDescriptor(group.kind), {
+        label: group.label,
+        kind: group.kind,
         collapsibleState: hasChildren
           ? vscode.TreeItemCollapsibleState.Collapsed
           : vscode.TreeItemCollapsibleState.None,
-        xmlPath: undefined,
         childrenLoader: hasChildren
-          ? () =>
-              handler!.buildTreeNodes({
-                configRoot: entry.rootPath,
-                configKind: entry.kind,
-                namePrefix: info.namePrefix,
-                names,
-              })
+          ? () => handler!.buildTreeNodes({
+              configRoot: entry.rootPath,
+              configKind: entry.kind,
+              namePrefix: info.namePrefix,
+              names,
+            })
           : undefined,
-        ownershipTag: undefined,
       });
     });
   }
 
-  /** Собирает имена объектов по нескольким типам из ChildObjects */
+  private buildMergedTypeChildren(entry: ConfigEntry, info: ConfigInfo, types: NodeKind[]): MetadataNode[] {
+    const result: MetadataNode[] = [];
+
+    for (const type of types) {
+      const handler = getObjectHandler(type);
+      const names = info.childObjects.get(type) ?? [];
+      if (!handler || names.length === 0) {
+        continue;
+      }
+
+      result.push(
+        ...handler.buildTreeNodes({
+          configRoot: entry.rootPath,
+          configKind: entry.kind,
+          namePrefix: info.namePrefix,
+          names,
+        })
+      );
+    }
+
+    return result;
+  }
+
   private collectNames(info: ConfigInfo, types: string[]): string[] {
     const result: string[] = [];
-    for (const t of types) {
-      result.push(...(info.childObjects.get(t) ?? []));
+    for (const type of types) {
+      result.push(...(info.childObjects.get(type) ?? []));
     }
     return result;
   }
-}
 
+  private getTopGroups(): RootGroupDef[] {
+    const result: RootGroupDef[] = [];
+
+    for (const def of getMetaTypesByGroup('top')) {
+      if (def.kind === 'DocumentNumerator' || def.kind === 'Sequence') {
+        continue;
+      }
+
+      if (def.kind === 'Document') {
+        result.push({
+          label: def.pluralLabel,
+          kind: def.kind,
+          types: ['DocumentNumerator', 'Sequence', 'Document'],
+          mergeTypes: true,
+        });
+        continue;
+      }
+
+      result.push({
+        label: def.pluralLabel,
+        kind: def.kind,
+        types: [def.kind],
+      });
+    }
+
+    return result;
+  }
+
+  private getCommonSubgroups(): RootGroupDef[] {
+    return getMetaTypesByGroup('common').map((def) => ({
+      label: def.pluralLabel,
+      kind: def.kind,
+      types: [def.kind],
+    }));
+  }
+}

@@ -1,17 +1,69 @@
 import * as fs from 'fs';
-import { MetaObject, MetaChild } from '../../domain/MetaObject';
+import { XMLParser } from 'fast-xml-parser';
+import { MetaChild, MetaObject } from '../../domain/MetaObject';
 import {
   extractChildMetaElementXml,
   extractColumnXmlFromTabularSection,
-  extractMainChildObjectsInnerXml,
-  extractNestingAwareBlock,
   extractSimpleTag,
   extractSynonym,
 } from './XmlUtils';
 
+type XmlTextNode = { '#text': string };
+type XmlElementNode = { [tagName: string]: XmlNodeList };
+type XmlNode = XmlTextNode | XmlElementNode;
+type XmlNodeList = XmlNode[];
+
+const parser = new XMLParser({
+  preserveOrder: true,
+  ignoreAttributes: false,
+  trimValues: false,
+  parseTagValue: false,
+  processEntities: false,
+});
+
+function isTextNode(node: XmlNode): node is XmlTextNode {
+  return Object.prototype.hasOwnProperty.call(node, '#text');
+}
+
+function getElementName(node: XmlNode): string | null {
+  if (isTextNode(node)) {
+    return null;
+  }
+  const [name] = Object.keys(node);
+  return name ?? null;
+}
+
+function getElementChildren(node: XmlNode): XmlNodeList {
+  if (isTextNode(node)) {
+    return [];
+  }
+  const name = getElementName(node);
+  return name ? (node[name] ?? []) : [];
+}
+
+function findFirstElement(nodes: XmlNodeList, tagName: string): XmlElementNode | null {
+  for (const node of nodes) {
+    const name = getElementName(node);
+    if (!name) {
+      continue;
+    }
+    if (name === tagName) {
+      return node as XmlElementNode;
+    }
+    const found = findFirstElement(getElementChildren(node), tagName);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+}
+
+function findDirectChildren(nodes: XmlNodeList, tagName: string): XmlElementNode[] {
+  return nodes.filter((node): node is XmlElementNode => getElementName(node) === tagName);
+}
+
 /**
- * Читает XML-файл объекта метаданных (Справочник, Документ, Регистр …) и
- * возвращает структуру с дочерними элементами (реквизиты, ТЧ, формы, макеты, команды).
+ * Читает XML объекта метаданных и возвращает имя, синоним и дочерние элементы.
  */
 export class ObjectXmlReader {
   read(xmlPath: string): MetaObject | null {
@@ -22,94 +74,92 @@ export class ObjectXmlReader {
       return null;
     }
 
-    const rootTagMatch = xml.match(/<MetaDataObject[^>]*>\s*<([A-Za-z][A-Za-z0-9]*)\s/);
-    if (!rootTagMatch) {
+    const nodes = parser.parse(xml) as XmlNodeList;
+    const metaDataObject = findFirstElement(nodes, 'MetaDataObject');
+    if (!metaDataObject) {
+      return null;
+    }
+
+    const rootElement = getElementChildren(metaDataObject).find((node) => Boolean(getElementName(node)));
+    const rootTag = rootElement ? getElementName(rootElement) : null;
+    if (!rootTag) {
       return null;
     }
 
     return {
-      tag: rootTagMatch[1],
+      tag: rootTag,
       name: extractSimpleTag(xml, 'Name') ?? '',
       synonym: extractSynonym(xml),
-      children: this.parseChildren(xml),
+      children: this.parseChildren(rootElement as XmlElementNode),
     };
   }
 
-  /**
-   * Парсит дочерние элементы из главного `<ChildObjects>`.
-   *
-   * Порядок элементов в выгрузке:
-   *   Attribute… → TabularSection… → Form… → Command… → Template…
-   * Чтобы не поймать `Attribute`, принадлежащие колонкам ТЧ, реквизиты
-   * извлекаются только из части ДО первого `<TabularSection>`.
-   */
-  private parseChildren(xml: string): MetaChild[] {
+  private parseChildren(rootElement: XmlNode): MetaChild[] {
     const result: MetaChild[] = [];
-
-    const mainBlock = extractMainChildObjectsInnerXml(xml);
-    if (!mainBlock) {
+    const childObjects = findFirstElement(getElementChildren(rootElement), 'ChildObjects');
+    if (!childObjects) {
       return result;
     }
 
-    const tsStart = mainBlock.search(/<TabularSection(?=[\s/>])/);
-    const attrBlock = tsStart >= 0 ? mainBlock.slice(0, tsStart) : mainBlock;
-    for (const ctag of ['Attribute', 'Dimension', 'Resource']) {
-      this.extractComplex(attrBlock, ctag, result);
-    }
+    const directChildren = getElementChildren(childObjects);
 
-    this.extractComplex(mainBlock, 'EnumValue', result);
-    this.extractComplex(mainBlock, 'TabularSection', result);
-
-    for (const tag of ['Form', 'Template'] as const) {
-      const simpleRe = new RegExp(`<${tag}>([^<]+)<\/${tag}>`, 'g');
-      let m: RegExpExecArray | null;
-      while ((m = simpleRe.exec(mainBlock)) !== null) {
-        result.push({ tag, name: m[1].trim(), synonym: '' });
+    for (const tag of ['Attribute', 'Dimension', 'Resource'] as const) {
+      for (const element of findDirectChildren(directChildren, tag)) {
+        result.push(this.toMetaChild(tag, element));
       }
     }
 
-    this.extractComplex(mainBlock, 'Command', result);
-    this.extractComplex(mainBlock, 'AddressingAttribute', result);
+    for (const element of findDirectChildren(directChildren, 'EnumValue')) {
+      result.push(this.toMetaChild('EnumValue', element));
+    }
+
+    for (const element of findDirectChildren(directChildren, 'TabularSection')) {
+      result.push(this.toTabularSectionChild(element));
+    }
+
+    for (const tag of ['Form', 'Template'] as const) {
+      for (const element of findDirectChildren(directChildren, tag)) {
+        const name = extractSimpleTagFromElement(element, 'Name') ?? collectDirectText(getElementChildren(element));
+        result.push({ tag, name, synonym: '' });
+      }
+    }
+
+    for (const element of findDirectChildren(directChildren, 'Command')) {
+      result.push(this.toMetaChild('Command', element));
+    }
+
+    for (const element of findDirectChildren(directChildren, 'AddressingAttribute')) {
+      result.push(this.toMetaChild('AddressingAttribute', element));
+    }
 
     return result;
   }
 
-  /**
-   * Извлекает дочерние элементы «с атрибутами» (реквизиты, ТЧ, команды, …).
-   * Для табличной части дополнительно заполняет `columns` её собственным `<ChildObjects>`.
-   */
-  private extractComplex(block: string, tag: string, result: MetaChild[]): void {
-    const openRe = new RegExp(`<${tag}(?=[\\s/>])[^>]*>`, 'g');
-    const closeTag = `</${tag}>`;
-
-    let m: RegExpExecArray | null;
-    while ((m = openRe.exec(block)) !== null) {
-      const startContent = m.index + m[0].length;
-      const endIdx = block.indexOf(closeTag, startContent);
-      if (endIdx === -1) {
-        continue;
-      }
-      const inner = block.substring(startContent, endIdx);
-      const name = extractSimpleTag(inner, 'Name') ?? '';
-      const synonym = extractSynonym(inner);
-
-      if (tag === 'TabularSection') {
-        const tsChildBlock = extractNestingAwareBlock(inner, 'ChildObjects');
-        const columns: MetaChild[] = [];
-        if (tsChildBlock) {
-          this.extractComplex(tsChildBlock, 'Attribute', columns);
-        }
-        result.push({ tag, name, synonym, columns });
-      } else {
-        result.push({ tag, name, synonym });
-      }
-    }
+  private toMetaChild(tag: string, element: XmlElementNode): MetaChild {
+    return {
+      tag,
+      name: extractSimpleTagFromElement(element, 'Name') ?? '',
+      synonym: extractSynonymFromElement(element),
+    };
   }
 
-  /**
-   * Обновляет блок `<Type>` у выбранного элемента метаданных.
-   * Возвращает `true`, если файл был изменён и сохранён.
-   */
+  private toTabularSectionChild(element: XmlElementNode): MetaChild {
+    const columns: MetaChild[] = [];
+    const childObjects = findFirstElement(getElementChildren(element), 'ChildObjects');
+    if (childObjects) {
+      for (const column of findDirectChildren(getElementChildren(childObjects), 'Attribute')) {
+        columns.push(this.toMetaChild('Attribute', column));
+      }
+    }
+
+    return {
+      tag: 'TabularSection',
+      name: extractSimpleTagFromElement(element, 'Name') ?? '',
+      synonym: extractSynonymFromElement(element),
+      columns,
+    };
+  }
+
   updateTypeInObject(
     xmlPath: string,
     options: {
@@ -157,10 +207,6 @@ export class ObjectXmlReader {
     return true;
   }
 
-  /**
-   * Обновляет значение свойства в блоке `<Properties>` выбранного элемента метаданных.
-   * Возвращает `true`, если файл был изменён и сохранён.
-   */
   updatePropertyInObject(
     xmlPath: string,
     options: {
@@ -209,6 +255,33 @@ export class ObjectXmlReader {
     fs.writeFileSync(xmlPath, updatedXml, 'utf-8');
     return true;
   }
+}
+
+function extractSimpleTagFromElement(element: XmlElementNode, tagName: string): string | undefined {
+  const target = findFirstElement(getElementChildren(element), tagName);
+  if (!target) {
+    return undefined;
+  }
+  return collectDirectText(getElementChildren(target)) || undefined;
+}
+
+function extractSynonymFromElement(element: XmlElementNode): string {
+  const synonym = findFirstElement(getElementChildren(element), 'Synonym');
+  if (!synonym) {
+    return '';
+  }
+  const content = findFirstElement(getElementChildren(synonym), 'v8:content');
+  return content ? collectDirectText(getElementChildren(content)) : '';
+}
+
+function collectDirectText(nodes: XmlNodeList): string {
+  let result = '';
+  for (const node of nodes) {
+    if (isTextNode(node)) {
+      result += node['#text'];
+    }
+  }
+  return result.trim();
 }
 
 function updateTypeInElement(elementXml: string, typeInnerXml: string): string {

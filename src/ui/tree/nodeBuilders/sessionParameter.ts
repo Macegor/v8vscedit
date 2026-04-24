@@ -96,7 +96,7 @@ export const sessionParameterHandler: ObjectHandler = {
           key: 'Name',
           title: 'Имя',
           kind: 'string',
-          value: inner.trim() || node.label,
+          value: inner.trim() || node.textLabel,
         });
         continue;
       }

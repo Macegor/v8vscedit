@@ -98,7 +98,7 @@ export const commonModuleHandler: ObjectHandler = {
         key: 'Name',
         title: 'Имя',
         kind: 'string',
-        value: extractSimpleTag(xml, 'Name') ?? node.label,
+        value: extractSimpleTag(xml, 'Name') ?? node.textLabel,
       },
       {
         key: 'Synonym',

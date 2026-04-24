@@ -206,7 +206,7 @@ export const commonAttributeHandler: ObjectHandler = {
           key: 'Name',
           title,
           kind: 'string',
-          value: inner.trim() || node.label,
+          value: inner.trim() || node.textLabel,
         });
         continue;
       }

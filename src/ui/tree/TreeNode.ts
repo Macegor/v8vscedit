@@ -1,200 +1,55 @@
 import * as vscode from 'vscode';
+import { MetaTreeNodeContext, NodeKind, TreeNodeModel, getNodeKindLabel } from './TreeNodeModel';
+
+export { MetaTreeNodeContext, NodeKind, TreeNodeModel, getNodeKindLabel } from './TreeNodeModel';
 
 /**
- * Контекст узла, созданного из иерархии объекта метаданных (справочник, план обмена и т.д.).
- * Нужен для панели свойств дочерних элементов и поиска XML-фрагментов.
+ * Тонкая vscode-обёртка над `TreeNodeModel`.
+ * Вся предметная информация живёт в `model`, а класс отвечает только за
+ * интеграцию с `TreeItem`.
  */
-export interface MetaTreeNodeContext {
-  /** Тип корневого объекта в ветке дерева (например ExchangePlan) */
-  rootMetaKind: NodeKind;
-  /** Имя табличной части — только для узла колонки */
-  tabularSectionName?: string;
-  /**
-   * XML основного объекта метаданных (план обмена и т.д.).
-   * Нужен, если {@link MetadataNode.xmlPath} указывает на вложенный файл (макет).
-   */
-  ownerObjectXmlPath?: string;
-}
-
-// ---------------------------------------------------------------------------
-// Типы узлов
-// ---------------------------------------------------------------------------
-
-export type NodeKind =
-  // Корневые
-  | 'configuration'
-  | 'extension'
-  // Группы верхнего уровня
-  | 'group-common'
-  | 'group-type'
-  /** Подветки группы «Документы» в навигаторе (не объекты метаданных) */
-  | 'NumeratorsBranch'
-  | 'SequencesBranch'
-  // Типы объектов (группа + иконка)
-  | 'Subsystem'
-  | 'CommonModule'
-  | 'Role'
-  | 'CommonForm'
-  | 'CommonCommand'
-  | 'CommandGroup'
-  | 'CommonPicture'
-  | 'CommonTemplate'
-  | 'XDTOPackage'
-  | 'StyleItem'
-  | 'DefinedType'
-  | 'Constant'
-  | 'Catalog'
-  | 'Document'
-  | 'DocumentNumerator'
-  | 'Enum'
-  | 'InformationRegister'
-  | 'AccumulationRegister'
-  | 'AccountingRegister'
-  | 'CalculationRegister'
-  | 'Report'
-  | 'DataProcessor'
-  | 'BusinessProcess'
-  | 'Task'
-  | 'ExchangePlan'
-  | 'ChartOfCharacteristicTypes'
-  | 'ChartOfAccounts'
-  | 'ChartOfCalculationTypes'
-  | 'DocumentJournal'
-  | 'ScheduledJob'
-  | 'EventSubscription'
-  | 'HTTPService'
-  | 'WebService'
-  | 'FilterCriterion'
-  | 'Sequence'
-  | 'SessionParameter'
-  | 'CommonAttribute'
-  | 'FunctionalOption'
-  | 'FunctionalOptionsParameter'
-  | 'SettingsStorage'
-  | 'Style'
-  | 'WSReference'
-  | 'WebSocketClient'
-  | 'IntegrationService'
-  | 'Bot'
-  | 'ExternalDataSource'
-  | 'Interface'
-  | 'PaletteColor'
-  | 'Language'
-  // Дочерние элементы
-  | 'Attribute'
-  | 'AddressingAttribute'
-  | 'TabularSection'
-  | 'Column'
-  | 'Form'
-  | 'Command'
-  | 'Template'
-  | 'Dimension'
-  | 'Resource'
-  | 'EnumValue';
-
-/** Человекочитаемые названия типов узлов для UI */
-const NODE_KIND_LABELS: Record<NodeKind, string> = {
-  configuration: 'Конфигурация',
-  extension: 'Расширение',
-  'group-common': 'Группа "Общие"',
-  'group-type': 'Группа объектов',
-  NumeratorsBranch: 'Нумераторы',
-  SequencesBranch: 'Последовательности',
-  Subsystem: 'Подсистема',
-  CommonModule: 'Общий модуль',
-  Role: 'Роль',
-  CommonForm: 'Общая форма',
-  CommonCommand: 'Общая команда',
-  CommandGroup: 'Группа команд',
-  CommonPicture: 'Общая картинка',
-  CommonTemplate: 'Общий макет',
-  XDTOPackage: 'XDTO-пакет',
-  StyleItem: 'Элемент стиля',
-  DefinedType: 'Определяемый тип',
-  Constant: 'Константа',
-  Catalog: 'Справочник',
-  Document: 'Документ',
-  DocumentNumerator: 'Нумератор документов',
-  Enum: 'Перечисление',
-  InformationRegister: 'Регистр сведений',
-  AccumulationRegister: 'Регистр накопления',
-  AccountingRegister: 'Регистр бухгалтерии',
-  CalculationRegister: 'Регистр расчета',
-  Report: 'Отчет',
-  DataProcessor: 'Обработка',
-  BusinessProcess: 'Бизнес-процесс',
-  Task: 'Задача',
-  ExchangePlan: 'План обмена',
-  ChartOfCharacteristicTypes: 'План видов характеристик',
-  ChartOfAccounts: 'План счетов',
-  ChartOfCalculationTypes: 'План видов расчета',
-  DocumentJournal: 'Журнал документов',
-  ScheduledJob: 'Регламентное задание',
-  EventSubscription: 'Подписка на события',
-  HTTPService: 'HTTP-сервис',
-  WebService: 'Web-сервис',
-  FilterCriterion: 'Критерий отбора',
-  Sequence: 'Последовательность',
-  SessionParameter: 'Параметр сеанса',
-  CommonAttribute: 'Общий реквизит',
-  FunctionalOption: 'Функциональная опция',
-  FunctionalOptionsParameter: 'Параметр функциональной опции',
-  SettingsStorage: 'Хранилище настроек',
-  Style: 'Стиль',
-  WSReference: 'WS-ссылка',
-  WebSocketClient: 'WebSocket-клиент',
-  IntegrationService: 'Сервис интеграции',
-  Bot: 'Бот',
-  ExternalDataSource: 'Внешний источник данных',
-  Interface: 'Интерфейс',
-  PaletteColor: 'Цвет палитры',
-  Language: 'Язык',
-  Attribute: 'Реквизит',
-  AddressingAttribute: 'Реквизит адресации',
-  TabularSection: 'Табличная часть',
-  Column: 'Колонка',
-  Form: 'Форма',
-  Command: 'Команда',
-  Template: 'Макет',
-  Dimension: 'Измерение',
-  Resource: 'Ресурс',
-  EnumValue: 'Значение перечисления',
-};
-
-/** Возвращает человекочитаемое имя типа узла */
-export function getNodeKindLabel(nodeKind: NodeKind): string {
-  return NODE_KIND_LABELS[nodeKind] ?? nodeKind;
-}
-
-/** Узел дерева метаданных */
 export class MetadataNode extends vscode.TreeItem {
   constructor(
-    /** Отображаемая метка */
-    public readonly label: string,
-    /** Тип узла */
-    public readonly nodeKind: NodeKind,
-    /** Состояние раскрытия */
-    collapsibleState: vscode.TreeItemCollapsibleState,
-    /** Путь к XML-файлу (для открытия по клику) */
-    public readonly xmlPath?: string,
-    /** Функция ленивой загрузки дочерних узлов */
-    public readonly childrenLoader?: () => MetadataNode[],
-    /** Тег объекта расширения: [OWN] / [BORROWED] */
-    public readonly ownershipTag?: 'OWN' | 'BORROWED',
-    /** Скрывать ли команду "Свойства" в контекстном меню */
-    public readonly hidePropertiesCommand?: boolean,
-    /** Цепочка «объект метаданных → дети» для общих обработчиков свойств */
-    public readonly metaContext?: MetaTreeNodeContext
+    public readonly model: TreeNodeModel,
+    collapsibleState: vscode.TreeItemCollapsibleState
   ) {
-    super(label, collapsibleState);
-    // Суффикс -hasXml позволяет фильтровать пункты контекстного меню
-    const baseContextValue = xmlPath ? `${nodeKind}-hasXml` : nodeKind;
-    this.contextValue = hidePropertiesCommand
+    super(model.label, collapsibleState);
+
+    const baseContextValue = model.xmlPath ? `${model.nodeKind}-hasXml` : model.nodeKind;
+    this.contextValue = model.hidePropertiesCommand
       ? `${baseContextValue}-propertiesHidden`
       : baseContextValue;
 
-    if (ownershipTag) {
-      this.description = ownershipTag === 'OWN' ? '[свой]' : '[заим.]';
+    if (model.ownershipTag) {
+      this.description = model.ownershipTag === 'OWN' ? '[свой]' : '[заим.]';
     }
+  }
+
+  get textLabel(): string {
+    return this.model.label;
+  }
+
+  get nodeKind(): NodeKind {
+    return this.model.nodeKind;
+  }
+
+  get xmlPath(): string | undefined {
+    return this.model.xmlPath;
+  }
+
+  get childrenLoader(): (() => MetadataNode[]) | undefined {
+    return this.model.childrenLoader;
+  }
+
+  get ownershipTag(): 'OWN' | 'BORROWED' | undefined {
+    return this.model.ownershipTag;
+  }
+
+  get hidePropertiesCommand(): boolean | undefined {
+    return this.model.hidePropertiesCommand;
+  }
+
+  get metaContext(): MetaTreeNodeContext | undefined {
+    return this.model.metaContext;
   }
 }

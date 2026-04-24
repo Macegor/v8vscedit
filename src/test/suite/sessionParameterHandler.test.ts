@@ -15,12 +15,11 @@ suite('sessionParameterHandler', () => {
       return;
     }
 
-    const node = new MetadataNode(
-      'АвторизованныйПользователь',
-      'SessionParameter',
-      vscode.TreeItemCollapsibleState.None,
-      xmlPath
-    );
+    const node = new MetadataNode({
+      label: 'АвторизованныйПользователь',
+      nodeKind: 'SessionParameter',
+      xmlPath,
+    }, vscode.TreeItemCollapsibleState.None);
 
     const props = sessionParameterHandler.getProperties!(node);
     const keys = props.map((p) => p.key);
@@ -33,9 +32,10 @@ suite('sessionParameterHandler', () => {
       presentation: string;
       items: Array<{ canonical: string }>;
     };
+
     assert.ok(
       typeValue.items.some((item) => item.canonical === 'CatalogRef.Пользователи'),
-      'Ожидался составной тип с ссылкой на справочник Пользователи'
+      'Ожидался составной тип со ссылкой на справочник Пользователи'
     );
     assert.ok(typeValue.presentation.includes('СправочникСсылка.Пользователи'));
   });

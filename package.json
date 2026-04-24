@@ -385,6 +385,7 @@
     "webpack-cli": "^5.1.0"
   },
   "dependencies": {
+    "fast-xml-parser": "^4.5.6",
     "iconv-lite": "^0.7.2",
     "tree-sitter-bsl": "^0.1.6",
     "vscode-languageclient": "^9.0.1",

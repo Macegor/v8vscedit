@@ -20,16 +20,15 @@ export interface BuildNodeParams {
  * (команда по клику и т.п.).
  */
 export function buildNode(descriptor: NodeDescriptor | undefined, params: BuildNodeParams): MetadataNode {
-  const node = new MetadataNode(
-    params.label,
-    params.kind,
-    params.collapsibleState,
-    params.xmlPath,
-    params.childrenLoader,
-    params.ownershipTag,
-    params.hidePropertiesCommand,
-    params.metaContext
-  );
+  const node = new MetadataNode({
+    label: params.label,
+    nodeKind: params.kind,
+    xmlPath: params.xmlPath,
+    childrenLoader: params.childrenLoader,
+    ownershipTag: params.ownershipTag,
+    hidePropertiesCommand: params.hidePropertiesCommand,
+    metaContext: params.metaContext,
+  }, params.collapsibleState);
 
   if (descriptor?.singleClickCommand) {
     node.command = mapCommand(descriptor.singleClickCommand, node);

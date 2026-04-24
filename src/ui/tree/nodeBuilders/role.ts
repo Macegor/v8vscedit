@@ -109,7 +109,7 @@ export const roleHandler: ObjectHandler = {
       key: 'Name',
       title: ROLE_FIELD_TITLES.Name,
       kind: 'string',
-      value: extractSimpleTag(xml, 'Name') ?? node.label,
+      value: extractSimpleTag(xml, 'Name') ?? node.textLabel,
     });
     props.push({
       key: 'Synonym',
@@ -124,7 +124,7 @@ export const roleHandler: ObjectHandler = {
       value: extractSimpleTag(xml, 'Comment') ?? '',
     });
 
-    const rightsPath = resolveRoleRightsXml(node.xmlPath, node.label);
+    const rightsPath = resolveRoleRightsXml(node.xmlPath, node.textLabel);
     if (rightsPath && fs.existsSync(rightsPath)) {
       const rightsXml = fs.readFileSync(rightsPath, 'utf-8');
       props.push({

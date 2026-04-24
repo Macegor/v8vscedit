@@ -55,7 +55,8 @@ export const structuredMetaChildHandler: ObjectHandler = {
     }
 
     const objectXml = fs.readFileSync(objectMainXmlPath, 'utf-8');
-    const { nodeKind, label } = node;
+    const { nodeKind } = node;
+    const label = node.textLabel;
     const tsName = node.metaContext.tabularSectionName;
 
     try {

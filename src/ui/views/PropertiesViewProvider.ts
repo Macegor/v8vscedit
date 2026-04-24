@@ -62,7 +62,7 @@ export class PropertiesViewProvider implements vscode.Disposable {
 
   /** Формирует заголовок вкладки */
   private buildTitle(node: MetadataNode): string {
-    return `${node.label} — Свойства`;
+    return `${node.textLabel} — Свойства`;
   }
 
   /** Формирует HTML страницы */
@@ -213,7 +213,7 @@ export class PropertiesViewProvider implements vscode.Disposable {
 
     if (!handler || !handler.getProperties || !canShowProperties) {
       return this.renderState(
-        node.label,
+        node.textLabel,
         'Для выбранного объекта отсутствуют свойства',
         getNodeKindLabel(node.nodeKind)
       );
@@ -225,7 +225,7 @@ export class PropertiesViewProvider implements vscode.Disposable {
     const isEditLockedBySupport = this.isEditLockedBySupport(node);
     if (properties.length === 0) {
       return this.renderState(
-        node.label,
+        node.textLabel,
         'Для выбранного объекта отсутствуют свойства',
         getNodeKindLabel(node.nodeKind)
       );
@@ -233,7 +233,7 @@ export class PropertiesViewProvider implements vscode.Disposable {
 
     return `
       <div class="header">
-        <div class="title">${escapeHtml(node.label)}</div>
+        <div class="title">${escapeHtml(node.textLabel)}</div>
         <p class="subtitle">${escapeHtml(getNodeKindLabel(node.nodeKind))}</p>
         ${isEditLockedBySupport ? '<p class="subtitle">Редактирование запрещено поддержкой</p>' : ''}
       </div>
@@ -695,7 +695,7 @@ export class PropertiesViewProvider implements vscode.Disposable {
     const newName = await vscode.window.showInputBox({
       title: 'Переименование объекта',
       prompt: 'Введите новое имя объекта',
-      value: this.activeNode.label,
+      value: this.activeNode.textLabel,
       validateInput: (value) => {
         if (!value || !value.trim()) {
           return 'Имя не может быть пустым.';
@@ -728,16 +728,15 @@ export class PropertiesViewProvider implements vscode.Disposable {
       return;
     }
 
-    this.activeNode = new MetadataNode(
-      trimmed,
-      this.activeNode.nodeKind,
-      this.activeNode.collapsibleState ?? vscode.TreeItemCollapsibleState.None,
-      renamedPath,
-      this.activeNode.childrenLoader,
-      this.activeNode.ownershipTag,
-      this.activeNode.hidePropertiesCommand,
-      this.activeNode.metaContext
-    );
+    this.activeNode = new MetadataNode({
+      label: trimmed,
+      nodeKind: this.activeNode.nodeKind,
+      xmlPath: renamedPath,
+      childrenLoader: this.activeNode.childrenLoader,
+      ownershipTag: this.activeNode.ownershipTag,
+      hidePropertiesCommand: this.activeNode.hidePropertiesCommand,
+      metaContext: this.activeNode.metaContext,
+    }, this.activeNode.collapsibleState ?? vscode.TreeItemCollapsibleState.None);
     this.editSession.delete('Name');
     this.activeProperties = [];
     if (this.panel) {
@@ -774,14 +773,14 @@ export class PropertiesViewProvider implements vscode.Disposable {
     const childTag = childTagMap[node.nodeKind];
     if (childTag) {
       const xml = fs.readFileSync(xmlPath, 'utf-8');
-      const childXml = extractChildMetaElementXml(xml, childTag, node.label);
+      const childXml = extractChildMetaElementXml(xml, childTag, node.textLabel);
       const uuid = extractUuidFromXml(childXml);
       return uuid ? this.supportService.getSupportModeByUuid(xmlPath, uuid) : this.supportService.getSupportMode(xmlPath);
     }
 
     if (node.nodeKind === 'Column') {
       const xml = fs.readFileSync(xmlPath, 'utf-8');
-      const columnXml = extractColumnXmlFromTabularSection(xml, node.metaContext?.tabularSectionName ?? '', node.label);
+      const columnXml = extractColumnXmlFromTabularSection(xml, node.metaContext?.tabularSectionName ?? '', node.textLabel);
       const uuid = extractUuidFromXml(columnXml);
       return uuid ? this.supportService.getSupportModeByUuid(xmlPath, uuid) : this.supportService.getSupportMode(xmlPath);
     }
@@ -830,7 +829,7 @@ function resolveTypeTarget(node: MetadataNode): {
     return {
       xmlPath: node.xmlPath,
       targetKind: node.nodeKind,
-      targetName: node.label,
+      targetName: node.textLabel,
     };
   }
   const supported: Record<string, 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column'> = {
@@ -847,7 +846,7 @@ function resolveTypeTarget(node: MetadataNode): {
   return {
     xmlPath: node.metaContext?.ownerObjectXmlPath ?? node.xmlPath,
     targetKind,
-    targetName: node.label,
+    targetName: node.textLabel,
     tabularSectionName: node.metaContext?.tabularSectionName,
   };
 }
@@ -875,7 +874,7 @@ function resolvePropertyTarget(node: MetadataNode): {
     return {
       xmlPath: node.metaContext?.ownerObjectXmlPath ?? node.xmlPath,
       targetKind: mapped,
-      targetName: node.label,
+      targetName: node.textLabel,
       tabularSectionName: node.metaContext?.tabularSectionName,
     };
   }
@@ -884,23 +883,23 @@ function resolvePropertyTarget(node: MetadataNode): {
     if (!filePath) {
       return null;
     }
-    return { xmlPath: filePath, targetKind: 'Self', targetName: node.label };
+    return { xmlPath: filePath, targetKind: 'Self', targetName: node.textLabel };
   }
   if (node.nodeKind === 'Command') {
     const filePath = resolveNestedObjectDefinitionPath(node, 'Commands');
     if (!filePath) {
       return null;
     }
-    return { xmlPath: filePath, targetKind: 'Self', targetName: node.label };
+    return { xmlPath: filePath, targetKind: 'Self', targetName: node.textLabel };
   }
   if (node.nodeKind === 'Template') {
     const filePath = resolveNestedObjectDefinitionPath(node, 'Templates');
     if (!filePath) {
       return null;
     }
-    return { xmlPath: filePath, targetKind: 'Self', targetName: node.label };
+    return { xmlPath: filePath, targetKind: 'Self', targetName: node.textLabel };
   }
-  return { xmlPath: node.xmlPath, targetKind: 'Self', targetName: node.label };
+  return { xmlPath: node.xmlPath, targetKind: 'Self', targetName: node.textLabel };
 }
 
 function resolveNestedObjectDefinitionPath(
@@ -913,8 +912,8 @@ function resolveNestedObjectDefinitionPath(
   }
   const location = getObjectLocationFromXml(ownerXmlPath);
   const candidates = [
-    path.join(location.objectDir, folderName, node.label, `${node.label}.xml`),
-    path.join(location.objectDir, folderName, `${node.label}.xml`),
+    path.join(location.objectDir, folderName, node.textLabel, `${node.textLabel}.xml`),
+    path.join(location.objectDir, folderName, `${node.textLabel}.xml`),
   ];
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {
