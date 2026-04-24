@@ -5,6 +5,7 @@ import { registerExtensionCommands } from './ext/ExtensionCommands';
 import { registerOpenModuleCommands } from './open/OpenModuleCommand';
 import { registerOpenXmlCommand } from './open/OpenXmlCommand';
 import { registerShowPropertiesCommand } from './properties/ShowPropertiesCommand';
+import { registerTreeSearchCommands } from './search/TreeSearchCommands';
 
 /**
  * Тонкий реестр команд: только связывает команды с конкретными регистраторами.
@@ -22,6 +23,7 @@ export function registerCommands(
   registerOpenXmlCommand(context, services);
   registerOpenModuleCommands(context, services);
   registerShowPropertiesCommand(context, services);
+  registerTreeSearchCommands(context, services);
   registerDbCommands(context, services);
   registerExtensionCommands(context, services);
 }

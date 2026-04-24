@@ -19,13 +19,18 @@
       "activitybar": [
         {
           "id": "v8vscedit",
-          "title": "Навигатор",
+          "title": "1С: Редактор",
           "icon": "src/icons/activity-bar.svg"
         }
       ]
     },
     "views": {
       "v8vscedit": [
+        {
+          "id": "v8vsceditActions",
+          "name": "Операции",
+          "type": "webview"
+        },
         {
           "id": "v8vsceditTree",
           "name": "Навигатор"
@@ -37,6 +42,16 @@
         "command": "v8vscedit.refresh",
         "title": "Обновить",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "v8vscedit.searchTree",
+        "title": "Поиск в навигаторе",
+        "icon": "$(search)"
+      },
+      {
+        "command": "v8vscedit.clearTreeSearch",
+        "title": "Сбросить поиск в навигаторе",
+        "icon": "$(close)"
       },
       {
         "command": "v8vscedit.importConfigurations",
@@ -159,26 +174,6 @@
     ],
     "menus": {
       "view/title": [
-        {
-          "command": "v8vscedit.importConfigurations",
-          "when": "view == v8vsceditTree",
-          "group": "navigation@-1"
-        },
-        {
-          "command": "v8vscedit.updateChangedConfigurations",
-          "when": "view == v8vsceditTree",
-          "group": "navigation@0"
-        },
-        {
-          "command": "v8vscedit.runThinClient",
-          "when": "view == v8vsceditTree",
-          "group": "navigation@1"
-        },
-        {
-          "command": "v8vscedit.runConfigurator",
-          "when": "view == v8vsceditTree",
-          "group": "navigation@2"
-        },
         {
           "command": "v8vscedit.refresh",
           "when": "view == v8vsceditTree",

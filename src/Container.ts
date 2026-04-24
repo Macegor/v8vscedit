@@ -4,8 +4,10 @@ import { ConfigEntry } from './domain/Configuration';
 import { findConfigurations } from './infra/fs/ConfigLocator';
 import { ChangedConfiguration, ConfigurationChangeDetector } from './infra/fs/ConfigurationChangeDetector';
 import { MetadataTreeProvider } from './ui/tree/MetadataTreeProvider';
+import { MetadataNode } from './ui/tree/TreeNode';
 import { registerCommands } from './ui/commands/CommandRegistry';
 import { PropertiesViewProvider } from './ui/views/PropertiesViewProvider';
+import { TreeSearchViewProvider } from './ui/views/search/TreeSearchViewProvider';
 import { OnecFileSystemProvider, ONEC_SCHEME } from './ui/vfs/OnecFileSystemProvider';
 import { SupportInfoService } from './infra/support/SupportInfoService';
 import { SupportDecorationProvider } from './ui/tree/decorations/SupportDecorationProvider';
@@ -31,9 +33,11 @@ export class Container {
   readonly vfs: OnecFileSystemProvider;
   readonly treeProvider: MetadataTreeProvider;
   readonly propertiesProvider: PropertiesViewProvider;
+  readonly treeSearchViewProvider: TreeSearchViewProvider;
   readonly lspManager: LspManager;
   readonly changeDetector: ConfigurationChangeDetector;
 
+  private treeView: vscode.TreeView<MetadataNode> | undefined;
   private changeStateTimer: NodeJS.Timeout | undefined;
   private changedConfigurations: ChangedConfiguration[] = [];
 
@@ -69,6 +73,14 @@ export class Container {
     this.treeProvider = new MetadataTreeProvider([], context.extensionUri, this.supportService);
     this.propertiesProvider = new PropertiesViewProvider(this.supportService);
     context.subscriptions.push(this.propertiesProvider);
+    this.treeSearchViewProvider = new TreeSearchViewProvider(context.extensionUri, {
+      treeProvider: this.treeProvider,
+      setTreeMessage: (message) => {
+        if (this.treeView) {
+          this.treeView.message = message;
+        }
+      },
+    });
     this.changeDetector = new ConfigurationChangeDetector(workspaceFolder.uri.fsPath);
 
     this.lspManager = new LspManager(context, this.outputChannel, ONEC_SCHEME);
@@ -78,6 +90,7 @@ export class Container {
   static async bootstrap(context: vscode.ExtensionContext, folder: vscode.WorkspaceFolder): Promise<Container> {
     const c = new Container(context, folder);
     c.wireTreeView();
+    c.wireTreeSearchView();
     c.wireSupportWatcher();
     c.wireConfigurationWatcher();
     c.wireConfigurationSourceWatcher();
@@ -103,7 +116,18 @@ export class Container {
       treeDataProvider: this.treeProvider,
       showCollapseAll: true,
     });
+    this.treeView = view;
     this.context.subscriptions.push(view);
+  }
+
+  private wireTreeSearchView(): void {
+    this.context.subscriptions.push(
+      vscode.window.registerWebviewViewProvider(
+        TreeSearchViewProvider.viewType,
+        this.treeSearchViewProvider,
+        { webviewOptions: { retainContextWhenHidden: true } }
+      )
+    );
   }
 
   private wireSupportWatcher(): void {
@@ -128,6 +152,11 @@ export class Container {
       refreshChangedConfigurationState: () => this.refreshChangedConfigurationState(),
       getChangedConfigurations: () => this.getChangedConfigurations(),
       markConfigurationsClean: (rootPaths) => this.markConfigurationsClean(rootPaths),
+      setTreeMessage: (message) => {
+        if (this.treeView) {
+          this.treeView.message = message;
+        }
+      },
     });
     registerSupportIndicatorCommands(this.context);
   }

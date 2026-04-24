@@ -19,4 +19,5 @@ export interface CommandServices {
   refreshChangedConfigurationState: () => void;
   getChangedConfigurations: () => ChangedConfiguration[];
   markConfigurationsClean: (rootPaths: string[]) => void;
+  setTreeMessage: (message: string | undefined) => void;
 }
