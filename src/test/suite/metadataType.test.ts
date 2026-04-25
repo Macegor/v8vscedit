@@ -86,4 +86,44 @@ suite('metadataType', () => {
     const saved = fs.readFileSync(xmlPath, 'utf-8');
     assert.ok(saved.includes('<v8:Type>xs:boolean</v8:Type>'));
   });
+  test('записывает тип реквизита рядом с самозакрывающимися тегами', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-'));
+    const xmlPath = path.join(dir, 'Document.xml');
+    fs.writeFileSync(
+      xmlPath,
+      `<?xml version="1.0" encoding="utf-8"?>
+<MetaDataObject>
+  <Document>
+    <Properties>
+      <Name>TestDocument</Name>
+    </Properties>
+    <ChildObjects>
+      <Attribute uuid="00000000-0000-0000-0000-000000000001">
+        <Properties>
+          <Name>TargetAttribute</Name>
+          <Comment/>
+          <Type>
+            <v8:Type>xs:string</v8:Type>
+          </Type>
+          <Format/>
+        </Properties>
+      </Attribute>
+    </ChildObjects>
+  </Document>
+</MetaDataObject>`,
+      'utf-8'
+    );
+
+    const changed = updateObjectTypeProperty(xmlPath, {
+      targetKind: 'Attribute',
+      targetName: 'TargetAttribute',
+      typeInnerXml: '<v8:Type xmlns:d5p1="http://v8.1c.ru/8.1/data/enterprise/current-config">d5p1:DocumentRef.OtherDocument</v8:Type>',
+    });
+
+    assert.strictEqual(changed, true);
+    const saved = fs.readFileSync(xmlPath, 'utf-8');
+    assert.ok(saved.includes('d5p1:DocumentRef.OtherDocument'));
+    assert.ok(saved.includes('<Comment/>'));
+    assert.ok(saved.includes('<Format/>'));
+  });
 });

@@ -1,4 +1,4 @@
-import { XMLBuilder, XMLParser } from 'fast-xml-parser';
+import { XMLParser } from 'fast-xml-parser';
 
 type XmlTextNode = { '#text': string };
 type XmlElementNode = { [tagName: string]: XmlNodeList };
@@ -13,25 +13,12 @@ const parser = new XMLParser({
   processEntities: false,
 });
 
-const builder = new XMLBuilder({
-  preserveOrder: true,
-  ignoreAttributes: false,
-  suppressEmptyNode: false,
-  processEntities: false,
-  format: false,
-});
-
 /**
  * Возвращает список узлов XML в режиме `preserveOrder`.
  * Вспомогательная функция скрывает конфигурацию парсера от вызывающего кода.
  */
 function parseXml(xml: string): XmlNodeList {
   return parser.parse(xml) as XmlNodeList;
-}
-
-/** Собирает XML обратно из списка узлов. */
-function buildXml(nodes: XmlNodeList): string {
-  return builder.build(nodes);
 }
 
 function isTextNode(node: XmlNode): node is XmlTextNode {
@@ -96,6 +83,91 @@ function getWrappedRootChildren(fragmentXml: string): XmlNodeList {
   return wrapped ? getElementChildren(wrapped) : [];
 }
 
+function findFirstElementRange(xml: string, tagName: string): { start: number; openEnd: number; end: number; closeStart: number } | null {
+  const tagRe = new RegExp(`</?${escapeRegExp(tagName)}(?:\\s[^<>]*)?\\/?>`, 'g');
+  let depth = 0;
+  let start = -1;
+  let openEnd = -1;
+  let match: RegExpExecArray | null;
+
+  while ((match = tagRe.exec(xml)) !== null) {
+    const text = match[0];
+    if (text.startsWith('</')) {
+      if (start === -1) {
+        continue;
+      }
+      depth--;
+      if (depth === 0) {
+        return {
+          start,
+          openEnd,
+          closeStart: match.index,
+          end: match.index + text.length,
+        };
+      }
+      continue;
+    }
+
+    if (start === -1) {
+      start = match.index;
+      openEnd = match.index + text.length;
+    }
+    if (text.endsWith('/>')) {
+      if (depth === 0) {
+        return {
+          start,
+          openEnd,
+          closeStart: openEnd,
+          end: openEnd,
+        };
+      }
+      continue;
+    }
+    depth++;
+  }
+
+  return null;
+}
+
+function findDirectElementRanges(xml: string, tagName: string): Array<{ start: number; end: number }> {
+  const ranges: Array<{ start: number; end: number }> = [];
+  const tagRe = /<\/?([A-Za-z_][\w:.-]*)(?:\s[^<>]*)?\/?>/g;
+  let depth = 0;
+  let current: { tag: string; start: number } | null = null;
+  let match: RegExpExecArray | null;
+
+  while ((match = tagRe.exec(xml)) !== null) {
+    const text = match[0];
+    const name = match[1];
+    if (text.startsWith('</')) {
+      depth = Math.max(0, depth - 1);
+      if (depth === 0 && current && current.tag === name) {
+        ranges.push({ start: current.start, end: match.index + text.length });
+        current = null;
+      }
+      continue;
+    }
+
+    const selfClosing = text.endsWith('/>');
+    if (depth === 0 && name === tagName) {
+      if (selfClosing) {
+        ranges.push({ start: match.index, end: match.index + text.length });
+      } else {
+        current = { tag: name, start: match.index };
+      }
+    }
+    if (!selfClosing) {
+      depth++;
+    }
+  }
+
+  return ranges;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /** Извлекает текст первого вхождения тега без атрибутов. */
 export function extractSimpleTag(xml: string, tagName: string): string | undefined {
   const element = findFirstElement(parseXml(xml), tagName);
@@ -119,14 +191,14 @@ export function extractSynonym(xml: string): string {
 
 /**
  * Возвращает внутренний XML первого тега `<tagName>...</tagName>`.
- * Имя сохранено для совместимости, но вложенность теперь обрабатывает parser.
+ * Имя сохранено для совместимости; исходное форматирование блока не нормализуется.
  */
 export function extractNestingAwareBlock(xml: string, tagName: string): string | null {
-  const element = findFirstElement(parseXml(xml), tagName);
-  if (!element) {
+  const range = findFirstElementRange(xml, tagName);
+  if (!range) {
     return null;
   }
-  return buildXml(getElementChildren(element));
+  return xml.slice(range.openEnd, range.closeStart);
 }
 
 /** Возвращает содержимое первого верхнеуровневого блока `<ChildObjects>`. */
@@ -142,15 +214,19 @@ export function findChildElementFullXmlInBlock(
   childTag: string,
   elementName: string
 ): string | null {
-  const children = getWrappedRootChildren(block);
-
-  for (const child of findDirectChildren(children, childTag)) {
+  for (const range of findDirectElementRanges(block, childTag)) {
+    const childXml = block.slice(range.start, range.end);
+    const children = getWrappedRootChildren(childXml);
+    const child = findDirectChildren(children, childTag)[0];
+    if (!child) {
+      continue;
+    }
     const nameNode = findFirstElement(getElementChildren(child), 'Name');
     if (!nameNode) {
       continue;
     }
     if (collectText(getElementChildren(nameNode)) === elementName) {
-      return buildXml([child]);
+      return childXml;
     }
   }
 
