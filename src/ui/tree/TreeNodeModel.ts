@@ -1,3 +1,4 @@
+import { ChildTag } from '../../domain/ChildTag';
 import { MetaKind, getMetaLabel } from '../../domain/MetaTypes';
 
 /**
@@ -18,6 +19,21 @@ export interface MetaTreeNodeContext {
   ownerObjectXmlPath?: string;
 }
 
+export type AddMetadataTarget =
+  | {
+    readonly kind: 'root';
+    readonly configRoot: string;
+    readonly configKind: 'cf' | 'cfe';
+    readonly targetKind: MetaKind;
+    readonly namePrefix?: string;
+  }
+  | {
+    readonly kind: 'child';
+    readonly ownerObjectXmlPath: string;
+    readonly childTag: ChildTag | 'Column';
+    readonly tabularSectionName?: string;
+  };
+
 /**
  * POJO-модель узла дерева без зависимости от vscode API.
  */
@@ -29,6 +45,7 @@ export interface TreeNodeModel {
   ownershipTag?: 'OWN' | 'BORROWED';
   hidePropertiesCommand?: boolean;
   metaContext?: MetaTreeNodeContext;
+  addMetadataTarget?: AddMetadataTarget;
 }
 
 /** Возвращает человекочитаемую подпись типа узла */

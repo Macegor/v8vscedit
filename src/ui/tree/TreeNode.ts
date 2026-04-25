@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
-import { MetaTreeNodeContext, NodeKind, TreeNodeModel, getNodeKindLabel } from './TreeNodeModel';
+import { AddMetadataTarget, MetaTreeNodeContext, NodeKind, TreeNodeModel, getNodeKindLabel } from './TreeNodeModel';
 
-export { MetaTreeNodeContext, NodeKind, TreeNodeModel, getNodeKindLabel } from './TreeNodeModel';
+export { AddMetadataTarget, MetaTreeNodeContext, NodeKind, TreeNodeModel, getNodeKindLabel } from './TreeNodeModel';
 
 /**
  * Тонкая vscode-обёртка над `TreeNodeModel`.
@@ -19,6 +19,9 @@ export class MetadataNode extends vscode.TreeItem {
     this.contextValue = model.hidePropertiesCommand
       ? `${baseContextValue}-propertiesHidden`
       : baseContextValue;
+    if (model.addMetadataTarget) {
+      this.contextValue = `${this.contextValue}-canAdd`;
+    }
 
     if (model.ownershipTag) {
       this.description = model.ownershipTag === 'OWN' ? '[свой]' : '[заим.]';
@@ -51,5 +54,14 @@ export class MetadataNode extends vscode.TreeItem {
 
   get metaContext(): MetaTreeNodeContext | undefined {
     return this.model.metaContext;
+  }
+
+  get addMetadataTarget() {
+    return this.model.addMetadataTarget;
+  }
+
+  replaceChildren(children: MetadataNode[], collapsibleState: vscode.TreeItemCollapsibleState): void {
+    this.model.childrenLoader = children.length > 0 ? () => children : undefined;
+    this.collapsibleState = collapsibleState;
   }
 }

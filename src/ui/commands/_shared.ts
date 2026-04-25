@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { ChangedConfiguration } from '../../infra/fs/ConfigurationChangeDetector';
 import { SupportInfoService } from '../../infra/support/SupportInfoService';
+import { MetadataXmlCreator } from '../../infra/xml';
 import { MetadataTreeProvider } from '../tree/MetadataTreeProvider';
 import { MetadataNode } from '../tree/TreeNode';
 import { PropertiesViewProvider } from '../views/PropertiesViewProvider';
@@ -11,14 +12,17 @@ export type NodeArg = MetadataNode | { xmlPath?: string; nodeKind?: string; labe
 export interface CommandServices {
   treeProvider: MetadataTreeProvider;
   workspaceFolder: vscode.WorkspaceFolder;
+  metadataXmlCreator: MetadataXmlCreator;
   reloadEntries: () => void | Promise<void>;
   propertiesViewProvider: PropertiesViewProvider;
   vfs: OnecFileSystemProvider;
   outputChannel: vscode.OutputChannel;
   supportService?: SupportInfoService;
   refreshChangedConfigurationState: () => void;
+  markChangedConfigurationByFiles: (filePaths: string[]) => void;
   getChangedConfigurations: () => ChangedConfiguration[];
   markConfigurationsClean: (rootPaths: string[]) => void;
+  suppressConfigurationReloadForFiles: (filePaths: string[]) => void;
   setTreeMessage: (message: string | undefined) => void;
   refreshActionsView: () => void;
 }

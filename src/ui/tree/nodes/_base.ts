@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { MetaTreeNodeContext, MetadataNode, NodeKind } from '../TreeNode';
+import { AddMetadataTarget, MetaTreeNodeContext, MetadataNode, NodeKind } from '../TreeNode';
 import { CommandId, NodeDescriptor } from './_types';
 
 /** Параметры создания узла с применением дескриптора */
@@ -13,6 +13,7 @@ export interface BuildNodeParams {
   hidePropertiesCommand?: boolean;
   /** Контекст для свойств дочерних узлов иерархии объекта метаданных */
   metaContext?: MetaTreeNodeContext;
+  addMetadataTarget?: AddMetadataTarget;
 }
 
 /**
@@ -28,6 +29,7 @@ export function buildNode(descriptor: NodeDescriptor | undefined, params: BuildN
     ownershipTag: params.ownershipTag,
     hidePropertiesCommand: params.hidePropertiesCommand,
     metaContext: params.metaContext,
+    addMetadataTarget: params.addMetadataTarget,
   }, params.collapsibleState);
 
   if (descriptor?.singleClickCommand) {

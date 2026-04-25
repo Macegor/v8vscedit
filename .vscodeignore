@@ -3,6 +3,7 @@
 out/**
 node_modules/**
 example/**
+example2/**
 .cursor/**
 .cursorignore
 docs/**

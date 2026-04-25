@@ -15,6 +15,7 @@ export * from './XmlUtils';
 export * from './ConfigXmlReader';
 export * from './ObjectXmlReader';
 export * from './ConfigurationXmlEditor';
+export * from './MetadataXmlCreator';
 export * from './PropertySchema';
 export type { ConfigInfo } from '../../domain/Configuration';
 export type { MetaObject, MetaChild } from '../../domain/MetaObject';

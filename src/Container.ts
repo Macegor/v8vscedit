@@ -11,6 +11,7 @@ import { PropertiesViewProvider } from './ui/views/PropertiesViewProvider';
 import { TreeSearchViewProvider } from './ui/views/search/TreeSearchViewProvider';
 import { OnecFileSystemProvider, ONEC_SCHEME } from './ui/vfs/OnecFileSystemProvider';
 import { SupportInfoService } from './infra/support/SupportInfoService';
+import { MetadataXmlCreator } from './infra/xml';
 import { SupportDecorationProvider } from './ui/tree/decorations/SupportDecorationProvider';
 import { LspManager } from './lsp/LspManager';
 import { BslReadonlyGuard } from './ui/readonly/BslReadonlyGuard';
@@ -34,6 +35,7 @@ export class Container {
   readonly vfs: OnecFileSystemProvider;
   readonly treeProvider: MetadataTreeProvider;
   readonly propertiesProvider: PropertiesViewProvider;
+  readonly metadataXmlCreator: MetadataXmlCreator;
   readonly treeSearchViewProvider: TreeSearchViewProvider;
   readonly lspManager: LspManager;
   readonly changeDetector: ConfigurationChangeDetector;
@@ -41,6 +43,7 @@ export class Container {
   private treeView: vscode.TreeView<MetadataNode> | undefined;
   private changeStateTimer: NodeJS.Timeout | undefined;
   private changedConfigurations: ChangedConfiguration[] = [];
+  private readonly suppressedConfigurationReloads = new Map<string, number>();
 
   private constructor(
     private readonly context: vscode.ExtensionContext,
@@ -83,6 +86,7 @@ export class Container {
       this.supportService
     );
     this.propertiesProvider = new PropertiesViewProvider(this.supportService);
+    this.metadataXmlCreator = new MetadataXmlCreator();
     context.subscriptions.push(this.propertiesProvider);
     this.treeSearchViewProvider = new TreeSearchViewProvider(context.extensionUri, {
       treeProvider: this.treeProvider,
@@ -156,14 +160,17 @@ export class Container {
     registerCommands(this.context, {
       treeProvider: this.treeProvider,
       workspaceFolder: this.workspaceFolder,
+      metadataXmlCreator: this.metadataXmlCreator,
       reloadEntries: () => this.reloadEntries(),
       propertiesViewProvider: this.propertiesProvider,
       vfs: this.vfs,
       outputChannel: this.outputChannel,
       supportService: this.supportService,
       refreshChangedConfigurationState: () => this.refreshChangedConfigurationState(),
+      markChangedConfigurationByFiles: (filePaths) => this.markChangedConfigurationByFiles(filePaths),
       getChangedConfigurations: () => this.getChangedConfigurations(),
       markConfigurationsClean: (rootPaths) => this.markConfigurationsClean(rootPaths),
+      suppressConfigurationReloadForFiles: (filePaths) => this.suppressConfigurationReloadForFiles(filePaths),
       setTreeMessage: (message) => {
         if (this.treeView) {
           this.treeView.message = message;
@@ -182,7 +189,10 @@ export class Container {
       false
     );
 
-    const onConfigChange = () => {
+    const onConfigChange = (uri: vscode.Uri) => {
+      if (this.consumeSuppressedConfigurationReload(uri.fsPath)) {
+        return;
+      }
       this.reloadEntries();
     };
 
@@ -254,6 +264,29 @@ export class Container {
     );
   }
 
+  private markChangedConfigurationByFiles(filePaths: string[]): void {
+    const countsByRoot = new Map<string, { entry: ConfigEntry; count: number }>();
+    for (const filePath of filePaths) {
+      const entry = this.treeProvider
+        .getEntries()
+        .find((item) => isPathInside(filePath, item.rootPath));
+      if (!entry) {
+        continue;
+      }
+
+      const key = path.resolve(entry.rootPath).toLowerCase();
+      const current = countsByRoot.get(key);
+      countsByRoot.set(key, {
+        entry,
+        count: (current?.count ?? 0) + 1,
+      });
+    }
+
+    for (const { entry, count } of countsByRoot.values()) {
+      this.markChangedConfiguration(entry, count);
+    }
+  }
+
   private getChangedConfigurations(): ChangedConfiguration[] {
     return [...this.changedConfigurations];
   }
@@ -281,13 +314,18 @@ export class Container {
       return false;
     }
 
+    this.markChangedConfiguration(entry, 1);
+    return true;
+  }
+
+  private markChangedConfiguration(entry: ConfigEntry, changedFilesCount: number): void {
     const existing = this.changedConfigurations.find((item) => item.rootPath === entry.rootPath);
     if (existing) {
-      existing.changedFilesCount = Math.max(existing.changedFilesCount, 1);
+      existing.changedFilesCount = Math.max(existing.changedFilesCount, changedFilesCount);
     } else {
       this.changedConfigurations = [
         ...this.changedConfigurations,
-        this.changeDetector.describe(entry, 1),
+        this.changeDetector.describe(entry, changedFilesCount),
       ].sort((left, right) => {
         if (left.kind !== right.kind) {
           return left.kind === 'cf' ? -1 : 1;
@@ -297,6 +335,30 @@ export class Container {
     }
 
     void vscode.commands.executeCommand('setContext', 'v8vscedit.hasChangedConfigurations', true);
+  }
+
+  private suppressConfigurationReloadForFiles(filePaths: string[]): void {
+    const expiresAt = Date.now() + 5_000;
+    for (const filePath of filePaths) {
+      if (path.basename(filePath).toLowerCase() !== 'configuration.xml') {
+        continue;
+      }
+      this.suppressedConfigurationReloads.set(path.resolve(filePath).toLowerCase(), expiresAt);
+    }
+  }
+
+  private consumeSuppressedConfigurationReload(filePath: string): boolean {
+    const key = path.resolve(filePath).toLowerCase();
+    const expiresAt = this.suppressedConfigurationReloads.get(key);
+    if (!expiresAt) {
+      return false;
+    }
+
+    if (expiresAt < Date.now()) {
+      this.suppressedConfigurationReloads.delete(key);
+      return false;
+    }
+
     return true;
   }
 

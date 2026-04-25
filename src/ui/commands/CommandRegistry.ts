@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { CommandServices } from './_shared';
 import { registerDbCommands } from './db/DbCommands';
 import { registerExtensionCommands } from './ext/ExtensionCommands';
+import { registerAddMetadataCommand } from './metadata/AddMetadataCommand';
 import { registerOpenModuleCommands } from './open/OpenModuleCommand';
 import { registerOpenXmlCommand } from './open/OpenXmlCommand';
 import { registerShowPropertiesCommand } from './properties/ShowPropertiesCommand';
@@ -24,6 +25,7 @@ export function registerCommands(
   registerOpenXmlCommand(context, services);
   registerOpenModuleCommands(context, services);
   registerShowPropertiesCommand(context, services);
+  registerAddMetadataCommand(context, services);
   registerTreeSearchCommands(context, services);
   registerInitializeProjectCommand(context, services);
   registerDbCommands(context, services);

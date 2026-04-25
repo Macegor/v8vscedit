@@ -125,6 +125,11 @@
         "title": "Свойства"
       },
       {
+        "command": "v8vscedit.addMetadata",
+        "title": "Добавить метаданные",
+        "icon": "$(add)"
+      },
+      {
         "command": "v8vscedit.showConfigActions",
         "title": "Команды конфигурации/расширения",
         "icon": "$(tools)"
@@ -259,6 +264,11 @@
         {
           "command": "v8vscedit.support.none",
           "when": "view == v8vsceditTree && viewItem =~ /-support0/",
+          "group": "inline"
+        },
+        {
+          "command": "v8vscedit.addMetadata",
+          "when": "view == v8vsceditTree && viewItem =~ /-canAdd/",
           "group": "inline"
         },
         {

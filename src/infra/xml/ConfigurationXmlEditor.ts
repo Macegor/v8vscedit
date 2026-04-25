@@ -94,7 +94,9 @@ export class ConfigurationXmlEditor {
     }
 
     const xml = fs.readFileSync(configXmlPath, 'utf-8');
-    const childObjects = /<ChildObjects>([\s\S]*?)<\/ChildObjects>/.exec(xml)?.[1];
+    const childObjectsMatch = /<ChildObjects>([\s\S]*?)<\/ChildObjects>/.exec(xml);
+    const selfClosingChildObjectsMatch = /<ChildObjects\s*\/>/.exec(xml);
+    const childObjects = childObjectsMatch?.[1] ?? (selfClosingChildObjectsMatch ? '' : undefined);
     if (childObjects === undefined) {
       return this.fail('В Configuration.xml отсутствует блок <ChildObjects>.');
     }
@@ -106,7 +108,9 @@ export class ConfigurationXmlEditor {
     current.push({ type, name });
     current.sort((a, b) => this.sortChildObjects(a, b));
     const nextInner = this.buildChildObjectsBlock(current, this.detectIndent(childObjects, '\t\t\t'));
-    const updatedXml = xml.replace(childObjects, nextInner);
+    const updatedXml = childObjectsMatch
+      ? xml.replace(childObjects, nextInner)
+      : xml.replace(selfClosingChildObjectsMatch![0], `<ChildObjects>${nextInner}</ChildObjects>`);
     fs.writeFileSync(configXmlPath, updatedXml, 'utf-8');
     return this.ok([configXmlPath]);
   }

@@ -22,11 +22,27 @@ export interface MetadataCacheNode {
     tabularSectionName?: string;
     ownerObjectXmlPath?: string;
   };
+  addMetadataTarget?: MetadataCacheAddTarget;
   children: MetadataCacheNode[];
 }
 
+export type MetadataCacheAddTarget =
+  | {
+    kind: 'root';
+    configRoot: string;
+    configKind: 'cf' | 'cfe';
+    targetKind: MetaKind;
+    namePrefix?: string;
+  }
+  | {
+    kind: 'child';
+    ownerObjectXmlPath: string;
+    childTag: ChildTag | 'Column';
+    tabularSectionName?: string;
+  };
+
 export interface MetadataCacheSnapshot {
-  schemaVersion: 1;
+  schemaVersion: 2;
   scopeKey: string;
   generatedAt: string;
   rootPath: string;
@@ -34,8 +50,13 @@ export interface MetadataCacheSnapshot {
   root: MetadataCacheNode;
 }
 
+export interface MetadataCacheUpdateResult {
+  snapshot: MetadataCacheSnapshot;
+  updatedPartially: boolean;
+}
+
 const METADATA_CACHE_DIR = path.join('.v8vscedit', 'meta');
-const CACHE_SCHEMA_VERSION = 1;
+const CACHE_SCHEMA_VERSION = 2;
 
 /**
  * Строит полный снимок дерева метаданных без ленивых загрузчиков, чтобы UI мог восстановить дерево из JSON.
@@ -55,7 +76,7 @@ export function buildMetadataCacheSnapshot(scopeKey: string, entry: ConfigEntry)
 export function saveMetadataCache(projectRoot: string, snapshot: MetadataCacheSnapshot): void {
   const filePath = getMetadataCacheFilePath(projectRoot, snapshot.scopeKey);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(snapshot, null, 2), 'utf-8');
+  fs.writeFileSync(filePath, JSON.stringify(snapshot), 'utf-8');
 }
 
 export function loadMetadataCache(projectRoot: string, scopeKey: string): MetadataCacheSnapshot | null {
@@ -77,6 +98,40 @@ export function loadMetadataCache(projectRoot: string, scopeKey: string): Metada
 
 export function saveMetadataCacheForEntry(projectRoot: string, scopeKey: string, entry: ConfigEntry): void {
   saveMetadataCache(projectRoot, buildMetadataCacheSnapshot(scopeKey, entry));
+}
+
+/**
+ * Обновляет JSON-кэш после интерактивного добавления одного объекта без полного пересоздания снимка.
+ * Полная сборка остаётся только аварийным путём, когда кэш ещё не создан или в нём нет ожидаемой ветки.
+ */
+export function updateMetadataCacheAfterAdd(
+  projectRoot: string,
+  entry: ConfigEntry,
+  target: MetadataCacheAddTarget,
+  name: string
+): MetadataCacheUpdateResult {
+  const info = parseConfigXml(path.join(entry.rootPath, 'Configuration.xml'));
+  const scopeKey = buildMetadataCacheScopeKey(entry, info);
+  const cached = loadMetadataCache(projectRoot, scopeKey);
+  if (!cached) {
+    const snapshot = buildMetadataCacheSnapshot(scopeKey, entry);
+    saveMetadataCache(projectRoot, snapshot);
+    return { snapshot, updatedPartially: false };
+  }
+
+  const updated = target.kind === 'root'
+    ? updateRootObjectCache(cached, entry, info, target.targetKind, name)
+    : updateChildObjectCache(cached, target.ownerObjectXmlPath);
+
+  if (!updated) {
+    const snapshot = buildMetadataCacheSnapshot(scopeKey, entry);
+    saveMetadataCache(projectRoot, snapshot);
+    return { snapshot, updatedPartially: false };
+  }
+
+  cached.generatedAt = new Date().toISOString();
+  saveMetadataCache(projectRoot, cached);
+  return { snapshot: cached, updatedPartially: true };
 }
 
 export function buildMetadataCacheScopeKey(entry: ConfigEntry, info: ConfigInfo): string {
@@ -127,6 +182,7 @@ function buildTopGroups(entry: ConfigEntry, info: ConfigInfo): MetadataCacheNode
         type: 'Document',
         name: 'Document',
         label: def.pluralLabel,
+        addMetadataTarget: buildRootAddTarget(entry, info, def.kind),
         children,
       }));
       continue;
@@ -137,6 +193,7 @@ function buildTopGroups(entry: ConfigEntry, info: ConfigInfo): MetadataCacheNode
       type: def.kind,
       name: def.kind,
       label: def.pluralLabel,
+      addMetadataTarget: buildRootAddTarget(entry, info, def.kind),
       children: names.length > 0 ? buildObjectNodes(entry, info, def.kind, names) : [],
     }));
   }
@@ -151,6 +208,7 @@ function buildCommonSubgroups(entry: ConfigEntry, info: ConfigInfo): MetadataCac
       type: def.kind,
       name: def.kind,
       label: def.pluralLabel,
+      addMetadataTarget: buildRootAddTarget(entry, info, def.kind),
       children: names.length > 0 ? buildObjectNodes(entry, info, def.kind, names) : [],
     });
   });
@@ -167,6 +225,7 @@ function buildDocumentsBranchChildren(entry: ConfigEntry, info: ConfigInfo): Met
       name: 'NumeratorsBranch',
       label: 'Нумераторы',
       hidePropertiesCommand: true,
+      addMetadataTarget: buildRootAddTarget(entry, info, 'DocumentNumerator'),
       children: buildObjectNodes(entry, info, 'DocumentNumerator', numeratorNames),
     }),
     node({
@@ -174,6 +233,7 @@ function buildDocumentsBranchChildren(entry: ConfigEntry, info: ConfigInfo): Met
       name: 'SequencesBranch',
       label: 'Последовательности',
       hidePropertiesCommand: true,
+      addMetadataTarget: buildRootAddTarget(entry, info, 'Sequence'),
       children: buildObjectNodes(entry, info, 'Sequence', sequenceNames),
     }),
     ...buildObjectNodes(entry, info, 'Document', documentNames),
@@ -239,6 +299,11 @@ function buildStructuredChildren(
       name: tag,
       label: tagCfg.label,
       hidePropertiesCommand: true,
+      addMetadataTarget: {
+        kind: 'child',
+        ownerObjectXmlPath: objectXmlPath,
+        childTag: tag,
+      },
       children: buildLeavesForTag(objectXmlPath, rootMetaKind, tag, items),
     });
   });
@@ -284,6 +349,12 @@ function buildTabularSectionNode(
     metaContext: {
       rootMetaKind,
       ownerObjectXmlPath: objectXmlPath,
+    },
+    addMetadataTarget: {
+      kind: 'child',
+      ownerObjectXmlPath: objectXmlPath,
+      childTag: 'Column',
+      tabularSectionName: item.name,
     },
     children: columns.map((column) => node({
       type: 'Column',
@@ -393,6 +464,103 @@ function getOwnershipTag(entry: ConfigEntry, info: ConfigInfo, name: string): 'O
     return undefined;
   }
   return name.startsWith(info.namePrefix) ? 'OWN' : 'BORROWED';
+}
+
+function buildRootAddTarget(entry: ConfigEntry, info: ConfigInfo, targetKind: MetaKind): MetadataCacheAddTarget | undefined {
+  if (!getMetaFolder(targetKind)) {
+    return undefined;
+  }
+  return {
+    kind: 'root',
+    configRoot: entry.rootPath,
+    configKind: entry.kind,
+    targetKind,
+    namePrefix: entry.kind === 'cfe' ? info.namePrefix : undefined,
+  };
+}
+
+function updateRootObjectCache(
+  snapshot: MetadataCacheSnapshot,
+  entry: ConfigEntry,
+  info: ConfigInfo,
+  targetKind: MetaKind,
+  name: string
+): boolean {
+  const newNode = buildObjectNode(entry, info, targetKind, name, getMetaType(targetKind).childTags ?? []);
+  const container = findRootAddContainer(snapshot.root, targetKind);
+  if (!newNode || !container) {
+    return false;
+  }
+
+  upsertSortedByLabel(container.children, newNode, targetKind);
+  return true;
+}
+
+function updateChildObjectCache(snapshot: MetadataCacheSnapshot, ownerObjectXmlPath: string): boolean {
+  const ownerNode = findRootObjectNodeByXml(snapshot.root, ownerObjectXmlPath);
+  if (!ownerNode) {
+    return false;
+  }
+
+  const objectInfo = parseObjectXml(ownerObjectXmlPath);
+  const childTags = getMetaType(ownerNode.type).childTags ?? [];
+  ownerNode.tooltip = objectInfo?.synonym || undefined;
+  ownerNode.children = buildStructuredChildren(ownerObjectXmlPath, ownerNode.type, objectInfo?.children ?? [], childTags);
+  return true;
+}
+
+function findRootAddContainer(node: MetadataCacheNode, targetKind: MetaKind): MetadataCacheNode | undefined {
+  if (node.addMetadataTarget?.kind === 'root' && node.addMetadataTarget.targetKind === targetKind) {
+    return node;
+  }
+
+  for (const child of node.children) {
+    const found = findRootAddContainer(child, targetKind);
+    if (found) {
+      return found;
+    }
+  }
+
+  return undefined;
+}
+
+function findRootObjectNodeByXml(node: MetadataCacheNode, xmlPath: string): MetadataCacheNode | undefined {
+  const normalizedXmlPath = path.normalize(xmlPath).toLowerCase();
+  if (
+    node.xmlPath &&
+    path.normalize(node.xmlPath).toLowerCase() === normalizedXmlPath &&
+    (getMetaType(node.type).childTags?.length ?? 0) > 0
+  ) {
+    return node;
+  }
+
+  for (const child of node.children) {
+    const found = findRootObjectNodeByXml(child, xmlPath);
+    if (found) {
+      return found;
+    }
+  }
+
+  return undefined;
+}
+
+function upsertSortedByLabel(nodes: MetadataCacheNode[], next: MetadataCacheNode, targetKind: MetaKind): void {
+  const existingIndex = nodes.findIndex((item) => item.type === next.type && item.name === next.name);
+  if (existingIndex >= 0) {
+    nodes[existingIndex] = next;
+  } else {
+    nodes.push(next);
+  }
+
+  const firstTargetIndex = nodes.findIndex((item) => item.type === targetKind);
+  if (firstTargetIndex < 0) {
+    return;
+  }
+
+  const targetNodes = nodes
+    .filter((item) => item.type === targetKind)
+    .sort((left, right) => left.label.localeCompare(right.label, 'ru'));
+  nodes.splice(firstTargetIndex, targetNodes.length, ...targetNodes);
 }
 
 function node(params: Omit<MetadataCacheNode, 'children'> & { children?: MetadataCacheNode[] }): MetadataCacheNode {

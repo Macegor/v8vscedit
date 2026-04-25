@@ -41,11 +41,14 @@ export class ConfigurationChangeDetector {
       const scope = this.resolveScope(entry);
       const previous = loadHashCache(this.projectRoot, scope.scopeKey);
       const metadata = loadMetadataCache(this.projectRoot, scope.scopeKey);
-      if ((previous.generatedAt || Object.keys(previous.files).length > 0) && metadata) {
+      const hasHashCache = Boolean(previous.generatedAt || Object.keys(previous.files).length > 0);
+      if (hasHashCache && metadata) {
         continue;
       }
 
-      saveHashCache(this.projectRoot, buildHashSnapshot(scope.scopeKey, entry.rootPath));
+      if (!hasHashCache) {
+        saveHashCache(this.projectRoot, buildHashSnapshot(scope.scopeKey, entry.rootPath));
+      }
       saveMetadataCacheForEntry(this.projectRoot, scope.scopeKey, entry);
       created += 1;
     }

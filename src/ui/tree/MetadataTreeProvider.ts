@@ -5,8 +5,10 @@ import { parseConfigXml } from '../../infra/xml';
 import { SupportInfoService } from '../../infra/support/SupportInfoService';
 import {
   buildMetadataCacheScopeKey,
+  MetadataCacheAddTarget,
   loadMetadataCache,
   MetadataCacheNode,
+  MetadataCacheSnapshot,
   saveMetadataCacheForEntry,
 } from '../../infra/cache/MetadataCache';
 import { buildNode } from './nodes/_base';
@@ -68,6 +70,30 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
 
     this.searchQuery = '';
     this.onDidChangeTreeDataEmitter.fire(undefined);
+  }
+
+  /**
+   * Обновляет только выбранный узел дерева из уже изменённого JSON-снимка.
+   * Используется после добавления метаданных, чтобы не пересоздавать всё дерево.
+   */
+  refreshNodeFromCache(targetNode: MetadataNode, snapshot: MetadataCacheSnapshot): boolean {
+    const target = targetNode.addMetadataTarget;
+    if (!target) {
+      return false;
+    }
+
+    const cachedNode = this.findCacheNodeByAddTarget(snapshot.root, target);
+    if (!cachedNode) {
+      return false;
+    }
+
+    const children = cachedNode.children.map((child) => this.buildNodeFromCache(child));
+    targetNode.replaceChildren(
+      children,
+      children.length > 0 ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None
+    );
+    this.onDidChangeTreeDataEmitter.fire(targetNode);
+    return true;
   }
 
   getTreeItem(element: MetadataNode): vscode.TreeItem {
@@ -252,6 +278,7 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
       ownershipTag: cached.ownershipTag,
       hidePropertiesCommand: cached.hidePropertiesCommand,
       metaContext: cached.metaContext,
+      addMetadataTarget: cached.addMetadataTarget,
     });
 
     if (cached.tooltip) {
@@ -259,5 +286,48 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
     }
 
     return node;
+  }
+
+  private findCacheNodeByAddTarget(node: MetadataCacheNode, target: MetadataCacheAddTarget): MetadataCacheNode | undefined {
+    if (node.addMetadataTarget && this.sameAddTarget(node.addMetadataTarget, target)) {
+      return node;
+    }
+
+    for (const child of node.children) {
+      const found = this.findCacheNodeByAddTarget(child, target);
+      if (found) {
+        return found;
+      }
+    }
+
+    return undefined;
+  }
+
+  private sameAddTarget(left: MetadataCacheAddTarget, right: MetadataCacheAddTarget): boolean {
+    if (left.kind !== right.kind) {
+      return false;
+    }
+
+    if (left.kind === 'root' && right.kind === 'root') {
+      return (
+        this.samePath(left.configRoot, right.configRoot) &&
+        left.configKind === right.configKind &&
+        left.targetKind === right.targetKind
+      );
+    }
+
+    if (left.kind === 'child' && right.kind === 'child') {
+      return (
+        this.samePath(left.ownerObjectXmlPath, right.ownerObjectXmlPath) &&
+        left.childTag === right.childTag &&
+        left.tabularSectionName === right.tabularSectionName
+      );
+    }
+
+    return false;
+  }
+
+  private samePath(left: string, right: string): boolean {
+    return path.resolve(left).toLowerCase() === path.resolve(right).toLowerCase();
   }
 }
