@@ -6,6 +6,7 @@ import { buildHashSnapshot, buildScopeKey, collectCurrentHashes, loadHashCache, 
 import { createTempDir, printLogFile, runDesignerAndPrintResult, safeRemoveDir, writeUtf8BomLines } from '../core/onecCommon';
 import { resolveConfigDir } from '../core/projectLayout';
 import { CliArgs } from '../core/types';
+import { saveMetadataCacheForEntry } from '../../infra/cache/MetadataCache';
 
 export async function importConfiguration(args: CliArgs): Promise<number> {
   const projectRoot = path.resolve(getString(args, 'ProjectRoot', process.cwd()));
@@ -105,6 +106,7 @@ function refreshHashCacheAfterImport(
   if (mode === 'Full') {
     const snapshot = buildHashSnapshot(scopeKey, configDir);
     saveHashCache(projectRoot, snapshot);
+    saveMetadataCacheForEntry(projectRoot, scopeKey, { kind: normalizedTarget, rootPath: configDir });
     return;
   }
   const previous = loadHashCache(projectRoot, scopeKey);
@@ -112,6 +114,7 @@ function refreshHashCacheAfterImport(
   const deletedFiles = partialFiles.filter((file) => !changedHashes[file]);
   const patched = patchHashSnapshot(previous, changedHashes, deletedFiles);
   saveHashCache(projectRoot, patched);
+  saveMetadataCacheForEntry(projectRoot, scopeKey, { kind: normalizedTarget, rootPath: configDir });
 }
 
 function readListFile(listFilePath: string): string[] {

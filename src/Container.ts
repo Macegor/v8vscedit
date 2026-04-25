@@ -70,7 +70,17 @@ export class Container {
       })
     );
 
-    this.treeProvider = new MetadataTreeProvider([], context.extensionUri, this.supportService);
+    this.treeProvider = new MetadataTreeProvider(
+      [],
+      context.extensionUri,
+      workspaceFolder.uri.fsPath,
+      (message) => {
+        if (this.treeView) {
+          this.treeView.message = message;
+        }
+      },
+      this.supportService
+    );
     this.propertiesProvider = new PropertiesViewProvider(this.supportService);
     context.subscriptions.push(this.propertiesProvider);
     this.treeSearchViewProvider = new TreeSearchViewProvider(context.extensionUri, {
@@ -105,8 +115,8 @@ export class Container {
   async reloadEntries(): Promise<void> {
     const rootPath = this.workspaceFolder.uri.fsPath;
     const entries = await findConfigurations(rootPath);
-    this.treeProvider.updateEntries(entries);
     this.ensureHashCaches(entries);
+    this.treeProvider.updateEntries(entries);
     this.refreshChangedConfigurationState();
     this.outputChannel.appendLine(`[init] Найдено конфигураций: ${entries.length}`);
   }
@@ -203,9 +213,18 @@ export class Container {
   }
 
   private ensureHashCaches(entries: ConfigEntry[]): void {
-    const created = this.changeDetector.ensureCaches(entries);
-    if (created > 0) {
-      this.outputChannel.appendLine(`[hash-cache] Создано первичных кэшей: ${created}`);
+    if (entries.length > 0 && this.treeView) {
+      this.treeView.message = 'Проверка кэша метаданных...';
+    }
+    try {
+      const created = this.changeDetector.ensureCaches(entries);
+      if (created > 0) {
+        this.outputChannel.appendLine(`[hash-cache] Создано первичных кэшей: ${created}`);
+      }
+    } finally {
+      if (this.treeView) {
+        this.treeView.message = undefined;
+      }
     }
   }
 

@@ -132,6 +132,11 @@ export class ObjectXmlReader {
       result.push(this.toMetaChild('AddressingAttribute', element));
     }
 
+    for (const element of findDirectChildren(directChildren, 'Subsystem')) {
+      const name = extractSimpleTagFromElement(element, 'Name') ?? collectDirectText(getElementChildren(element));
+      result.push({ tag: 'Subsystem', name, synonym: '' });
+    }
+
     return result;
   }
 

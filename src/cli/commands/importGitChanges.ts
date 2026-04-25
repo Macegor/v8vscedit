@@ -15,6 +15,7 @@ import {
 } from '../core/hashCache';
 import { resolveConfigDir } from '../core/projectLayout';
 import { CliArgs } from '../core/types';
+import { saveMetadataCacheForEntry } from '../../infra/cache/MetadataCache';
 
 export async function importGitChanges(args: CliArgs): Promise<number> {
   const projectRoot = path.resolve(getString(args, 'ProjectRoot', process.cwd()));
@@ -115,6 +116,7 @@ export async function importGitChanges(args: CliArgs): Promise<number> {
         const patched = patchHashSnapshot(previousSnapshot, changedHashes, diff.deleted);
         saveHashCache(projectRoot, patched);
       }
+      saveMetadataCacheForEntry(projectRoot, scopeKey, { kind: normalizedTarget, rootPath: configDir });
     }
     return exitCode;
   } finally {

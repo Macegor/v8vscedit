@@ -208,7 +208,7 @@ export class TreeSearchViewProvider implements vscode.WebviewViewProvider {
     </button>
   </div>
   <div class="search">
-    <input id="search" type="search" value="${initialSearch}" placeholder="Поиск по метаданным" aria-label="Поиск по метаданным">
+    <input id="search" type="text" value="${initialSearch}" placeholder="Поиск по метаданным" aria-label="Поиск по метаданным" autocomplete="off" spellcheck="false">
     <button id="clear" class="clear" type="button" title="Очистить поиск" aria-label="Очистить поиск">${closeIcon()}</button>
   </div>
   <script nonce="${nonce}">

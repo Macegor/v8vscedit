@@ -3,11 +3,11 @@ import { ConfigEntry } from '../../domain/Configuration';
 import { parseConfigXml } from '../xml';
 import {
   buildHashSnapshot,
-  buildScopeKey,
   diffHashSnapshots,
   loadHashCache,
   saveHashCache,
 } from '../../cli/core/hashCache';
+import { buildMetadataCacheScopeKey, loadMetadataCache, saveMetadataCacheForEntry } from '../cache/MetadataCache';
 
 export interface ChangedConfiguration {
   kind: 'cf' | 'cfe';
@@ -40,11 +40,13 @@ export class ConfigurationChangeDetector {
     for (const entry of entries) {
       const scope = this.resolveScope(entry);
       const previous = loadHashCache(this.projectRoot, scope.scopeKey);
-      if (previous.generatedAt || Object.keys(previous.files).length > 0) {
+      const metadata = loadMetadataCache(this.projectRoot, scope.scopeKey);
+      if ((previous.generatedAt || Object.keys(previous.files).length > 0) && metadata) {
         continue;
       }
 
       saveHashCache(this.projectRoot, buildHashSnapshot(scope.scopeKey, entry.rootPath));
+      saveMetadataCacheForEntry(this.projectRoot, scope.scopeKey, entry);
       created += 1;
     }
     return created;
@@ -85,7 +87,7 @@ export class ConfigurationChangeDetector {
     const info = parseConfigXml(configXmlPath);
     return {
       name: info.name,
-      scopeKey: buildScopeKey(entry.kind, entry.rootPath, entry.kind === 'cfe' ? info.name : ''),
+      scopeKey: buildMetadataCacheScopeKey(entry, info),
     };
   }
 }
