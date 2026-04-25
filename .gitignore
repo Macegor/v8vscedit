@@ -2,6 +2,7 @@
 .cursor/
 .vscode/
 .codex
+.v8vscedit/
 
 # Зависимости и артефакты сборки
 node_modules/
@@ -10,6 +11,7 @@ out/
 *.vsix
 
 # Примеры конфигураций (только для справки, не для VCS)
+example2/
 example/
 
 # Логи и временные файлы

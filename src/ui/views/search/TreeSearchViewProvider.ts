@@ -9,6 +9,7 @@ type TreeSearchMessage =
 interface TreeSearchViewServices {
   readonly treeProvider: MetadataTreeProvider;
   readonly setTreeMessage: (message: string | undefined) => void;
+  readonly isProjectInitialized: () => boolean;
 }
 
 /**
@@ -36,6 +37,12 @@ export class TreeSearchViewProvider implements vscode.WebviewViewProvider {
     webviewView.webview.onDidReceiveMessage((message: TreeSearchMessage) => {
       void this.handleMessage(message);
     });
+  }
+
+  refresh(): void {
+    if (this.view) {
+      this.view.webview.html = this.getHtml(this.view.webview);
+    }
   }
 
   private async handleMessage(message: TreeSearchMessage): Promise<void> {
@@ -69,6 +76,7 @@ export class TreeSearchViewProvider implements vscode.WebviewViewProvider {
   private getHtml(webview: vscode.Webview): string {
     const nonce = getNonce();
     const initialSearch = escapeHtml(this.services.treeProvider.getSearchQuery());
+    const initialized = this.services.isProjectInitialized();
     const updateIconLight = webview.asWebviewUri(vscode.Uri.joinPath(
       this.extensionUri,
       'src',
@@ -83,7 +91,6 @@ export class TreeSearchViewProvider implements vscode.WebviewViewProvider {
       'dark',
       'externalDataSource.svg'
     ));
-
     return `<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -189,9 +196,54 @@ export class TreeSearchViewProvider implements vscode.WebviewViewProvider {
       width: 14px;
       height: 14px;
     }
+
+    .initialization {
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .uninitialized .actions,
+    .uninitialized .search {
+      display: none;
+    }
+
+    .uninitialized .initialization {
+      display: flex;
+    }
+
+    .init-title {
+      font-weight: 600;
+      color: var(--vscode-sideBarTitle-foreground, var(--vscode-foreground));
+    }
+
+    .init-text {
+      color: var(--vscode-descriptionForeground);
+      line-height: 1.35;
+    }
+
+    .primary-action {
+      width: 100%;
+      height: auto;
+      min-height: 30px;
+      padding: 5px 10px;
+      color: var(--vscode-button-foreground);
+      background: var(--vscode-button-background);
+      border-color: var(--vscode-button-border, transparent);
+      justify-content: center;
+    }
+
+    .primary-action:hover {
+      background: var(--vscode-button-hoverBackground);
+    }
   </style>
 </head>
-<body>
+<body class="${initialized ? 'initialized' : 'uninitialized'}">
+  <section class="initialization" aria-label="Инициализация проекта">
+    <div class="init-title">Проект не инициализирован</div>
+    <div class="init-text">Будут созданы env.json и минимальные каталоги src/cf, src/cfe.</div>
+    <button class="primary-action" type="button" data-command="v8vscedit.initializeProject">Инициализировать проект</button>
+  </section>
   <div class="actions">
     <button type="button" data-command="v8vscedit.importConfigurations" title="Импортировать конфигурации из базы" aria-label="Импортировать конфигурации из базы">
       ${cloudDownloadIcon()}

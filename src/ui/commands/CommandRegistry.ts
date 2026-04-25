@@ -5,6 +5,7 @@ import { registerExtensionCommands } from './ext/ExtensionCommands';
 import { registerOpenModuleCommands } from './open/OpenModuleCommand';
 import { registerOpenXmlCommand } from './open/OpenXmlCommand';
 import { registerShowPropertiesCommand } from './properties/ShowPropertiesCommand';
+import { registerInitializeProjectCommand } from './project/InitializeProjectCommand';
 import { registerTreeSearchCommands } from './search/TreeSearchCommands';
 
 /**
@@ -24,6 +25,7 @@ export function registerCommands(
   registerOpenModuleCommands(context, services);
   registerShowPropertiesCommand(context, services);
   registerTreeSearchCommands(context, services);
+  registerInitializeProjectCommand(context, services);
   registerDbCommands(context, services);
   registerExtensionCommands(context, services);
 }

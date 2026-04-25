@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { ChangedConfiguration } from '../../../infra/fs/ConfigurationChangeDetector';
@@ -37,9 +38,12 @@ export function registerExtensionCommands(
         return;
       }
 
-      const targets = collectImportTargets(services.treeProvider.getEntries());
+      const targets = collectImportTargets(
+        services.treeProvider.getEntries(),
+        services.workspaceFolder.uri.fsPath
+      );
       if (targets.length === 0) {
-        await vscode.window.showWarningMessage('Не найдены XML-выгрузки для импорта.');
+        await vscode.window.showWarningMessage('Нет каталога src/cf для импорта основной конфигурации.');
         return;
       }
 
@@ -163,6 +167,45 @@ export function registerExtensionCommands(
         await vscode.commands.executeCommand('setContext', 'v8vscedit.isUpdatingConfigurations', false);
         services.markConfigurationsClean(completedRootPaths);
       }
+    }),
+
+    vscode.commands.registerCommand('v8vscedit.connectExtension', async () => {
+      const extensionName = await vscode.window.showInputBox({
+        title: 'Подключить расширение',
+        prompt: 'Введите имя расширения как оно называется в базе',
+        placeHolder: 'ИмяРасширения',
+        validateInput: validateExtensionName,
+      });
+      const normalizedExtensionName = extensionName?.trim();
+      if (!normalizedExtensionName) {
+        return;
+      }
+
+      const extensionRoot = path.join(services.workspaceFolder.uri.fsPath, 'src', 'cfe', normalizedExtensionName);
+      if (!isPathInside(extensionRoot, path.join(services.workspaceFolder.uri.fsPath, 'src', 'cfe'))) {
+        await vscode.window.showErrorMessage('Имя расширения приводит к пути вне src/cfe.');
+        return;
+      }
+      if (fs.existsSync(extensionRoot)) {
+        await vscode.window.showErrorMessage(`Каталог расширения уже существует: ${extensionRoot}`);
+        return;
+      }
+
+      fs.mkdirSync(extensionRoot, { recursive: true });
+      const ok = await runDecompileExtension(
+        normalizedExtensionName,
+        extensionRoot,
+        services.workspaceFolder,
+        services.outputChannel
+      );
+      if (!ok) {
+        fs.rmSync(extensionRoot, { recursive: true, force: true });
+        await services.reloadEntries();
+        return;
+      }
+
+      services.markConfigurationsClean([extensionRoot]);
+      await services.reloadEntries();
     }),
 
     vscode.commands.registerCommand('v8vscedit.showConfigActions', async (node: NodeArg) => {
@@ -291,19 +334,42 @@ export function registerExtensionCommands(
   );
 }
 
-function collectImportTargets(entries: ConfigEntry[]): ImportTarget[] {
-  return entries.map((entry) => {
+function collectImportTargets(entries: ConfigEntry[], workspaceRoot: string): ImportTarget[] {
+  const targets = entries.map((entry) => {
     const name = readConfigName(entry);
     return {
       kind: entry.kind,
       name,
       rootPath: entry.rootPath,
     };
-  }).sort((left, right) => {
+  });
+  appendInitialMainConfigurationTarget(targets, workspaceRoot);
+  return targets.sort((left, right) => {
     if (left.kind !== right.kind) {
       return left.kind === 'cf' ? -1 : 1;
     }
     return left.name.localeCompare(right.name);
+  });
+}
+
+function appendInitialMainConfigurationTarget(targets: ImportTarget[], workspaceRoot: string): void {
+  const mainConfigRoot = path.join(workspaceRoot, 'src', 'cf');
+  if (!isDirectory(mainConfigRoot)) {
+    return;
+  }
+
+  const normalizedRoot = path.resolve(mainConfigRoot).toLowerCase();
+  const hasMainConfig = targets.some((target) =>
+    target.kind === 'cf' && path.resolve(target.rootPath).toLowerCase() === normalizedRoot
+  );
+  if (hasMainConfig) {
+    return;
+  }
+
+  targets.push({
+    kind: 'cf',
+    name: 'Основная конфигурация',
+    rootPath: mainConfigRoot,
   });
 }
 
@@ -317,6 +383,32 @@ function readConfigName(entry: ConfigEntry): string {
     // При повреждённом XML оставляем путь как диагностически полезное имя в списке выбора.
   }
   return path.basename(entry.rootPath);
+}
+
+function isDirectory(directoryPath: string): boolean {
+  try {
+    return fs.statSync(directoryPath).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function validateExtensionName(value: string): string | undefined {
+  const name = value.trim();
+  if (!name) {
+    return 'Укажите имя расширения.';
+  }
+  if (/[\\/:*?"<>|]/.test(name) || name === '.' || name === '..') {
+    return 'Имя не должно содержать символы пути.';
+  }
+  return undefined;
+}
+
+function isPathInside(filePath: string, rootPath: string): boolean {
+  const normalizedFilePath = path.resolve(filePath).toLowerCase();
+  const normalizedRootPath = path.resolve(rootPath).toLowerCase();
+  const relative = path.relative(normalizedRootPath, normalizedFilePath);
+  return Boolean(relative) && !relative.startsWith('..') && !path.isAbsolute(relative);
 }
 
 function yieldToUi(): Promise<void> {

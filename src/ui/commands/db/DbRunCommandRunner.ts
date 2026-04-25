@@ -116,8 +116,8 @@ function spawnDetached(command: string, args: string[], cwd: string): void {
 
 function resolveSettingsPath(workspaceRoot: string): string {
   const candidates = [
-    path.join(workspaceRoot, 'example', 'env.json'),
     path.join(workspaceRoot, 'env.json'),
+    path.join(workspaceRoot, 'example', 'env.json'),
   ];
   const found = candidates.find((candidate) => fs.existsSync(candidate));
   if (!found) {

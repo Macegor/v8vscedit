@@ -2,7 +2,7 @@
   "name": "v8vscedit",
   "displayName": "Редактор конфигураций 1С",
   "description": "Редактор конфигураций и расширений 1С:Предприятие — навигация по метаданным, LSP для BSL, работа с XML-выгрузкой",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "repository": {
     "type": "git",
     "url": "https://github.com/Macegor/v8vscedit.git"
@@ -77,6 +77,16 @@
         "command": "v8vscedit.runConfigurator",
         "title": "Запустить конфигуратор",
         "icon": "$(tools)"
+      },
+      {
+        "command": "v8vscedit.initializeProject",
+        "title": "Инициализировать проект 1С",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "v8vscedit.connectExtension",
+        "title": "Подключить расширение",
+        "icon": "$(add)"
       },
       {
         "command": "v8vscedit.openXmlFile",
@@ -181,6 +191,11 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "v8vscedit.connectExtension",
+          "when": "view == v8vsceditTree && viewItem =~ /^extensions-root/",
+          "group": "inline"
+        },
         {
           "command": "v8vscedit.decompileExtensionSources",
           "when": "view == v8vsceditTree && viewItem =~ /^extension-hasXml/",

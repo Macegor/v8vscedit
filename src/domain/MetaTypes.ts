@@ -56,6 +56,7 @@ export type MetaKind =
   // корни
   | 'configuration'
   | 'extension'
+  | 'extensions-root'
   // служебные группы дерева
   | 'group-common'
   | 'group-type'
@@ -134,11 +135,15 @@ export const META_TYPES: Readonly<Record<MetaKind, MetaTypeDef>> = {
   // ── Корни ─────────────────────────────────────────────────────────────
   configuration: def({
     kind: 'configuration', label: 'Конфигурация', pluralLabel: 'Конфигурации',
-    icon: 'common', group: 'root', groupOrder: 0,
+    icon: 'parameter', group: 'root', groupOrder: 0,
   }),
   extension: def({
     kind: 'extension', label: 'Расширение', pluralLabel: 'Расширения',
-    icon: 'editObject', group: 'root', groupOrder: 0,
+    icon: 'extensionMosaic', group: 'root', groupOrder: 0,
+  }),
+  'extensions-root': def({
+    kind: 'extensions-root', label: 'Расширения', pluralLabel: 'Расширения',
+    icon: 'extensionMosaic', group: 'service', groupOrder: 0,
   }),
 
   // ── Служебные группы ──────────────────────────────────────────────────

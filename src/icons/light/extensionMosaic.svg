@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <style>.tile{fill:#2b282e}.gap{fill:#c5c5c5}</style>
+  <path class="gap" d="M8 8h14v14H8V8Zm18 0h14v14H26V8ZM8 26h14v14H8V26Zm18 0h14v14H26V26Z"/>
+  <path class="tile" d="M11 11h8v8h-8v-8Zm18 0h8v8h-8v-8ZM11 29h8v8h-8v-8Zm18 0h8v8h-8v-8Z"/>
+</svg>

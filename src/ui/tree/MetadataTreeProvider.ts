@@ -117,15 +117,38 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
       }
     }
 
-    this.roots = this.entries.map((entry) => {
+    const configRoots: MetadataNode[] = [];
+    const extensionRoots: MetadataNode[] = [];
+
+    for (const entry of this.entries) {
       const result = this.buildConfigNode(entry);
       rebuiltCache = rebuiltCache || result.rebuiltCache;
-      return result.node;
-    });
+      if (entry.kind === 'cfe') {
+        extensionRoots.push(result.node);
+      } else {
+        configRoots.push(result.node);
+      }
+    }
+
+    this.roots = [
+      ...configRoots,
+      this.buildExtensionsRoot(extensionRoots),
+    ];
 
     if (rebuiltCache) {
       this.setStatusMessage?.(undefined);
     }
+  }
+
+  private buildExtensionsRoot(children: MetadataNode[]): MetadataNode {
+    return new MetadataNode({
+      label: 'Расширения',
+      nodeKind: 'extensions-root',
+      hidePropertiesCommand: true,
+      childrenLoader: () => children,
+    }, children.length > 0
+      ? vscode.TreeItemCollapsibleState.Collapsed
+      : vscode.TreeItemCollapsibleState.None);
   }
 
   private getVisibleRoots(): MetadataNode[] {

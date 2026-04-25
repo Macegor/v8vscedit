@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 import { ConfigEntry } from './domain/Configuration';
 import { findConfigurations } from './infra/fs/ConfigLocator';
 import { ChangedConfiguration, ConfigurationChangeDetector } from './infra/fs/ConfigurationChangeDetector';
@@ -90,6 +91,7 @@ export class Container {
           this.treeView.message = message;
         }
       },
+      isProjectInitialized: () => this.isProjectInitialized(),
     });
     this.changeDetector = new ConfigurationChangeDetector(workspaceFolder.uri.fsPath);
 
@@ -167,6 +169,7 @@ export class Container {
           this.treeView.message = message;
         }
       },
+      refreshActionsView: () => this.treeSearchViewProvider.refresh(),
     });
     registerSupportIndicatorCommands(this.context);
   }
@@ -306,6 +309,15 @@ export class Container {
     this.lspManager.registerCommands();
     this.lspManager.startWithAutoUpdate();
   }
+
+  private isProjectInitialized(): boolean {
+    const rootPath = this.workspaceFolder.uri.fsPath;
+    return (
+      fs.existsSync(path.join(rootPath, 'env.json')) &&
+      isDirectory(path.join(rootPath, 'src', 'cf')) &&
+      isDirectory(path.join(rootPath, 'src', 'cfe'))
+    );
+  }
 }
 
 function isPathInside(filePath: string, rootPath: string): boolean {
@@ -313,4 +325,12 @@ function isPathInside(filePath: string, rootPath: string): boolean {
   const normalizedRootPath = path.resolve(rootPath).toLowerCase();
   const relative = path.relative(normalizedRootPath, normalizedFilePath);
   return Boolean(relative) && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+function isDirectory(directoryPath: string): boolean {
+  try {
+    return fs.statSync(directoryPath).isDirectory();
+  } catch {
+    return false;
+  }
 }

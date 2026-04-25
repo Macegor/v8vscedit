@@ -536,10 +536,10 @@ function resolveSettingsPath(workspaceRoot: string, extensionRoot: string): stri
   const extensionParent = path.dirname(extensionRoot);
   const extensionGrandParent = path.dirname(extensionParent);
   const candidates = [
-    path.join(workspaceRoot, 'example', 'env.json'),
     path.join(workspaceRoot, 'env.json'),
     path.join(extensionGrandParent, 'env.json'),
     path.join(extensionParent, 'env.json'),
+    path.join(workspaceRoot, 'example', 'env.json'),
   ];
 
   for (const candidate of candidates) {
