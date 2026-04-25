@@ -147,35 +147,47 @@ export class TreeSearchViewProvider implements vscode.WebviewViewProvider {
 
     .search {
       position: relative;
+      min-height: 30px;
     }
 
     input {
       width: 100%;
-      height: 24px;
+      height: 30px;
       box-sizing: border-box;
-      padding: 3px 25px 3px 8px;
+      padding: 0 30px 0 12px;
       color: var(--vscode-input-foreground);
       background: var(--vscode-input-background);
       border: 1px solid var(--vscode-input-border, transparent);
-      border-radius: 12px;
+      border-radius: 5px;
       font: inherit;
+      line-height: 28px;
       outline: none;
     }
 
     input:focus {
       border-color: var(--vscode-focusBorder);
+      outline: 1px solid var(--vscode-focusBorder);
+      outline-offset: -1px;
+    }
+
+    input::placeholder {
+      color: var(--vscode-input-placeholderForeground);
+      opacity: 1;
     }
 
     .clear {
       position: absolute;
-      top: 1px;
-      right: 1px;
-      width: 22px;
-      height: 22px;
+      top: 3px;
+      right: 4px;
+      width: 24px;
+      height: 24px;
       padding: 0;
-      border-radius: 11px;
-      font-size: 15px;
-      line-height: 1;
+      border-radius: 4px;
+    }
+
+    .clear .icon {
+      width: 14px;
+      height: 14px;
     }
   </style>
 </head>
@@ -196,8 +208,8 @@ export class TreeSearchViewProvider implements vscode.WebviewViewProvider {
     </button>
   </div>
   <div class="search">
-    <input id="search" type="search" value="${initialSearch}" placeholder="Поиск в навигаторе" aria-label="Поиск в навигаторе">
-    <button id="clear" class="clear" type="button" title="Очистить поиск" aria-label="Очистить поиск">×</button>
+    <input id="search" type="search" value="${initialSearch}" placeholder="Поиск по метаданным" aria-label="Поиск по метаданным">
+    <button id="clear" class="clear" type="button" title="Очистить поиск" aria-label="Очистить поиск">${closeIcon()}</button>
   </div>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
@@ -275,5 +287,11 @@ function runIcon(): string {
 function toolsIcon(): string {
   return `<svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
     <path fill="currentColor" d="M14.1 4.1 12 6.2l-2.2-2.1L12 1.9A4 4 0 0 0 7.1 6.8L2 11.9A1.5 1.5 0 1 0 4.1 14l5.1-5.1a4 4 0 0 0 4.9-4.8ZM3.4 13.3a.5.5 0 1 1-.7-.7.5.5 0 0 1 .7.7Z"/>
+  </svg>`;
+}
+
+function closeIcon(): string {
+  return `<svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+    <path fill="currentColor" d="M4.6 4 8 7.4 11.4 4l.6.6L8.6 8l3.4 3.4-.6.6L8 8.6 4.6 12l-.6-.6L7.4 8 4 4.6 4.6 4Z"/>
   </svg>`;
 }
