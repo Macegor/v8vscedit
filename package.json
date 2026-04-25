@@ -130,6 +130,11 @@
         "icon": "$(add)"
       },
       {
+        "command": "v8vscedit.removeMetadata",
+        "title": "Удалить метаданные",
+        "icon": "$(trash)"
+      },
+      {
         "command": "v8vscedit.showConfigActions",
         "title": "Команды конфигурации/расширения",
         "icon": "$(tools)"
@@ -270,6 +275,16 @@
           "command": "v8vscedit.addMetadata",
           "when": "view == v8vsceditTree && viewItem =~ /-canAdd/",
           "group": "inline"
+        },
+        {
+          "command": "v8vscedit.removeMetadata",
+          "when": "view == v8vsceditTree && viewItem =~ /-canRemove/",
+          "group": "inline"
+        },
+        {
+          "command": "v8vscedit.removeMetadata",
+          "when": "view == v8vsceditTree && viewItem =~ /-canRemove/",
+          "group": "navigation@10"
         },
         {
           "command": "v8vscedit.support.locked",

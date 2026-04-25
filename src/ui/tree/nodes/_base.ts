@@ -14,6 +14,7 @@ export interface BuildNodeParams {
   /** Контекст для свойств дочерних узлов иерархии объекта метаданных */
   metaContext?: MetaTreeNodeContext;
   addMetadataTarget?: AddMetadataTarget;
+  canRemoveMetadata?: boolean;
 }
 
 /**
@@ -30,6 +31,7 @@ export function buildNode(descriptor: NodeDescriptor | undefined, params: BuildN
     hidePropertiesCommand: params.hidePropertiesCommand,
     metaContext: params.metaContext,
     addMetadataTarget: params.addMetadataTarget,
+    canRemoveMetadata: params.canRemoveMetadata,
   }, params.collapsibleState);
 
   if (descriptor?.singleClickCommand) {

@@ -11,7 +11,7 @@ import { PropertiesViewProvider } from './ui/views/PropertiesViewProvider';
 import { TreeSearchViewProvider } from './ui/views/search/TreeSearchViewProvider';
 import { OnecFileSystemProvider, ONEC_SCHEME } from './ui/vfs/OnecFileSystemProvider';
 import { SupportInfoService } from './infra/support/SupportInfoService';
-import { MetadataXmlCreator } from './infra/xml';
+import { MetadataXmlCreator, MetadataXmlRemover } from './infra/xml';
 import { SupportDecorationProvider } from './ui/tree/decorations/SupportDecorationProvider';
 import { LspManager } from './lsp/LspManager';
 import { BslReadonlyGuard } from './ui/readonly/BslReadonlyGuard';
@@ -36,6 +36,7 @@ export class Container {
   readonly treeProvider: MetadataTreeProvider;
   readonly propertiesProvider: PropertiesViewProvider;
   readonly metadataXmlCreator: MetadataXmlCreator;
+  readonly metadataXmlRemover: MetadataXmlRemover;
   readonly treeSearchViewProvider: TreeSearchViewProvider;
   readonly lspManager: LspManager;
   readonly changeDetector: ConfigurationChangeDetector;
@@ -87,6 +88,7 @@ export class Container {
     );
     this.propertiesProvider = new PropertiesViewProvider(this.supportService);
     this.metadataXmlCreator = new MetadataXmlCreator();
+    this.metadataXmlRemover = new MetadataXmlRemover();
     context.subscriptions.push(this.propertiesProvider);
     this.treeSearchViewProvider = new TreeSearchViewProvider(context.extensionUri, {
       treeProvider: this.treeProvider,
@@ -161,6 +163,7 @@ export class Container {
       treeProvider: this.treeProvider,
       workspaceFolder: this.workspaceFolder,
       metadataXmlCreator: this.metadataXmlCreator,
+      metadataXmlRemover: this.metadataXmlRemover,
       reloadEntries: () => this.reloadEntries(),
       propertiesViewProvider: this.propertiesProvider,
       vfs: this.vfs,

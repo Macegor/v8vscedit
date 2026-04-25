@@ -23,6 +23,7 @@ export interface MetadataCacheNode {
     ownerObjectXmlPath?: string;
   };
   addMetadataTarget?: MetadataCacheAddTarget;
+  canRemoveMetadata?: boolean;
   children: MetadataCacheNode[];
 }
 
@@ -42,7 +43,7 @@ export type MetadataCacheAddTarget =
   };
 
 export interface MetadataCacheSnapshot {
-  schemaVersion: 2;
+  schemaVersion: 3;
   scopeKey: string;
   generatedAt: string;
   rootPath: string;
@@ -56,7 +57,7 @@ export interface MetadataCacheUpdateResult {
 }
 
 const METADATA_CACHE_DIR = path.join('.v8vscedit', 'meta');
-const CACHE_SCHEMA_VERSION = 2;
+const CACHE_SCHEMA_VERSION = 3;
 
 /**
  * Строит полный снимок дерева метаданных без ленивых загрузчиков, чтобы UI мог восстановить дерево из JSON.
@@ -281,6 +282,7 @@ function buildObjectNode(
     xmlPath,
     tooltip: objectInfo?.synonym || undefined,
     ownershipTag,
+    canRemoveMetadata: true,
     children,
   });
 }
@@ -330,6 +332,7 @@ function buildLeavesForTag(
       rootMetaKind,
       ownerObjectXmlPath: objectXmlPath,
     },
+    canRemoveMetadata: true,
     children: [],
   }));
 }
@@ -356,6 +359,7 @@ function buildTabularSectionNode(
       childTag: 'Column',
       tabularSectionName: item.name,
     },
+    canRemoveMetadata: true,
     children: columns.map((column) => node({
       type: 'Column',
       name: column.name,
@@ -367,6 +371,7 @@ function buildTabularSectionNode(
         tabularSectionName: item.name,
         ownerObjectXmlPath: objectXmlPath,
       },
+      canRemoveMetadata: true,
       children: [],
     })),
   });
@@ -421,6 +426,7 @@ function buildSubsystemNode(
     xmlPath,
     tooltip: objectInfo?.synonym || undefined,
     ownershipTag: getOwnershipTag(entry, info, name),
+    canRemoveMetadata: true,
     children,
   });
 }

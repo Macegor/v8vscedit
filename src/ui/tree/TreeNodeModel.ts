@@ -46,6 +46,7 @@ export interface TreeNodeModel {
   hidePropertiesCommand?: boolean;
   metaContext?: MetaTreeNodeContext;
   addMetadataTarget?: AddMetadataTarget;
+  canRemoveMetadata?: boolean;
 }
 
 /** Возвращает человекочитаемую подпись типа узла */

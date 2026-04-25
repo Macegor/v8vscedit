@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ChangedConfiguration } from '../../infra/fs/ConfigurationChangeDetector';
 import { SupportInfoService } from '../../infra/support/SupportInfoService';
-import { MetadataXmlCreator } from '../../infra/xml';
+import { MetadataXmlCreator, MetadataXmlRemover } from '../../infra/xml';
 import { MetadataTreeProvider } from '../tree/MetadataTreeProvider';
 import { MetadataNode } from '../tree/TreeNode';
 import { PropertiesViewProvider } from '../views/PropertiesViewProvider';
@@ -13,6 +13,7 @@ export interface CommandServices {
   treeProvider: MetadataTreeProvider;
   workspaceFolder: vscode.WorkspaceFolder;
   metadataXmlCreator: MetadataXmlCreator;
+  metadataXmlRemover: MetadataXmlRemover;
   reloadEntries: () => void | Promise<void>;
   propertiesViewProvider: PropertiesViewProvider;
   vfs: OnecFileSystemProvider;

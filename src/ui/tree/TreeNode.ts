@@ -22,6 +22,9 @@ export class MetadataNode extends vscode.TreeItem {
     if (model.addMetadataTarget) {
       this.contextValue = `${this.contextValue}-canAdd`;
     }
+    if (model.canRemoveMetadata) {
+      this.contextValue = `${this.contextValue}-canRemove`;
+    }
 
     if (model.ownershipTag) {
       this.description = model.ownershipTag === 'OWN' ? '[свой]' : '[заим.]';
@@ -58,6 +61,10 @@ export class MetadataNode extends vscode.TreeItem {
 
   get addMetadataTarget() {
     return this.model.addMetadataTarget;
+  }
+
+  get canRemoveMetadata() {
+    return this.model.canRemoveMetadata;
   }
 
   replaceChildren(children: MetadataNode[], collapsibleState: vscode.TreeItemCollapsibleState): void {

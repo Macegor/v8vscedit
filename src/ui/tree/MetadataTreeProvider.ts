@@ -279,6 +279,7 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
       hidePropertiesCommand: cached.hidePropertiesCommand,
       metaContext: cached.metaContext,
       addMetadataTarget: cached.addMetadataTarget,
+      canRemoveMetadata: cached.canRemoveMetadata,
     });
 
     if (cached.tooltip) {
