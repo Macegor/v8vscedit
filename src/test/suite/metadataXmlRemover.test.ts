@@ -26,7 +26,7 @@ suite('metadataXmlRemover', () => {
     assert.ok(fs.existsSync(path.join(configRoot, 'Catalogs', 'Товары.xml')));
   });
 
-  test('принудительно удаляет корневой объект, регистрацию и ссылки из подсистем', () => {
+  test('удаляет корневой объект, регистрацию и ссылки из подсистем', () => {
     const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-remove-cf-'));
     fs.writeFileSync(path.join(configRoot, 'Configuration.xml'), buildConfigXml(), 'utf-8');
     fs.mkdirSync(path.join(configRoot, 'Subsystems'), { recursive: true });
@@ -41,7 +41,7 @@ suite('metadataXmlRemover', () => {
     assert.strictEqual(creator.addRootObject({ configRoot, kind: 'Catalog', name: 'Товары' }).success, true);
 
     const remover = new MetadataXmlRemover();
-    const result = remover.removeRootObject({ configRoot, kind: 'Catalog', name: 'Товары', force: true });
+    const result = remover.removeRootObject({ configRoot, kind: 'Catalog', name: 'Товары' });
 
     assert.strictEqual(result.success, true);
     assert.ok(!fs.existsSync(path.join(configRoot, 'Catalogs', 'Товары.xml')));

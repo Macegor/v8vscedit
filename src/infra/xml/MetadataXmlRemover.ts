@@ -14,7 +14,6 @@ export interface RemoveRootMetadataOptions {
   configRoot: string;
   kind: MetaKind;
   name: string;
-  force?: boolean;
   keepFiles?: boolean;
 }
 
@@ -101,7 +100,7 @@ export class MetadataXmlRemover {
       objectDir: hasDir ? objectDir : undefined,
       xmlPaths: [flatXmlPath, deepXmlPath].filter((item) => fs.existsSync(item)),
     });
-    if (references.length > 0 && !options.force) {
+    if (references.length > 0) {
       return {
         success: false,
         changed: false,

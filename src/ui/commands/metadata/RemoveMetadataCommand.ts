@@ -24,12 +24,21 @@ async function removeMetadata(node: MetadataNode | undefined, services: CommandS
     return;
   }
 
-  const confirmed = await vscode.window.showWarningMessage(
-    `Удалить "${node.textLabel}"? Изменение затронет XML-выгрузку и связанные файлы объекта.`,
-    { modal: true },
-    'Удалить'
+  const confirmed = await vscode.window.showQuickPick(
+    [
+      {
+        label: 'Отмена',
+      },
+      {
+        label: 'Удалить',
+        description: node.textLabel,
+      },
+    ],
+    {
+      placeHolder: `Удалить "${node.textLabel}"? Изменение затронет XML-выгрузку и связанные файлы объекта.`,
+    }
   );
-  if (confirmed !== 'Удалить') {
+  if (confirmed?.label !== 'Удалить') {
     return;
   }
 
@@ -47,7 +56,7 @@ async function removeMetadata(node: MetadataNode | undefined, services: CommandS
     });
 
   if (!result.success && result.references.length > 0 && !node.metaContext) {
-    await offerForcedRemove(node, services, result.references.length);
+    await vscode.window.showErrorMessage(buildReferenceBlockMessage(node, result.references));
     return;
   }
 
@@ -57,40 +66,6 @@ async function removeMetadata(node: MetadataNode | undefined, services: CommandS
   }
 
   await finishRemove(node, services, result.changedFiles, result.warnings);
-}
-
-async function offerForcedRemove(
-  node: MetadataNode,
-  services: CommandServices,
-  referenceCount: number
-): Promise<void> {
-  if (!node.xmlPath) {
-    return;
-  }
-  const picked = await vscode.window.showWarningMessage(
-    `Найдены ссылки на "${node.textLabel}": ${referenceCount}. Удаление может оставить битые ссылки.`,
-    { modal: true },
-    'Удалить принудительно'
-  );
-  if (picked !== 'Удалить принудительно') {
-    return;
-  }
-
-  const loc = getObjectLocationFromXml(node.xmlPath);
-  const result = services.metadataXmlRemover.removeRootObject({
-    configRoot: loc.configRoot,
-    kind: node.nodeKind,
-    name: node.textLabel,
-    force: true,
-  });
-  if (!result.success) {
-    await vscode.window.showErrorMessage(`Не удалось удалить метаданные: ${result.errors.join('\n')}`);
-    return;
-  }
-  await finishRemove(node, services, result.changedFiles, [
-    ...result.warnings,
-    `Объект удалён принудительно, найдено ссылок: ${result.references.length}.`,
-  ]);
 }
 
 async function finishRemove(
@@ -112,6 +87,20 @@ async function finishRemove(
   services.markChangedConfigurationByFiles(changedFiles);
   services.refreshActionsView();
   void vscode.window.showInformationMessage(`Метаданные "${node.textLabel}" удалены.`);
+}
+
+function buildReferenceBlockMessage(node: MetadataNode, references: { filePath: string; pattern: string }[]): string {
+  const configRoot = node.xmlPath ? getObjectLocationFromXml(node.xmlPath).configRoot : undefined;
+  const details = references
+    .slice(0, 5)
+    .map((reference) => {
+      const filePath = configRoot
+        ? path.relative(configRoot, reference.filePath).replace(/\\/g, '/')
+        : reference.filePath;
+      return `${filePath}: ${reference.pattern}`;
+    });
+  const tail = references.length > details.length ? `; ещё ${references.length - details.length}` : '';
+  return `Удаление "${node.textLabel}" запрещено: найдены ссылки (${references.length}). ${details.join('; ')}${tail}`;
 }
 
 function rebuildCacheForNode(node: MetadataNode, services: CommandServices): void {

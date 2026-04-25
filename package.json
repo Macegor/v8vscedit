@@ -131,7 +131,7 @@
       },
       {
         "command": "v8vscedit.removeMetadata",
-        "title": "Удалить метаданные",
+        "title": "Удалить",
         "icon": "$(trash)"
       },
       {
