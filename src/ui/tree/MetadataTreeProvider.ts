@@ -276,7 +276,9 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
       xmlPath: cached.xmlPath,
       childrenLoader: children.length > 0 ? () => children : undefined,
       ownershipTag: cached.ownershipTag,
-      hidePropertiesCommand: cached.hidePropertiesCommand,
+      hidePropertiesCommand: cached.hidePropertiesCommand ||
+        cached.type === 'configuration' ||
+        cached.type === 'extension',
       metaContext: cached.metaContext,
       addMetadataTarget: cached.addMetadataTarget,
       canRemoveMetadata: cached.canRemoveMetadata,

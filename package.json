@@ -2,7 +2,7 @@
   "name": "v8vscedit",
   "displayName": "Редактор конфигураций 1С",
   "description": "Редактор конфигураций и расширений 1С:Предприятие — навигация по метаданным, LSP для BSL, работа с XML-выгрузкой",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "repository": {
     "type": "git",
     "url": "https://github.com/Macegor/v8vscedit.git"
@@ -122,11 +122,12 @@
       },
       {
         "command": "v8vscedit.showProperties",
-        "title": "Свойства"
+        "title": "Свойства",
+        "icon": "$(list-unordered)"
       },
       {
         "command": "v8vscedit.addMetadata",
-        "title": "Добавить метаданные",
+        "title": "Добавить",
         "icon": "$(add)"
       },
       {
@@ -263,8 +264,8 @@
         },
         {
           "command": "v8vscedit.showProperties",
-          "when": "view == v8vsceditTree && !(viewItem =~ /-propertiesHidden/)",
-          "group": "navigation@9"
+          "when": "view == v8vsceditTree && viewItem =~ /-hasXml/ && !(viewItem =~ /-propertiesHidden/)",
+          "group": "inline"
         },
         {
           "command": "v8vscedit.support.none",
@@ -278,12 +279,12 @@
         },
         {
           "command": "v8vscedit.removeMetadata",
-          "when": "view == v8vsceditTree && viewItem =~ /-canRemove/",
+          "when": "view == v8vsceditTree && viewItem =~ /-canRemove/ && !(viewItem =~ /-support1/)",
           "group": "inline"
         },
         {
           "command": "v8vscedit.removeMetadata",
-          "when": "view == v8vsceditTree && viewItem =~ /-canRemove/",
+          "when": "view == v8vsceditTree && viewItem =~ /-canRemove/ && !(viewItem =~ /-support1/)",
           "group": "navigation@10"
         },
         {

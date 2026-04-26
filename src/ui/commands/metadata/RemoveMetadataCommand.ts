@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { ChildTag } from '../../../domain/ChildTag';
 import { buildMetadataCacheScopeKey, saveMetadataCacheForEntry } from '../../../infra/cache/MetadataCache';
 import { getObjectLocationFromXml } from '../../../infra/fs/ObjectLocation';
+import { SupportMode } from '../../../infra/support/SupportInfoService';
 import { parseConfigXml } from '../../../infra/xml';
 import { MetadataNode } from '../../tree/TreeNode';
 import { CommandServices } from '../_shared';
@@ -21,6 +22,12 @@ export function registerRemoveMetadataCommand(
 async function removeMetadata(node: MetadataNode | undefined, services: CommandServices): Promise<void> {
   if (!node?.xmlPath || !node.canRemoveMetadata) {
     await vscode.window.showErrorMessage('Для выбранного узла нельзя удалить метаданные.');
+    return;
+  }
+
+  const supportXmlPath = node.metaContext?.ownerObjectXmlPath ?? node.xmlPath;
+  if (services.supportService?.getSupportMode(supportXmlPath) === SupportMode.Locked) {
+    await vscode.window.showErrorMessage('Удаление запрещено: объект находится на поддержке с запретом редактирования.');
     return;
   }
 

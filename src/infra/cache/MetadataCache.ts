@@ -152,6 +152,7 @@ function buildConfigNode(entry: ConfigEntry, info: ConfigInfo): MetadataCacheNod
     label: info.name,
     xmlPath: path.join(entry.rootPath, 'Configuration.xml'),
     tooltip: info.synonym || undefined,
+    hidePropertiesCommand: true,
     children: buildConfigChildren(entry, info),
   });
 }
