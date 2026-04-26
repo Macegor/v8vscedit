@@ -5,6 +5,7 @@ import { ChildTag } from '../../domain/ChildTag';
 import { getMetaFolder, MetaKind } from '../../domain/MetaTypes';
 import { ConfigurationXmlEditor, EditResult } from './ConfigurationXmlEditor';
 import { getObjectLocationFromXml } from '../fs/MetaPathResolver';
+import { buildTypedFieldPropertyBlocks } from './TypedFieldPropertyRules';
 
 export interface AddRootMetadataOptions {
   configRoot: string;
@@ -217,13 +218,15 @@ function buildChildFragment(tag: ChildTag, name: string, indent: string): string
 }
 
 function buildTypedFieldFragment(tag: 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource', name: string, indent: string): string {
+  const typeBlock = buildStringType(`${indent}\t\t`);
   return [
     `${indent}<${tag} uuid="${newUuid()}">`,
     `${indent}\t<Properties>`,
     `${indent}\t\t<Name>${escapeXml(name)}</Name>`,
     buildLocalizedTag(`${indent}\t\t`, 'Synonym', splitCamelCase(name)),
     `${indent}\t\t<Comment/>`,
-    buildStringType(`${indent}\t\t`),
+    typeBlock,
+    ...buildTypedFieldPropertyBlocks(tag, typeBlock, `${indent}\t\t`),
     `${indent}\t</Properties>`,
     `${indent}</${tag}>`,
   ].join('\n');

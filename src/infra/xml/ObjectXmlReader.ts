@@ -7,6 +7,7 @@ import {
   extractSimpleTag,
   extractSynonym,
 } from './XmlUtils';
+import { normalizeTypedFieldPropertiesAfterTypeChange } from './TypedFieldPropertyRules';
 
 type XmlTextNode = { '#text': string };
 type XmlElementNode = { [tagName: string]: XmlNodeList };
@@ -292,7 +293,8 @@ function collectDirectText(nodes: XmlNodeList): string {
 function updateTypeInElement(elementXml: string, typeInnerXml: string): string {
   const typeBlock = `<Type>\n${typeInnerXml}\n</Type>`;
   if (/<Type>[\s\S]*?<\/Type>/.test(elementXml)) {
-    return elementXml.replace(/<Type>[\s\S]*?<\/Type>/, typeBlock);
+    const updated = elementXml.replace(/<Type>[\s\S]*?<\/Type>/, typeBlock);
+    return normalizeTypedFieldProperties(updated, typeInnerXml);
   }
   const propertiesMatch = /<Properties>([\s\S]*?)<\/Properties>/.exec(elementXml);
   if (!propertiesMatch) {
@@ -307,7 +309,15 @@ function updateTypeInElement(elementXml: string, typeInnerXml: string): string {
   } else {
     nextPropsInner = `${propsInner}\n${typeBlock}`;
   }
-  return elementXml.replace(propsInner, nextPropsInner);
+  return normalizeTypedFieldProperties(elementXml.replace(propsInner, nextPropsInner), typeInnerXml);
+}
+
+function normalizeTypedFieldProperties(elementXml: string, typeInnerXml: string): string {
+  const tag = /^<([A-Za-z][A-Za-z0-9]*)\b/.exec(elementXml.trimStart())?.[1];
+  if (tag === 'Attribute' || tag === 'AddressingAttribute' || tag === 'Dimension' || tag === 'Resource') {
+    return normalizeTypedFieldPropertiesAfterTypeChange(elementXml, tag, typeInnerXml);
+  }
+  return elementXml;
 }
 
 function indentTypeInner(typeInnerXml: string): string {

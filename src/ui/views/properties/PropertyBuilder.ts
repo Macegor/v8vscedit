@@ -7,6 +7,7 @@ import {
   ObjectPropertiesCollection,
 } from './_types';
 import { extractSimpleTag } from '../../../infra/xml';
+import { getTypedFieldPropertyKeys } from '../../../infra/xml/TypedFieldPropertyRules';
 import { parseMetadataType } from './MetadataTypeService';
 
 /** Теги со строкой локализации (v8:item) */
@@ -429,14 +430,14 @@ export function buildPropertyItemsForKeys(
     }
 
     const raw = extractSimpleTag(propsInner, key);
-    if (raw === undefined || raw === '') {
+    if (raw === undefined && !hasSelfClosingProperty(propsInner, key)) {
       continue;
     }
     items.push({
       key,
       title: propertyTitle(key),
       kind: 'string',
-      value: raw,
+      value: raw ?? '',
     });
   }
 
@@ -454,9 +455,25 @@ export function buildRootMetaObjectProperties(fullObjectXml: string, rootMetaKin
 
 /** Свойства типового реквизита / измерения / ресурса / колонки */
 export function buildTypedFieldProperties(elementFullXml: string): ObjectPropertiesCollection {
-  return buildPropertyItemsForKeys(elementFullXml, TYPED_FIELD_PROPERTY_KEYS, {
+  return buildPropertyItemsForKeys(elementFullXml, getTypedFieldPropertyKeyOrder(elementFullXml), {
     elementXmlForType: elementFullXml,
   });
+}
+
+function hasSelfClosingProperty(xml: string, key: string): boolean {
+  return new RegExp(`<${key}(?:\\s[^>]*)?\\/>`).test(xml);
+}
+
+function getTypedFieldPropertyKeyOrder(elementFullXml: string): string[] {
+  const tag = /^<([A-Za-z][A-Za-z0-9]*)\b/.exec(elementFullXml.trimStart())?.[1];
+  const typeInner = summarizeTypeBlock(elementFullXml);
+  if (
+    typeInner &&
+    (tag === 'Attribute' || tag === 'AddressingAttribute' || tag === 'Dimension' || tag === 'Resource')
+  ) {
+    return ['Name', 'Synonym', 'Comment', 'Type', ...getTypedFieldPropertyKeys(tag, typeInner)];
+  }
+  return TYPED_FIELD_PROPERTY_KEYS;
 }
 
 export function buildTabularSectionProperties(elementFullXml: string): ObjectPropertiesCollection {

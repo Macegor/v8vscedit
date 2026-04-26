@@ -13,7 +13,8 @@ import { getHandlerForNode } from '../tree/nodeBuilders/index';
 import { TypeRegistryService } from './properties/TypeRegistryService';
 import { buildMetadataTypeInnerXml, ensureDefaultQualifiers } from './properties/MetadataTypeService';
 import { ConfigurationXmlEditor } from '../../infra/xml';
-import { extractChildMetaElementXml, extractColumnXmlFromTabularSection } from '../../infra/xml';
+import { extractChildMetaElementXml, extractColumnXmlFromTabularSection, normalizeTypedFieldPropertiesAfterTypeChange } from '../../infra/xml';
+import { buildTypedFieldProperties } from './properties/PropertyBuilder';
 import { SupportInfoService, SupportMode } from '../../infra/support/SupportInfoService';
 import { getObjectLocationFromXml } from '../../infra/fs';
 
@@ -219,7 +220,8 @@ export class PropertiesViewProvider implements vscode.Disposable {
       );
     }
 
-    const properties = handler.getProperties(node);
+    let properties = handler.getProperties(node);
+    properties = this.applyEditedTypeToRenderedProperties(node, properties);
     this.activeProperties = properties;
     const isDirty = this.editSession.size > 0;
     const isEditLockedBySupport = this.isEditLockedBySupport(node);
@@ -614,6 +616,43 @@ export class PropertiesViewProvider implements vscode.Disposable {
       return ensureDefaultQualifiers(edited);
     }
     return ensureDefaultQualifiers(property.value as MetadataTypeValue);
+  }
+
+  private applyEditedTypeToRenderedProperties(node: MetadataNode, properties: ObjectPropertiesCollection): ObjectPropertiesCollection {
+    const typeValue = this.editSession.get('Type') as MetadataTypeValue | undefined;
+    if (!typeValue) {
+      return properties;
+    }
+    const target = resolveTypeTarget(node);
+    if (!target || target.targetKind === 'SessionParameter' || target.targetKind === 'CommonAttribute') {
+      return properties;
+    }
+    let elementXml: string | null = null;
+    if (target.targetKind === 'Column') {
+      if (!target.tabularSectionName || !fs.existsSync(target.xmlPath)) {
+        return properties;
+      }
+      elementXml = extractColumnXmlFromTabularSection(
+        fs.readFileSync(target.xmlPath, 'utf-8'),
+        target.tabularSectionName,
+        target.targetName
+      );
+    } else if (fs.existsSync(target.xmlPath)) {
+      elementXml = extractChildMetaElementXml(
+        fs.readFileSync(target.xmlPath, 'utf-8'),
+        target.targetKind,
+        target.targetName
+      );
+    }
+    if (!elementXml) {
+      return properties;
+    }
+    const normalized = normalizeTypedFieldPropertiesAfterTypeChange(
+      elementXml,
+      target.targetKind === 'Column' ? 'Attribute' : target.targetKind,
+      buildMetadataTypeInnerXml(typeValue)
+    );
+    return buildTypedFieldProperties(normalized);
   }
 
   private async saveChanges(): Promise<void> {
