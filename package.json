@@ -191,6 +191,72 @@
           "light": "./src/icons/light/support-locked.svg",
           "dark": "./src/icons/dark/support-locked.svg"
         }
+      },
+      {
+        "command": "v8vscedit.repository.connect",
+        "title": "Подключить к хранилищу",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "v8vscedit.repository.create",
+        "title": "Создать хранилище",
+        "icon": "$(database)"
+      },
+      {
+        "command": "v8vscedit.repository.disconnect",
+        "title": "Отключить от хранилища",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "v8vscedit.repository.lock",
+        "title": "Захватить в хранилище",
+        "icon": "$(lock)"
+      },
+      {
+        "command": "v8vscedit.repository.unlock",
+        "title": "Освободить в хранилище",
+        "icon": "$(unlock)"
+      },
+      {
+        "command": "v8vscedit.repository.commit",
+        "title": "Поместить в хранилище",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "v8vscedit.repository.update",
+        "title": "Получить из хранилища",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "v8vscedit.repository.addUser",
+        "title": "Добавить пользователя хранилища",
+        "icon": "$(person-add)"
+      },
+      {
+        "command": "v8vscedit.repository.copyUsers",
+        "title": "Скопировать пользователей",
+        "icon": "$(organization)"
+      },
+      {
+        "command": "v8vscedit.repository.dump",
+        "title": "Выгрузить конфигурацию из хранилища",
+        "icon": "$(archive)"
+      },
+      {
+        "command": "v8vscedit.repository.report",
+        "title": "Построить отчет по хранилищу",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "v8vscedit.repository.setLabel",
+        "title": "Установить метку версии",
+        "icon": "$(tag)"
+      }
+    ],
+    "submenus": [
+      {
+        "id": "v8vscedit.repositoryMenu",
+        "label": "Хранилище конфигурации"
       }
     ],
     "menus": {
@@ -296,6 +362,74 @@
           "command": "v8vscedit.support.editable",
           "when": "view == v8vsceditTree && viewItem =~ /-support2/",
           "group": "inline"
+        }
+        ,
+        {
+          "submenu": "v8vscedit.repositoryMenu",
+          "when": "view == v8vsceditTree && viewItem =~ /^(configuration|extension)-hasXml/",
+          "group": "navigation@20"
+        },
+        {
+          "command": "v8vscedit.repository.lock",
+          "when": "view == v8vsceditTree && viewItem =~ /-repoUnlocked/",
+          "group": "inline"
+        },
+        {
+          "command": "v8vscedit.repository.unlock",
+          "when": "view == v8vsceditTree && viewItem =~ /-repoLocked/",
+          "group": "inline"
+        },
+        {
+          "command": "v8vscedit.repository.commit",
+          "when": "view == v8vsceditTree && viewItem =~ /-repoConnected/ && !(viewItem =~ /^(extensions-root|group-common|group-type)/)",
+          "group": "navigation@21"
+        },
+        {
+          "command": "v8vscedit.repository.update",
+          "when": "view == v8vsceditTree && viewItem =~ /-repoConnected/ && !(viewItem =~ /^extensions-root/)",
+          "group": "navigation@21"
+        }
+      ],
+      "v8vscedit.repositoryMenu": [
+        {
+          "command": "v8vscedit.repository.connect",
+          "when": "view == v8vsceditTree && viewItem =~ /-repoDisconnected/",
+          "group": "navigation@1"
+        },
+        {
+          "command": "v8vscedit.repository.create",
+          "when": "view == v8vsceditTree",
+          "group": "navigation@2"
+        },
+        {
+          "command": "v8vscedit.repository.disconnect",
+          "when": "view == v8vsceditTree && viewItem =~ /-repoConnected/",
+          "group": "navigation@3"
+        },
+        {
+          "command": "v8vscedit.repository.addUser",
+          "when": "view == v8vsceditTree && viewItem =~ /-repoConnected/",
+          "group": "navigation@4"
+        },
+        {
+          "command": "v8vscedit.repository.copyUsers",
+          "when": "view == v8vsceditTree && viewItem =~ /-repoConnected/",
+          "group": "navigation@5"
+        },
+        {
+          "command": "v8vscedit.repository.dump",
+          "when": "view == v8vsceditTree && viewItem =~ /-repoConnected/",
+          "group": "navigation@6"
+        },
+        {
+          "command": "v8vscedit.repository.report",
+          "when": "view == v8vsceditTree && viewItem =~ /-repoConnected/",
+          "group": "navigation@7"
+        },
+        {
+          "command": "v8vscedit.repository.setLabel",
+          "when": "view == v8vsceditTree && viewItem =~ /-repoConnected/",
+          "group": "navigation@8"
         }
       ]
     },

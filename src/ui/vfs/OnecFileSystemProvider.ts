@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as vscode from 'vscode';
+import { RepositoryService } from '../../infra/repository/RepositoryService';
 import { SupportInfoService } from '../../infra/support/SupportInfoService';
 
 export const ONEC_SCHEME = 'onec';
@@ -9,26 +10,31 @@ export const ONEC_SCHEME = 'onec';
  * Сопоставляет читаемые пути вида onec://cf/Общие модули/Имя
  * с реальными файлами на диске.
  *
- * Readonly для заблокированных объектов обеспечивается двумя механизмами:
- * 1. stat() → permissions: Readonly (новые версии VS Code)
- * 2. setEditorReadonlyInSession (вызывается из CommandRegistry)
- * 3. writeFile() guard — последний барьер
+ * Readonly для заблокированных объектов обеспечивается тремя механизмами:
+ * 1. stat() -> permissions: Readonly
+ * 2. setActiveEditorReadonlyInSession для уже открытого редактора
+ * 3. writeFile() как последний барьер
  */
 export class OnecFileSystemProvider implements vscode.FileSystemProvider {
-  /** virtualUri.toString() → абсолютный путь реального BSL-файла */
+  /** virtualUri.toString() -> абсолютный путь реального BSL-файла */
   private readonly realPaths = new Map<string, string>();
-  /** virtualUri.toString() → абсолютный путь XML-файла объекта-владельца */
+  /** virtualUri.toString() -> абсолютный путь XML-файла объекта-владельца */
   private readonly ownerXmlPaths = new Map<string, string>();
 
-  private readonly _emitter = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
-  readonly onDidChangeFile = this._emitter.event;
+  private readonly emitter = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
+  readonly onDidChangeFile = this.emitter.event;
 
   private supportService: SupportInfoService | undefined;
+  private repositoryService: RepositoryService | undefined;
   private log: vscode.OutputChannel | undefined;
   private onDidWriteRealFile: ((realPath: string) => void) | undefined;
 
   setSupportService(service: SupportInfoService): void {
     this.supportService = service;
+  }
+
+  setRepositoryService(service: RepositoryService): void {
+    this.repositoryService = service;
   }
 
   setOutputChannel(channel: vscode.OutputChannel): void {
@@ -44,7 +50,7 @@ export class OnecFileSystemProvider implements vscode.FileSystemProvider {
     this.realPaths.set(virtualUri.toString(), realPath);
   }
 
-  /** Регистрирует XML-файл объекта-владельца для проверки поддержки через stat() */
+  /** Регистрирует XML объекта-владельца для проверки readonly через stat() */
   registerOwnerXml(virtualUri: vscode.Uri, ownerXmlPath: string): void {
     this.ownerXmlPaths.set(virtualUri.toString(), ownerXmlPath);
   }
@@ -64,15 +70,11 @@ export class OnecFileSystemProvider implements vscode.FileSystemProvider {
   stat(uri: vscode.Uri): vscode.FileStat {
     const realPath = this.resolve(uri);
     const s = fs.statSync(realPath);
-
-    // Проверяем по XML владельца (надёжно), а не по BSL-пути (требует обратного ресолва)
-    const ownerXml = this.ownerXmlPaths.get(uri.toString());
-    const locked = ownerXml
-      ? this.supportService?.isLocked(ownerXml) ?? false
-      : this.supportService?.isLocked(realPath) ?? false;
+    const checkPath = this.ownerXmlPaths.get(uri.toString()) ?? realPath;
+    const locked = this.isReadonlyPath(checkPath);
 
     if (locked) {
-      this.log?.appendLine(`[vfs] stat ${uri.path} → READONLY (owner: ${ownerXml ?? realPath})`);
+      this.log?.appendLine(`[vfs] stat ${uri.path} -> READONLY (${checkPath})`);
     }
 
     return {
@@ -96,19 +98,29 @@ export class OnecFileSystemProvider implements vscode.FileSystemProvider {
 
   writeFile(uri: vscode.Uri, content: Uint8Array): void {
     const realPath = this.resolve(uri);
-    const ownerXml = this.ownerXmlPaths.get(uri.toString());
-    const checkPath = ownerXml ?? realPath;
-    if (this.supportService?.isLocked(checkPath)) {
+    const checkPath = this.ownerXmlPaths.get(uri.toString()) ?? realPath;
+    const supportLocked = this.supportService?.isLocked(checkPath) ?? false;
+    const repositoryLocked = this.repositoryService?.isEditRestricted(checkPath) ?? false;
+    if (supportLocked || repositoryLocked) {
       throw vscode.FileSystemError.NoPermissions(
-        'Объект на поддержке без права изменения. Редактирование запрещено.'
+        supportLocked
+          ? 'Объект на поддержке без права изменения. Редактирование запрещено.'
+          : 'Объект не захвачен в хранилище. Редактирование запрещено.'
       );
     }
+
     fs.writeFileSync(realPath, content);
-    this._emitter.fire([{ type: vscode.FileChangeType.Changed, uri }]);
+    this.emitter.fire([{ type: vscode.FileChangeType.Changed, uri }]);
     this.onDidWriteRealFile?.(realPath);
   }
 
   delete(): void {}
 
   rename(): void {}
+
+  private isReadonlyPath(filePath: string): boolean {
+    const supportLocked = this.supportService?.isLocked(filePath) ?? false;
+    const repositoryLocked = this.repositoryService?.isEditRestricted(filePath) ?? false;
+    return supportLocked || repositoryLocked;
+  }
 }

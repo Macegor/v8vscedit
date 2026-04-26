@@ -15,6 +15,7 @@ import { buildMetadataTypeInnerXml, ensureDefaultQualifiers } from './properties
 import { ConfigurationXmlEditor } from '../../infra/xml';
 import { extractChildMetaElementXml, extractColumnXmlFromTabularSection, normalizeTypedFieldPropertiesAfterTypeChange } from '../../infra/xml';
 import { buildTypedFieldProperties } from './properties/PropertyBuilder';
+import { RepositoryService } from '../../infra/repository/RepositoryService';
 import { SupportInfoService, SupportMode } from '../../infra/support/SupportInfoService';
 import { getObjectLocationFromXml } from '../../infra/fs';
 
@@ -26,7 +27,10 @@ export class PropertiesViewProvider implements vscode.Disposable {
   private editSession = new Map<string, unknown>();
   private readonly typeRegistry = new TypeRegistryService();
   private readonly xmlEditor = new ConfigurationXmlEditor();
-  constructor(private readonly supportService?: SupportInfoService) {}
+  constructor(
+    private readonly supportService?: SupportInfoService,
+    private readonly repositoryService?: RepositoryService
+  ) {}
 
   /**
    * Открывает вкладку свойств для узла.
@@ -223,8 +227,13 @@ export class PropertiesViewProvider implements vscode.Disposable {
     let properties = handler.getProperties(node);
     properties = this.applyEditedTypeToRenderedProperties(node, properties);
     this.activeProperties = properties;
-    const isDirty = this.editSession.size > 0;
-    const isEditLockedBySupport = this.isEditLockedBySupport(node);
+    let isDirty = this.editSession.size > 0;
+    const editLockReason = this.resolveEditLockReason(node);
+    const isEditLocked = editLockReason !== undefined;
+    const isEditLockedBySupport = editLockReason === 'support';
+    if (isEditLocked) {
+      isDirty = false;
+    }
     if (properties.length === 0) {
       return this.renderState(
         node.textLabel,
@@ -240,13 +249,13 @@ export class PropertiesViewProvider implements vscode.Disposable {
         ${isEditLockedBySupport ? '<p class="subtitle">Редактирование запрещено поддержкой</p>' : ''}
       </div>
       <div class="form">
-        ${properties.map((property) => this.renderProperty(property, isEditLockedBySupport)).join('')}
+        ${properties.map((property) => this.renderProperty(property, isEditLocked)).join('')}
         <div class="actions">
           <button class="btn" id="saveBtn" ${(isDirty && !isEditLockedBySupport) ? '' : 'disabled'}>Сохранить</button>
           <button class="btn" id="cancelBtn" ${(isDirty && !isEditLockedBySupport) ? '' : 'disabled'}>Отмена</button>
         </div>
       </div>
-      <script>${this.renderScript(isEditLockedBySupport)}</script>
+      <script>${this.renderScript(isEditLocked)}</script>
     `;
   }
 
@@ -792,6 +801,29 @@ export class PropertiesViewProvider implements vscode.Disposable {
     }
     const lockMode = this.resolveNodeSupportMode(node);
     return lockMode === SupportMode.Locked;
+  }
+
+  private isEditLockedByRepository(node: MetadataNode): boolean {
+    if (!this.repositoryService) {
+      return false;
+    }
+
+    const xmlPath = node.metaContext?.ownerObjectXmlPath ?? node.xmlPath;
+    if (!xmlPath || !fs.existsSync(xmlPath)) {
+      return false;
+    }
+
+    return this.repositoryService.isEditRestricted(xmlPath);
+  }
+
+  private resolveEditLockReason(node: MetadataNode): 'support' | 'repository' | undefined {
+    if (this.isEditLockedBySupport(node)) {
+      return 'support';
+    }
+    if (this.isEditLockedByRepository(node)) {
+      return 'repository';
+    }
+    return undefined;
   }
 
   private resolveNodeSupportMode(node: MetadataNode): SupportMode {

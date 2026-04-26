@@ -3,6 +3,20 @@ import { exportConfiguration } from './exportConfiguration';
 import { importConfiguration } from './importConfiguration';
 import { importGitChanges } from './importGitChanges';
 import { refreshHashCache } from './refreshHashCache';
+import {
+  addRepositoryUser,
+  bindRepositoryConfiguration,
+  commitRepositoryObjects,
+  copyRepositoryUsers,
+  createRepository,
+  dumpRepositoryConfiguration,
+  lockRepositoryObjects,
+  reportRepository,
+  setRepositoryLabel,
+  unbindRepositoryConfiguration,
+  unlockRepositoryObjects,
+  updateRepositoryConfiguration,
+} from './repositoryCommands';
 import { updateConfiguration } from './updateConfiguration';
 import { syncConfigurationFull, syncConfigurationPartial } from './syncConfiguration';
 
@@ -16,6 +30,18 @@ export const CLI_COMMANDS: Record<string, CommandHandler> = {
   'update-configuration': updateConfiguration,
   'sync-configuration-partial': syncConfigurationPartial,
   'sync-configuration-full': syncConfigurationFull,
+  'repository-create': createRepository,
+  'repository-bind': bindRepositoryConfiguration,
+  'repository-unbind': unbindRepositoryConfiguration,
+  'repository-lock': lockRepositoryObjects,
+  'repository-unlock': unlockRepositoryObjects,
+  'repository-commit': commitRepositoryObjects,
+  'repository-update': updateRepositoryConfiguration,
+  'repository-add-user': addRepositoryUser,
+  'repository-copy-users': copyRepositoryUsers,
+  'repository-dump': dumpRepositoryConfiguration,
+  'repository-report': reportRepository,
+  'repository-set-label': setRepositoryLabel,
 
   // Алиасы для обратной совместимости.
   'db-dump-xml': exportConfiguration,

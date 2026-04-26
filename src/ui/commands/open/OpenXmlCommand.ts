@@ -15,7 +15,9 @@ export function registerOpenXmlCommand(
       const editor = await vscode.window.showTextDocument(vscode.Uri.file(node.xmlPath), {
         preview: false,
       });
-      if (services.supportService?.isLocked(node.xmlPath)) {
+      const supportLocked = services.supportService?.isLocked(node.xmlPath) ?? false;
+      const repositoryLocked = services.repositoryService.isEditRestricted(node.xmlPath);
+      if (supportLocked || repositoryLocked) {
         await setEditorReadonly(editor);
       }
     })

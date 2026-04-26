@@ -118,7 +118,9 @@ async function openModule(
   ownerXmlPath: string | undefined,
   preview = true
 ): Promise<void> {
-  const locked = ownerXmlPath ? services.supportService?.isLocked(ownerXmlPath) : false;
+  const supportLocked = ownerXmlPath ? services.supportService?.isLocked(ownerXmlPath) ?? false : false;
+  const repositoryLocked = services.repositoryService.isEditRestricted(ownerXmlPath ?? modulePath);
+  const locked = supportLocked || repositoryLocked;
   let editor: vscode.TextEditor;
 
   const lspMode = vscode.workspace.getConfiguration('v8vscedit.lsp').get<string>('mode', 'bsl-analyzer');

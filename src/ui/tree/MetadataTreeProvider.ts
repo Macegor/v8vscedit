@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { ConfigEntry } from '../../infra/fs/ConfigLocator';
+import { RepositoryService } from '../../infra/repository/RepositoryService';
 import { parseConfigXml } from '../../infra/xml';
 import { SupportInfoService } from '../../infra/support/SupportInfoService';
 import {
@@ -28,7 +29,8 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
     private readonly extensionUri: vscode.Uri,
     private readonly projectRoot: string,
     private readonly setStatusMessage?: (message: string | undefined) => void,
-    private readonly supportService?: SupportInfoService
+    private readonly supportService?: SupportInfoService,
+    private readonly repositoryService?: RepositoryService
   ) {
     this.buildRoots();
   }
@@ -99,6 +101,7 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
   getTreeItem(element: MetadataNode): vscode.TreeItem {
     element.iconPath = getIconUris(element.nodeKind, element.ownershipTag, this.extensionUri);
     this.applySupportDecoration(element);
+    this.applyRepositoryDecoration(element);
     return element;
   }
 
@@ -133,6 +136,44 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
     const mode = this.supportService.getSupportMode(element.xmlPath);
     const baseContextValue = (element.contextValue ?? '').replace(/-support\d$/, '');
     element.contextValue = `${baseContextValue}-support${mode}`;
+  }
+
+  /**
+   * Добавляет к `contextValue` признаки подключения к хранилищу и локального состояния захвата.
+   */
+  private applyRepositoryDecoration(element: MetadataNode): void {
+    if (!element.xmlPath || !this.repositoryService) {
+      return;
+    }
+
+    const target = this.repositoryService.resolveTargetByXmlPath(element.xmlPath);
+    if (!target) {
+      return;
+    }
+
+    const baseContextValue = (element.contextValue ?? '')
+      .replace(/-repoConnected/g, '')
+      .replace(/-repoDisconnected/g, '')
+      .replace(/-repoLocked/g, '')
+      .replace(/-repoUnlocked/g, '');
+    const connected = this.repositoryService.hasBinding(target) && this.repositoryService.isConnected(target);
+    element.contextValue = `${baseContextValue}-${connected ? 'repoConnected' : 'repoDisconnected'}`;
+
+    if (!connected) {
+      return;
+    }
+
+    const fullName = this.repositoryService.resolveFullName({
+      nodeKind: element.nodeKind,
+      label: element.label ? String(element.label) : undefined,
+      xmlPath: element.xmlPath,
+      metaContext: element.metaContext,
+    });
+    if (!fullName) {
+      return;
+    }
+
+    element.contextValue = `${element.contextValue}-${this.repositoryService.isLocked(target, fullName) ? 'repoLocked' : 'repoUnlocked'}`;
   }
 
   private buildRoots(): void {

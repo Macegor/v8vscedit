@@ -8,6 +8,7 @@ import { registerOpenModuleCommands } from './open/OpenModuleCommand';
 import { registerOpenXmlCommand } from './open/OpenXmlCommand';
 import { registerShowPropertiesCommand } from './properties/ShowPropertiesCommand';
 import { registerInitializeProjectCommand } from './project/InitializeProjectCommand';
+import { registerRepositoryCommands } from './repository/RepositoryCommands';
 import { registerTreeSearchCommands } from './search/TreeSearchCommands';
 
 /**
@@ -32,4 +33,5 @@ export function registerCommands(
   registerInitializeProjectCommand(context, services);
   registerDbCommands(context, services);
   registerExtensionCommands(context, services);
+  registerRepositoryCommands(context, services);
 }

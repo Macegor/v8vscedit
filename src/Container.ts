@@ -12,11 +12,14 @@ import { TreeSearchViewProvider } from './ui/views/search/TreeSearchViewProvider
 import { OnecFileSystemProvider, ONEC_SCHEME } from './ui/vfs/OnecFileSystemProvider';
 import { SupportInfoService } from './infra/support/SupportInfoService';
 import { MetadataXmlCreator, MetadataXmlRemover } from './infra/xml';
+import { RepositoryService } from './infra/repository/RepositoryService';
 import { SupportDecorationProvider } from './ui/tree/decorations/SupportDecorationProvider';
 import { LspManager } from './lsp/LspManager';
 import { BslReadonlyGuard } from './ui/readonly/BslReadonlyGuard';
 import { registerSupportIndicatorCommands } from './ui/support/SupportIndicatorCommands';
 import { registerSupportWatcher } from './ui/support/SupportWatcher';
+import { RepositoryCommitViewProvider } from './ui/views/RepositoryCommitViewProvider';
+import { RepositoryConnectionViewProvider } from './ui/views/RepositoryConnectionViewProvider';
 
 /**
  * Композиционный корень расширения. Собирает зависимости в одном месте,
@@ -35,6 +38,9 @@ export class Container {
   readonly vfs: OnecFileSystemProvider;
   readonly treeProvider: MetadataTreeProvider;
   readonly propertiesProvider: PropertiesViewProvider;
+  readonly repositoryService: RepositoryService;
+  readonly repositoryConnectionViewProvider: RepositoryConnectionViewProvider;
+  readonly repositoryCommitViewProvider: RepositoryCommitViewProvider;
   readonly metadataXmlCreator: MetadataXmlCreator;
   readonly metadataXmlRemover: MetadataXmlRemover;
   readonly treeSearchViewProvider: TreeSearchViewProvider;
@@ -55,6 +61,7 @@ export class Container {
     this.outputChannel.appendLine('[init] Расширение активировано');
 
     this.supportService = new SupportInfoService(this.outputChannel);
+    this.repositoryService = new RepositoryService(workspaceFolder.uri.fsPath);
 
     this.decorationProvider = new SupportDecorationProvider();
     context.subscriptions.push(
@@ -64,6 +71,7 @@ export class Container {
 
     this.vfs = new OnecFileSystemProvider();
     this.vfs.setSupportService(this.supportService);
+    this.vfs.setRepositoryService(this.repositoryService);
     this.vfs.setOutputChannel(this.outputChannel);
     this.vfs.setOnDidWriteRealFile((filePath) => this.scheduleChangedConfigurationStateRefresh(
       vscode.Uri.file(filePath)
@@ -84,9 +92,12 @@ export class Container {
           this.treeView.message = message;
         }
       },
-      this.supportService
+      this.supportService,
+      this.repositoryService
     );
-    this.propertiesProvider = new PropertiesViewProvider(this.supportService);
+    this.propertiesProvider = new PropertiesViewProvider(this.supportService, this.repositoryService);
+    this.repositoryConnectionViewProvider = new RepositoryConnectionViewProvider(context.extensionUri);
+    this.repositoryCommitViewProvider = new RepositoryCommitViewProvider(context.extensionUri);
     this.metadataXmlCreator = new MetadataXmlCreator();
     this.metadataXmlRemover = new MetadataXmlRemover();
     context.subscriptions.push(this.propertiesProvider);
@@ -169,6 +180,9 @@ export class Container {
       vfs: this.vfs,
       outputChannel: this.outputChannel,
       supportService: this.supportService,
+      repositoryService: this.repositoryService,
+      repositoryConnectionViewProvider: this.repositoryConnectionViewProvider,
+      repositoryCommitViewProvider: this.repositoryCommitViewProvider,
       refreshChangedConfigurationState: () => this.refreshChangedConfigurationState(),
       markChangedConfigurationByFiles: (filePaths) => this.markChangedConfigurationByFiles(filePaths),
       getChangedConfigurations: () => this.getChangedConfigurations(),
@@ -366,7 +380,7 @@ export class Container {
   }
 
   private wireReadonlyGuard(): void {
-    const guard = new BslReadonlyGuard(this.supportService, this.outputChannel);
+    const guard = new BslReadonlyGuard(this.supportService, this.repositoryService, this.outputChannel);
     this.context.subscriptions.push(guard.register());
   }
 

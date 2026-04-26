@@ -1,6 +1,25 @@
 import { CLI_COMMANDS } from './commands';
 import { parseArgs } from './core/args';
 
+const BOOLEAN_SWITCHES = new Set([
+  'AllExtensions',
+  'DryRun',
+  'AllowConfigurationChanges',
+  'NoBind',
+  'ForceBindAlreadyBindedUser',
+  'ForceReplaceCfg',
+  'Force',
+  'Revised',
+  'KeepLocked',
+  'RestoreDeletedUser',
+  'GroupByObject',
+  'GroupByComment',
+  'DoNotIncludeVersionsWithLabels',
+  'IncludeOnlyVersionsWithLabels',
+  'IncludeCommentLinesWithDoubleSlash',
+  'Verbose',
+]);
+
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
   if (!command) {
@@ -16,7 +35,7 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
-    const options = parseArgs(rest, new Set(['AllExtensions', 'DryRun']));
+    const options = parseArgs(rest, BOOLEAN_SWITCHES);
     process.exit(await handler(options));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -28,6 +47,7 @@ async function main(): Promise<void> {
 function printUsage(): void {
   console.log('Usage: node dist/cli/onec-tools.js <command>');
   console.log('Commands: export-configuration, import-configuration, sync-configuration-partial, sync-configuration-full, update-configuration, import-git-changes, refresh-hash-cache');
+  console.log('Repository: repository-create, repository-bind, repository-unbind, repository-lock, repository-unlock, repository-commit, repository-update, repository-add-user, repository-copy-users, repository-dump, repository-report, repository-set-label');
   console.log('Aliases: db-dump-xml, db-load-xml, db-load-git, db-update, update-partial, update-full');
 }
 

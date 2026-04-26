@@ -5,6 +5,12 @@ import { globSync } from 'glob';
 import { runProcess } from '../../infra/process';
 import { OnecConnection } from './types';
 
+export interface RepositoryConnection {
+  repoPath: string;
+  repoUser: string;
+  repoPassword: string;
+}
+
 export function resolveV8Path(v8Path: string): string {
   if (!v8Path) {
     const candidates = globSync('C:/Program Files/1cv8/*/bin/1cv8.exe', { windowsPathsNoEscape: true });
@@ -41,6 +47,14 @@ export function appendConnectionArgs(args: string[], connection: OnecConnection)
   }
 }
 
+export function appendRepositoryArgs(args: string[], repository: RepositoryConnection): void {
+  args.push('/ConfigurationRepositoryF', repository.repoPath);
+  args.push('/ConfigurationRepositoryN', repository.repoUser);
+  if (repository.repoPassword) {
+    args.push('/ConfigurationRepositoryP', repository.repoPassword);
+  }
+}
+
 export function createTempDir(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
@@ -61,7 +75,8 @@ export async function runDesignerAndPrintResult(
   connection: OnecConnection,
   designerArgs: string[],
   successMessage: string,
-  errorMessage: string
+  errorMessage: string,
+  outFilePath?: string
 ): Promise<number> {
   const args: string[] = ['DESIGNER'];
   appendConnectionArgs(args, connection);
@@ -71,6 +86,9 @@ export async function runDesignerAndPrintResult(
   if (result.exitCode === 0) {
     console.log(successMessage);
   } else {
+    if (outFilePath) {
+      printLogFile(outFilePath);
+    }
     console.error(`${errorMessage} (code: ${result.exitCode})`);
   }
   return result.exitCode;

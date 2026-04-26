@@ -1,10 +1,13 @@
 import * as vscode from 'vscode';
 import { ChangedConfiguration } from '../../infra/fs/ConfigurationChangeDetector';
+import { RepositoryService } from '../../infra/repository/RepositoryService';
 import { SupportInfoService } from '../../infra/support/SupportInfoService';
 import { MetadataXmlCreator, MetadataXmlRemover } from '../../infra/xml';
 import { MetadataTreeProvider } from '../tree/MetadataTreeProvider';
 import { MetadataNode } from '../tree/TreeNode';
 import { PropertiesViewProvider } from '../views/PropertiesViewProvider';
+import { RepositoryCommitViewProvider } from '../views/RepositoryCommitViewProvider';
+import { RepositoryConnectionViewProvider } from '../views/RepositoryConnectionViewProvider';
 import { OnecFileSystemProvider } from '../vfs/OnecFileSystemProvider';
 
 export type NodeArg = MetadataNode | { xmlPath?: string; nodeKind?: string; label?: string };
@@ -19,6 +22,9 @@ export interface CommandServices {
   vfs: OnecFileSystemProvider;
   outputChannel: vscode.OutputChannel;
   supportService?: SupportInfoService;
+  repositoryService: RepositoryService;
+  repositoryConnectionViewProvider: RepositoryConnectionViewProvider;
+  repositoryCommitViewProvider: RepositoryCommitViewProvider;
   refreshChangedConfigurationState: () => void;
   markChangedConfigurationByFiles: (filePaths: string[]) => void;
   getChangedConfigurations: () => ChangedConfiguration[];

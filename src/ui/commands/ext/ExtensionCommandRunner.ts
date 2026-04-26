@@ -138,6 +138,45 @@ export async function runDecompileMainConfiguration(
   }
 }
 
+export async function runApplyDatabaseConfiguration(
+  target: {
+    kind: 'cf' | 'cfe';
+    name: string;
+    rootPath: string;
+    extensionName?: string;
+  },
+  workspaceFolder: vscode.WorkspaceFolder,
+  outputChannel: vscode.OutputChannel,
+  showSuccessMessage = false
+): Promise<boolean> {
+  const settingsPath = resolveSettingsPath(workspaceFolder.uri.fsPath, target.rootPath);
+  const connection = resolveConnectionFromSettings(settingsPath);
+  const cliArgs = [
+    'update-configuration',
+    ...(target.kind === 'cfe' && target.extensionName ? ['-Extension', target.extensionName] : []),
+    ...buildConnectionCliArgs(connection),
+  ];
+
+  const targetLabel = target.kind === 'cfe'
+    ? `расширения ${target.name}`
+    : `конфигурации ${target.name}`;
+
+  return runInternalCliCommand(
+    {
+      cliArgs,
+      progressTitle: `Обновление ${targetLabel} в БД`,
+      progressStartMessage: 'Применение изменений конфигурации в базе...',
+      successMessage: `Обновление ${targetLabel} в БД успешно завершено.`,
+      errorTitle: `Ошибка обновления ${targetLabel} в БД.`,
+      failureOperation: `обновлении ${targetLabel} в базе`,
+      logPrefix: 'update-configuration',
+      showSuccessMessage,
+    },
+    workspaceFolder,
+    outputChannel
+  );
+}
+
 export async function runCompileExtension(
   extensionName: string,
   extensionRoot: string,
