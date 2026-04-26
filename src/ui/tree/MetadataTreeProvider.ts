@@ -142,25 +142,110 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
    * Добавляет к `contextValue` признаки подключения к хранилищу и локального состояния захвата.
    */
   private applyRepositoryDecoration(element: MetadataNode): void {
-    if (!element.xmlPath || !this.repositoryService) {
+    if (!this.repositoryService) {
       return;
     }
 
-    const target = this.repositoryService.resolveTargetByXmlPath(element.xmlPath);
-    if (!target) {
+    const state = this.resolveRepositoryState(element);
+    if (!state) {
       return;
     }
 
     const baseContextValue = (element.contextValue ?? '')
       .replace(/-repoConnected/g, '')
       .replace(/-repoDisconnected/g, '')
+      .replace(/-repoEditRestricted/g, '')
+      .replace(/-repoEditAllowed/g, '')
       .replace(/-repoLocked/g, '')
       .replace(/-repoUnlocked/g, '');
-    const connected = this.repositoryService.hasBinding(target) && this.repositoryService.isConnected(target);
-    element.contextValue = `${baseContextValue}-${connected ? 'repoConnected' : 'repoDisconnected'}`;
+    element.contextValue = `${baseContextValue}-${state.connected ? 'repoConnected' : 'repoDisconnected'}`;
 
-    if (!connected) {
+    if (!state.connected) {
       return;
+    }
+
+    if (state.editRestricted !== undefined) {
+      element.contextValue = `${element.contextValue}-${state.editRestricted ? 'repoEditRestricted' : 'repoEditAllowed'}`;
+    }
+
+    if (state.locked !== undefined) {
+      element.contextValue = `${element.contextValue}-${state.locked ? 'repoLocked' : 'repoUnlocked'}`;
+    }
+  }
+
+  private resolveRepositoryState(element: MetadataNode): {
+    connected: boolean;
+    editRestricted?: boolean;
+    locked?: boolean;
+  } | null {
+    if (!this.repositoryService) {
+      return null;
+    }
+
+    if (element.addMetadataTarget?.kind === 'child') {
+      const ownerObjectXmlPath = element.addMetadataTarget.ownerObjectXmlPath;
+      const target = this.repositoryService.resolveTargetByXmlPath(ownerObjectXmlPath);
+      if (!target) {
+        return null;
+      }
+
+      const connected = this.repositoryService.hasBinding(target) && this.repositoryService.isConnected(target);
+      return {
+        connected,
+        editRestricted: connected
+          ? this.repositoryService.isMetadataEditRestricted(target, ownerObjectXmlPath)
+          : undefined,
+      };
+    }
+
+    if (element.addMetadataTarget?.kind === 'root') {
+      const target = this.repositoryService.resolveTargetByConfigRoot(element.addMetadataTarget.configRoot);
+      if (!target) {
+        return null;
+      }
+
+      const connected = this.repositoryService.hasBinding(target) && this.repositoryService.isConnected(target);
+      return {
+        connected,
+        editRestricted: connected ? this.repositoryService.isMetadataEditRestricted(target) : undefined,
+        locked: connected ? this.repositoryService.isRootLocked(target) : undefined,
+      };
+    }
+
+    const anchorXmlPath = element.metaContext?.ownerObjectXmlPath ?? element.xmlPath;
+    if (!anchorXmlPath) {
+      return null;
+    }
+
+    const target = this.repositoryService.resolveTargetByXmlPath(anchorXmlPath);
+    if (!target) {
+      return null;
+    }
+
+    const connected = this.repositoryService.hasBinding(target) && this.repositoryService.isConnected(target);
+    if (!connected) {
+      return { connected: false };
+    }
+
+    const ownerObjectXmlPath = this.isRootRepositoryNode(element)
+      ? undefined
+      : (element.metaContext?.ownerObjectXmlPath ?? element.xmlPath);
+
+    return {
+      connected: true,
+      editRestricted: this.repositoryService.isMetadataEditRestricted(target, ownerObjectXmlPath),
+      locked: this.resolveRepositoryLockState(element),
+    };
+  }
+
+  private resolveRepositoryLockState(element: MetadataNode): boolean | undefined {
+    if (!this.repositoryService) {
+      return undefined;
+    }
+
+    if (this.isRootRepositoryNode(element)) {
+      const target = element.xmlPath ? this.repositoryService.resolveTargetByXmlPath(element.xmlPath) : null;
+      return target ? this.repositoryService.isRootLocked(target) : undefined;
     }
 
     const fullName = this.repositoryService.resolveFullName({
@@ -170,10 +255,24 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
       metaContext: element.metaContext,
     });
     if (!fullName) {
-      return;
+      return undefined;
     }
 
-    element.contextValue = `${element.contextValue}-${this.repositoryService.isLocked(target, fullName) ? 'repoLocked' : 'repoUnlocked'}`;
+    const anchorXmlPath = element.metaContext?.ownerObjectXmlPath ?? element.xmlPath;
+    if (!anchorXmlPath) {
+      return undefined;
+    }
+
+    const target = this.repositoryService.resolveTargetByXmlPath(anchorXmlPath);
+    if (!target) {
+      return undefined;
+    }
+
+    return this.repositoryService.isLocked(target, fullName);
+  }
+
+  private isRootRepositoryNode(element: MetadataNode): boolean {
+    return element.nodeKind === 'configuration' || element.nodeKind === 'extension';
   }
 
   private buildRoots(): void {

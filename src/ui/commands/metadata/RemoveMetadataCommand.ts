@@ -31,6 +31,12 @@ async function removeMetadata(node: MetadataNode | undefined, services: CommandS
     return;
   }
 
+  const repositoryTarget = services.repositoryService.resolveTargetByXmlPath(supportXmlPath);
+  if (repositoryTarget && services.repositoryService.isMetadataEditRestricted(repositoryTarget, supportXmlPath)) {
+    await vscode.window.showErrorMessage('Удаление запрещено: объект не захвачен в хранилище.');
+    return;
+  }
+
   const confirmed = await vscode.window.showQuickPick(
     [
       {

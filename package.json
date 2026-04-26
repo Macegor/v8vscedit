@@ -2,7 +2,7 @@
   "name": "v8vscedit",
   "displayName": "Редактор конфигураций 1С",
   "description": "Редактор конфигураций и расширений 1С:Предприятие — навигация по метаданным, LSP для BSL, работа с XML-выгрузкой",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "repository": {
     "type": "git",
     "url": "https://github.com/Macegor/v8vscedit.git"
@@ -290,42 +290,42 @@
         },
         {
           "command": "v8vscedit.openXmlFile",
-          "when": "view == v8vsceditTree && viewItem =~ /-hasXml/",
+          "when": "view == v8vsceditTree && viewItem =~ /-hasXml/ && !(viewItem =~ /-repoEditRestricted/)",
           "group": "navigation@1"
         },
         {
           "command": "v8vscedit.openObjectModule",
-          "when": "view == v8vsceditTree && viewItem =~ /(Catalog|Document|Report|DataProcessor|InformationRegister|AccumulationRegister|AccountingRegister|CalculationRegister|BusinessProcess|Task|ExchangePlan|ChartOfCharacteristicTypes|ChartOfAccounts|ChartOfCalculationTypes)-hasXml/",
+          "when": "view == v8vsceditTree && viewItem =~ /(Catalog|Document|Report|DataProcessor|InformationRegister|AccumulationRegister|AccountingRegister|CalculationRegister|BusinessProcess|Task|ExchangePlan|ChartOfCharacteristicTypes|ChartOfAccounts|ChartOfCalculationTypes)-hasXml/ && !(viewItem =~ /-repoEditRestricted/)",
           "group": "navigation@2"
         },
         {
           "command": "v8vscedit.openManagerModule",
-          "when": "view == v8vsceditTree && viewItem =~ /(Catalog|Document|Report|DataProcessor|InformationRegister|AccumulationRegister|AccountingRegister|CalculationRegister|BusinessProcess|Task|ExchangePlan|ChartOfCharacteristicTypes|ChartOfAccounts|ChartOfCalculationTypes|Enum|DocumentJournal)-hasXml/",
+          "when": "view == v8vsceditTree && viewItem =~ /(Catalog|Document|Report|DataProcessor|InformationRegister|AccumulationRegister|AccountingRegister|CalculationRegister|BusinessProcess|Task|ExchangePlan|ChartOfCharacteristicTypes|ChartOfAccounts|ChartOfCalculationTypes|Enum|DocumentJournal)-hasXml/ && !(viewItem =~ /-repoEditRestricted/)",
           "group": "navigation@2"
         },
         {
           "command": "v8vscedit.openConstantModule",
-          "when": "view == v8vsceditTree && viewItem =~ /^Constant-hasXml/",
+          "when": "view == v8vsceditTree && viewItem =~ /^Constant-hasXml/ && !(viewItem =~ /-repoEditRestricted/)",
           "group": "navigation@2"
         },
         {
           "command": "v8vscedit.openFormModule",
-          "when": "view == v8vsceditTree && viewItem =~ /^(CommonForm|Form)-hasXml/",
+          "when": "view == v8vsceditTree && viewItem =~ /^(CommonForm|Form)-hasXml/ && !(viewItem =~ /-repoEditRestricted/)",
           "group": "navigation@3"
         },
         {
           "command": "v8vscedit.openCommandModule",
-          "when": "view == v8vsceditTree && viewItem =~ /^(CommonCommand|Command)-hasXml/",
+          "when": "view == v8vsceditTree && viewItem =~ /^(CommonCommand|Command)-hasXml/ && !(viewItem =~ /-repoEditRestricted/)",
           "group": "navigation@3"
         },
         {
           "command": "v8vscedit.openServiceModule",
-          "when": "view == v8vsceditTree && viewItem =~ /^(WebService|HTTPService)-hasXml/",
+          "when": "view == v8vsceditTree && viewItem =~ /^(WebService|HTTPService)-hasXml/ && !(viewItem =~ /-repoEditRestricted/)",
           "group": "navigation@3"
         },
         {
           "command": "v8vscedit.openCommonModuleCode",
-          "when": "view == v8vsceditTree && viewItem =~ /^CommonModule-hasXml/",
+          "when": "view == v8vsceditTree && viewItem =~ /^CommonModule-hasXml/ && !(viewItem =~ /-repoEditRestricted/)",
           "group": "navigation@2"
         },
         {
@@ -340,17 +340,17 @@
         },
         {
           "command": "v8vscedit.addMetadata",
-          "when": "view == v8vsceditTree && viewItem =~ /-canAdd/",
+          "when": "view == v8vsceditTree && viewItem =~ /-canAdd/ && !(viewItem =~ /-repoEditRestricted/)",
           "group": "inline"
         },
         {
           "command": "v8vscedit.removeMetadata",
-          "when": "view == v8vsceditTree && viewItem =~ /-canRemove/ && !(viewItem =~ /-support1/)",
+          "when": "view == v8vsceditTree && viewItem =~ /-canRemove/ && !(viewItem =~ /-support1/) && !(viewItem =~ /-repoEditRestricted/)",
           "group": "inline"
         },
         {
           "command": "v8vscedit.removeMetadata",
-          "when": "view == v8vsceditTree && viewItem =~ /-canRemove/ && !(viewItem =~ /-support1/)",
+          "when": "view == v8vsceditTree && viewItem =~ /-canRemove/ && !(viewItem =~ /-support1/) && !(viewItem =~ /-repoEditRestricted/)",
           "group": "navigation@10"
         },
         {

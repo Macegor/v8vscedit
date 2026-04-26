@@ -82,6 +82,33 @@ suite('RepositoryService', () => {
     service.setLocked(target!, ['БизнесПроцесс.УдалитьЗаявкаКабинетСотрудника'], true);
     assert.strictEqual(service.isEditRestricted(formModulePath), false);
   });
+  test('Для создания корневых объектов требуется захват корня конфигурации', () => {
+    const configXmlPath = path.join(EXAMPLE_CF, 'Configuration.xml');
+    const target = service.resolveTargetByConfigRoot(EXAMPLE_CF);
+
+    assert.ok(target, 'Не удалось определить цель хранилища для корня конфигурации.');
+
+    service.saveBinding(target!, {
+      repoPath: '\\\\repo\\storage',
+      repoUser: 'tester',
+      repoPassword: 'secret',
+    });
+    service.setConnected(target!, true);
+
+    assert.strictEqual(service.isMetadataEditRestricted(target!), true);
+    assert.strictEqual(service.isRootLocked(target!), false);
+
+    const objects = service.createObjectsFileForNode({
+      nodeKind: 'configuration',
+      label: 'Конфигурация',
+      xmlPath: configXmlPath,
+    }, false);
+
+    service.setLocked(target!, objects.fullNames, true);
+
+    assert.strictEqual(service.isRootLocked(target!), true);
+    assert.strictEqual(service.isMetadataEditRestricted(target!), false);
+  });
 });
 
 function restoreFile(filePath: string, backup: string | undefined): void {

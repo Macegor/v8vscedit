@@ -231,6 +231,7 @@ export class PropertiesViewProvider implements vscode.Disposable {
     const editLockReason = this.resolveEditLockReason(node);
     const isEditLocked = editLockReason !== undefined;
     const isEditLockedBySupport = editLockReason === 'support';
+    const isEditLockedByRepository = editLockReason === 'repository';
     if (isEditLocked) {
       isDirty = false;
     }
@@ -247,12 +248,13 @@ export class PropertiesViewProvider implements vscode.Disposable {
         <div class="title">${escapeHtml(node.textLabel)}</div>
         <p class="subtitle">${escapeHtml(getNodeKindLabel(node.nodeKind))}</p>
         ${isEditLockedBySupport ? '<p class="subtitle">Редактирование запрещено поддержкой</p>' : ''}
+        ${isEditLockedByRepository ? '<p class="subtitle">Редактирование запрещено: объект не захвачен в хранилище</p>' : ''}
       </div>
       <div class="form">
         ${properties.map((property) => this.renderProperty(property, isEditLocked)).join('')}
         <div class="actions">
-          <button class="btn" id="saveBtn" ${(isDirty && !isEditLockedBySupport) ? '' : 'disabled'}>Сохранить</button>
-          <button class="btn" id="cancelBtn" ${(isDirty && !isEditLockedBySupport) ? '' : 'disabled'}>Отмена</button>
+          <button class="btn" id="saveBtn" ${(isDirty && !isEditLocked) ? '' : 'disabled'}>Сохранить</button>
+          <button class="btn" id="cancelBtn" ${(isDirty && !isEditLocked) ? '' : 'disabled'}>Отмена</button>
         </div>
       </div>
       <script>${this.renderScript(isEditLocked)}</script>
@@ -394,21 +396,21 @@ export class PropertiesViewProvider implements vscode.Disposable {
     return blocks.join('');
   }
 
-  private renderScript(isEditLockedBySupport: boolean): string {
+  private renderScript(isEditLocked: boolean): string {
     return `
       const vscode = acquireVsCodeApi();
       const typeBtn = document.getElementById('pickTypeBtn');
       const saveBtn = document.getElementById('saveBtn');
       const cancelBtn = document.getElementById('cancelBtn');
       const typePresentation = document.getElementById('typePresentation');
-      const isEditLockedBySupport = ${isEditLockedBySupport ? 'true' : 'false'};
+      const isEditLocked = ${isEditLocked ? 'true' : 'false'};
       const isValidMetadataName = (value) => /^[\\p{L}][\\p{L}\\p{Nd}_]*$/u.test(value);
       let isDirty = false;
       const lastValidByKey = new Map();
       const setDirty = (dirty) => {
         isDirty = dirty;
-        if (saveBtn) saveBtn.disabled = !dirty || isEditLockedBySupport;
-        if (cancelBtn) cancelBtn.disabled = !dirty || isEditLockedBySupport;
+        if (saveBtn) saveBtn.disabled = !dirty || isEditLocked;
+        if (cancelBtn) cancelBtn.disabled = !dirty || isEditLocked;
       };
       const collectQualifiers = () => ({
         stringLength: document.getElementById('qStringLength')?.value,
@@ -420,7 +422,7 @@ export class PropertiesViewProvider implements vscode.Disposable {
       });
       if (typeBtn) {
         typeBtn.addEventListener('click', () => {
-          if (isEditLockedBySupport) return;
+          if (isEditLocked) return;
           vscode.postMessage({ type: 'openTypePicker', qualifiers: collectQualifiers() });
         });
       }
@@ -428,7 +430,7 @@ export class PropertiesViewProvider implements vscode.Disposable {
         const el = document.getElementById(id);
         if (!el) continue;
         el.addEventListener('change', () => {
-          if (isEditLockedBySupport) return;
+          if (isEditLocked) return;
           setDirty(true);
           vscode.postMessage({ type: 'updateTypeQualifiers', qualifiers: collectQualifiers() });
         });
@@ -436,7 +438,7 @@ export class PropertiesViewProvider implements vscode.Disposable {
       document.querySelectorAll('[data-prop-key]').forEach((el) => {
         const key = el.getAttribute('data-prop-key');
         const kind = el.getAttribute('data-prop-kind') || (el.type === 'checkbox' ? 'boolean' : 'string');
-        if (!key || isEditLockedBySupport) return;
+        if (!key || isEditLocked) return;
         if (el.type !== 'checkbox') {
           lastValidByKey.set(key, String(el.value ?? ''));
         }
@@ -456,18 +458,18 @@ export class PropertiesViewProvider implements vscode.Disposable {
         });
       });
       if (saveBtn) saveBtn.addEventListener('click', () => {
-        if (isEditLockedBySupport) return;
+        if (isEditLocked) return;
         vscode.postMessage({ type: 'saveChanges' });
       });
       const renameObjectBtn = document.getElementById('renameObjectBtn');
       if (renameObjectBtn) {
         renameObjectBtn.addEventListener('click', () => {
-          if (isEditLockedBySupport) return;
+          if (isEditLocked) return;
           vscode.postMessage({ type: 'renameObject' });
         });
       }
       if (cancelBtn) cancelBtn.addEventListener('click', () => {
-        if (isEditLockedBySupport) return;
+        if (isEditLocked) return;
         vscode.postMessage({ type: 'cancelChanges' });
       });
       setDirty(${this.editSession.size > 0 ? 'true' : 'false'});
@@ -487,6 +489,15 @@ export class PropertiesViewProvider implements vscode.Disposable {
   private async handleWebviewMessage(message: unknown): Promise<void> {
     const msg = message as { type?: string; qualifiers?: Record<string, string>; presentation?: string; key?: string; value?: string | boolean; kind?: string };
     if (!this.activeNode || !this.panel) {
+      return;
+    }
+    if (this.isEditLockedByRepository(this.activeNode)) {
+      if (msg.type === 'openTypePicker' || msg.type === 'updateTypeQualifiers' || msg.type === 'saveChanges' || msg.type === 'cancelChanges' || msg.type === 'propertyChanged') {
+        void vscode.window.showWarningMessage('Редактирование свойств запрещено: объект не захвачен в хранилище.');
+      }
+      if (msg.type === 'renameObject') {
+        void vscode.window.showWarningMessage('Переименование запрещено: объект не захвачен в хранилище.');
+      }
       return;
     }
     if (this.isEditLockedBySupport(this.activeNode)) {
@@ -668,6 +679,10 @@ export class PropertiesViewProvider implements vscode.Disposable {
     if (!this.activeNode) {
       return;
     }
+    if (this.isEditLockedByRepository(this.activeNode)) {
+      void vscode.window.showWarningMessage('Редактирование свойств запрещено: объект не захвачен в хранилище.');
+      return;
+    }
     if (this.editSession.size === 0) {
       return;
     }
@@ -733,6 +748,10 @@ export class PropertiesViewProvider implements vscode.Disposable {
 
   private async promptAndRenameObject(): Promise<void> {
     if (!this.activeNode) {
+      return;
+    }
+    if (this.isEditLockedByRepository(this.activeNode)) {
+      void vscode.window.showWarningMessage('Переименование запрещено: объект не захвачен в хранилище.');
       return;
     }
     const target = resolvePropertyTarget(this.activeNode);

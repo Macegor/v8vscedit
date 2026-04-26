@@ -40,6 +40,8 @@ interface RepositoryStateFile {
 
 const REPOSITORY_STATE_VERSION = 2;
 const REPOSITORY_NAMESPACE = 'http://v8.1c.ru/8.3/config/objects';
+const CONFIGURATION_ROOT_LOCK_NAME = '__configuration_root__';
+const EXTENSION_ROOT_LOCK_NAME = '__extension_root__';
 
 const ROOT_KIND_NAMES: Partial<Record<MetaKind, string>> = {
   Subsystem: 'Подсистема',
@@ -123,7 +125,20 @@ export class RepositoryService {
       return null;
     }
 
-    const info = parseConfigXml(path.join(configRoot, 'Configuration.xml'));
+    return this.resolveTargetByConfigRoot(configRoot);
+  }
+
+  /**
+   * Определяет цель хранилища по корню выгрузки, чтобы UI мог проверять
+   * ограничения на создание объектов ещё до появления их XML-файлов.
+   */
+  resolveTargetByConfigRoot(configRoot: string): RepositoryTarget | null {
+    const configurationXmlPath = path.join(configRoot, 'Configuration.xml');
+    if (!fs.existsSync(configurationXmlPath)) {
+      return null;
+    }
+
+    const info = parseConfigXml(configurationXmlPath);
     return {
       configRoot,
       configKind: info.kind,
@@ -238,6 +253,14 @@ export class RepositoryService {
     return scope?.lockedFullNames.includes(fullName) ?? false;
   }
 
+  /**
+   * Возвращает `true`, если локально отмечен захват корня конфигурации или
+   * расширения. Это нужно для операций создания новых корневых объектов.
+   */
+  isRootLocked(target: RepositoryTarget): boolean {
+    return this.isLocked(target, this.getRootLockName(target));
+  }
+
   setLocked(target: RepositoryTarget, fullNames: string[], locked: boolean): void {
     if (fullNames.length === 0) {
       return;
@@ -275,9 +298,26 @@ export class RepositoryService {
       return false;
     }
 
+    return this.isMetadataEditRestricted(target, ownerObjectXmlPath);
+  }
+
+  /**
+   * Проверяет, можно ли менять метаданные внутри цели хранилища.
+   * Для существующих объектов используется их локальный захват, а для
+   * операций создания корневых объектов — захват корня конфигурации.
+   */
+  isMetadataEditRestricted(target: RepositoryTarget, ownerObjectXmlPath?: string): boolean {
+    if (!this.hasBinding(target) || !this.isConnected(target)) {
+      return false;
+    }
+
+    if (!ownerObjectXmlPath) {
+      return !this.isRootLocked(target);
+    }
+
     const fullName = this.resolveRootObjectFullName(ownerObjectXmlPath);
     if (!fullName) {
-      return false;
+      return !this.isRootLocked(target);
     }
 
     return !this.isLocked(target, fullName);
@@ -351,7 +391,7 @@ export class RepositoryService {
       ].join('\n');
       return {
         filePath: this.writeObjectsFile(target, xml),
-        fullNames: [],
+        fullNames: [this.getRootLockName(target)],
       };
     }
 
@@ -579,6 +619,10 @@ export class RepositoryService {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, `${xml}\n`, 'utf-8');
     return filePath;
+  }
+
+  private getRootLockName(target: RepositoryTarget): string {
+    return target.configKind === 'cfe' ? EXTENSION_ROOT_LOCK_NAME : CONFIGURATION_ROOT_LOCK_NAME;
   }
 }
 

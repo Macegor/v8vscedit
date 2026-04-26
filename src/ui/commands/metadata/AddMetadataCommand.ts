@@ -25,6 +25,19 @@ async function addMetadata(node: MetadataNode | undefined, services: CommandServ
     return;
   }
 
+  const repositoryTarget = target.kind === 'root'
+    ? services.repositoryService.resolveTargetByConfigRoot(target.configRoot)
+    : services.repositoryService.resolveTargetByXmlPath(target.ownerObjectXmlPath);
+  const ownerObjectXmlPath = target.kind === 'child' ? target.ownerObjectXmlPath : undefined;
+  if (repositoryTarget && services.repositoryService.isMetadataEditRestricted(repositoryTarget, ownerObjectXmlPath)) {
+    await vscode.window.showErrorMessage(
+      target.kind === 'root'
+        ? 'Добавление запрещено: корень конфигурации или расширения не захвачен в хранилище.'
+        : 'Добавление запрещено: объект не захвачен в хранилище.'
+    );
+    return;
+  }
+
   const name = await promptName(target);
   if (!name) {
     return;

@@ -187,6 +187,7 @@ export class RepositoryCommitViewProvider {
     <section class="card">
       <h1>Помещение в хранилище</h1>
       <p class="subtitle">${escapeHtml(targetLabel)}. Комментарий обязателен для осмысленной истории версий, а параметры помещения применяются только к текущей операции.</p>
+      <div class="hint">По умолчанию после помещения объект будет освобождён. Включите флаг ниже, если захват нужно сохранить.</div>
     </section>
     <section class="card grid">
       <label>
@@ -201,7 +202,7 @@ export class RepositoryCommitViewProvider {
         <span>Выполнить помещение рекурсивно для подчинённых объектов.</span>
       </label>
       <label class="check">
-        <input id="keepLocked" type="checkbox" ${initiallyLocked ? 'checked' : ''}>
+        <input id="keepLocked" type="checkbox">
         <span>Оставить объект захваченным после помещения.</span>
       </label>
       <label class="check">
