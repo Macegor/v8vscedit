@@ -233,6 +233,32 @@ export function findChildElementFullXmlInBlock(
   return null;
 }
 
+/** Возвращает все прямые дочерние элементы указанного типа из XML-блока. */
+export function findChildElementsFullXmlInBlock(
+  block: string,
+  childTag: string
+): Array<{ name: string; xml: string }> {
+  const result: Array<{ name: string; xml: string }> = [];
+  for (const range of findDirectElementRanges(block, childTag)) {
+    const childXml = block.slice(range.start, range.end);
+    const children = getWrappedRootChildren(childXml);
+    const child = findDirectChildren(children, childTag)[0];
+    if (!child) {
+      continue;
+    }
+    const nameNode = findFirstElement(getElementChildren(child), 'Name');
+    if (!nameNode) {
+      continue;
+    }
+    result.push({
+      name: collectText(getElementChildren(nameNode)),
+      xml: childXml,
+    });
+  }
+
+  return result;
+}
+
 /** Извлекает полный XML дочернего объекта из главного `<ChildObjects>`. */
 export function extractChildMetaElementXml(
   xml: string,
@@ -244,6 +270,18 @@ export function extractChildMetaElementXml(
     return null;
   }
   return findChildElementFullXmlInBlock(mainBlock, childTag, elementName);
+}
+
+/** Возвращает все дочерние элементы указанного типа из главного `<ChildObjects>`. */
+export function extractChildMetaElementsXml(
+  xml: string,
+  childTag: string
+): Array<{ name: string; xml: string }> {
+  const mainBlock = extractMainChildObjectsInnerXml(xml);
+  if (!mainBlock) {
+    return [];
+  }
+  return findChildElementsFullXmlInBlock(mainBlock, childTag);
 }
 
 /** Возвращает XML колонки табличной части по имени ТЧ и колонки. */
@@ -263,4 +301,22 @@ export function extractColumnXmlFromTabularSection(
   }
 
   return findChildElementFullXmlInBlock(childObjectsInner, 'Attribute', columnName);
+}
+
+/** Возвращает все колонки табличной части по имени ТЧ. */
+export function extractColumnsXmlFromTabularSection(
+  objectXml: string,
+  sectionName: string
+): Array<{ name: string; xml: string }> {
+  const tabularSectionXml = extractChildMetaElementXml(objectXml, 'TabularSection', sectionName);
+  if (!tabularSectionXml) {
+    return [];
+  }
+
+  const childObjectsInner = extractNestingAwareBlock(tabularSectionXml, 'ChildObjects');
+  if (!childObjectsInner) {
+    return [];
+  }
+
+  return findChildElementsFullXmlInBlock(childObjectsInner, 'Attribute');
 }

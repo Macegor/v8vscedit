@@ -6,6 +6,7 @@ import { ConfigEntry, ConfigInfo } from '../../domain/Configuration';
 import { MetaChild } from '../../domain/MetaObject';
 import { MetaKind, getMetaFolder, getMetaType, getMetaTypesByGroup } from '../../domain/MetaTypes';
 import { buildScopeKey } from '../../cli/core/hashCache';
+import type { MetadataGitDecorationTarget } from '../git/GitMetadataStatusService';
 import { getObjectLocationFromXml, resolveObjectXmlPath } from '../fs/MetaPathResolver';
 import { parseConfigXml, parseObjectXml } from '../xml';
 
@@ -14,6 +15,8 @@ export interface MetadataCacheNode {
   name: string;
   label: string;
   xmlPath?: string;
+  decorationPath?: string;
+  gitDecorationTarget?: MetadataGitDecorationTarget;
   tooltip?: string;
   ownershipTag?: 'OWN' | 'BORROWED';
   hidePropertiesCommand?: boolean;
@@ -43,7 +46,7 @@ export type MetadataCacheAddTarget =
   };
 
 export interface MetadataCacheSnapshot {
-  schemaVersion: 3;
+  schemaVersion: 7;
   scopeKey: string;
   generatedAt: string;
   rootPath: string;
@@ -57,7 +60,7 @@ export interface MetadataCacheUpdateResult {
 }
 
 const METADATA_CACHE_DIR = path.join('.v8vscedit', 'meta');
-const CACHE_SCHEMA_VERSION = 3;
+const CACHE_SCHEMA_VERSION = 7;
 
 /**
  * Строит полный снимок дерева метаданных без ленивых загрузчиков, чтобы UI мог восстановить дерево из JSON.
@@ -135,6 +138,65 @@ export function updateMetadataCacheAfterAdd(
   return { snapshot: cached, updatedPartially: true };
 }
 
+/**
+ * Обновляет JSON-кэш дерева по внешним изменениям файлов выгрузки.
+ * Hash-кэш загрузки в 1С не трогается: он должен отражать последнее успешное
+ * состояние синхронизации, а не каждое локальное редактирование.
+ */
+export function updateMetadataCacheForChangedFiles(
+  projectRoot: string,
+  entry: ConfigEntry,
+  filePaths: string[]
+): MetadataCacheUpdateResult | null {
+  const relatedFiles = filePaths.filter((filePath) => isPathInside(filePath, entry.rootPath));
+  if (relatedFiles.length === 0) {
+    return null;
+  }
+
+  const info = parseConfigXml(path.join(entry.rootPath, 'Configuration.xml'));
+  const scopeKey = buildMetadataCacheScopeKey(entry, info);
+  const cached = loadMetadataCache(projectRoot, scopeKey);
+  if (!cached) {
+    const snapshot = buildMetadataCacheSnapshot(scopeKey, entry);
+    saveMetadataCache(projectRoot, snapshot);
+    return { snapshot, updatedPartially: false };
+  }
+
+  if (relatedFiles.some((filePath) => isConfigurationXml(filePath))) {
+    const snapshot = buildMetadataCacheSnapshot(scopeKey, entry);
+    saveMetadataCache(projectRoot, snapshot);
+    return { snapshot, updatedPartially: false };
+  }
+
+  let changed = false;
+  for (const filePath of relatedFiles) {
+    if (path.extname(filePath).toLowerCase() !== '.xml') {
+      continue;
+    }
+
+    const target = findObjectNodeByChangedPath(cached.root, filePath);
+    if (!target) {
+      continue;
+    }
+
+    const refreshed = rebuildObjectNodeFromXml(entry, info, target.node);
+    if (refreshed) {
+      target.parent.children[target.index] = refreshed;
+    } else {
+      target.parent.children.splice(target.index, 1);
+    }
+    changed = true;
+  }
+
+  if (!changed) {
+    return null;
+  }
+
+  cached.generatedAt = new Date().toISOString();
+  saveMetadataCache(projectRoot, cached);
+  return { snapshot: cached, updatedPartially: true };
+}
+
 export function buildMetadataCacheScopeKey(entry: ConfigEntry, info: ConfigInfo): string {
   return buildScopeKey(entry.kind, entry.rootPath, entry.kind === 'cfe' ? info.name : '');
 }
@@ -151,6 +213,7 @@ function buildConfigNode(entry: ConfigEntry, info: ConfigInfo): MetadataCacheNod
     name: info.name,
     label: info.name,
     xmlPath: path.join(entry.rootPath, 'Configuration.xml'),
+    decorationPath: entry.rootPath,
     tooltip: info.synonym || undefined,
     hidePropertiesCommand: true,
     children: buildConfigChildren(entry, info),
@@ -163,6 +226,7 @@ function buildConfigChildren(entry: ConfigEntry, info: ConfigInfo): MetadataCach
       type: 'group-common',
       name: 'common',
       label: 'Общие',
+      decorationPath: entry.rootPath,
       hidePropertiesCommand: true,
       children: buildCommonSubgroups(entry, info),
     }),
@@ -184,6 +248,7 @@ function buildTopGroups(entry: ConfigEntry, info: ConfigInfo): MetadataCacheNode
         type: 'Document',
         name: 'Document',
         label: def.pluralLabel,
+        decorationPath: buildRootGroupDecorationPath(entry, def.kind),
         addMetadataTarget: buildRootAddTarget(entry, info, def.kind),
         children,
       }));
@@ -195,6 +260,7 @@ function buildTopGroups(entry: ConfigEntry, info: ConfigInfo): MetadataCacheNode
       type: def.kind,
       name: def.kind,
       label: def.pluralLabel,
+      decorationPath: buildRootGroupDecorationPath(entry, def.kind),
       addMetadataTarget: buildRootAddTarget(entry, info, def.kind),
       children: names.length > 0 ? buildObjectNodes(entry, info, def.kind, names) : [],
     }));
@@ -210,6 +276,7 @@ function buildCommonSubgroups(entry: ConfigEntry, info: ConfigInfo): MetadataCac
       type: def.kind,
       name: def.kind,
       label: def.pluralLabel,
+      decorationPath: buildRootGroupDecorationPath(entry, def.kind),
       addMetadataTarget: buildRootAddTarget(entry, info, def.kind),
       children: names.length > 0 ? buildObjectNodes(entry, info, def.kind, names) : [],
     });
@@ -226,6 +293,7 @@ function buildDocumentsBranchChildren(entry: ConfigEntry, info: ConfigInfo): Met
       type: 'NumeratorsBranch',
       name: 'NumeratorsBranch',
       label: 'Нумераторы',
+      decorationPath: buildRootGroupDecorationPath(entry, 'DocumentNumerator'),
       hidePropertiesCommand: true,
       addMetadataTarget: buildRootAddTarget(entry, info, 'DocumentNumerator'),
       children: buildObjectNodes(entry, info, 'DocumentNumerator', numeratorNames),
@@ -234,6 +302,7 @@ function buildDocumentsBranchChildren(entry: ConfigEntry, info: ConfigInfo): Met
       type: 'SequencesBranch',
       name: 'SequencesBranch',
       label: 'Последовательности',
+      decorationPath: buildRootGroupDecorationPath(entry, 'Sequence'),
       hidePropertiesCommand: true,
       addMetadataTarget: buildRootAddTarget(entry, info, 'Sequence'),
       children: buildObjectNodes(entry, info, 'Sequence', sequenceNames),
@@ -281,6 +350,7 @@ function buildObjectNode(
     name: label,
     label,
     xmlPath,
+    decorationPath: resolveObjectDecorationPath(xmlPath),
     tooltip: objectInfo?.synonym || undefined,
     ownershipTag,
     canRemoveMetadata: true,
@@ -301,6 +371,19 @@ function buildStructuredChildren(
       type: 'group-type',
       name: tag,
       label: tagCfg.label,
+      decorationPath: undefined,
+      gitDecorationTarget: isEmbeddedChildTag(tag)
+        ? {
+          kind: 'group',
+          ownerXmlPath: objectXmlPath,
+          childKind: tag,
+        }
+        : {
+          kind: 'paths',
+          ownerXmlPath: objectXmlPath,
+          childKind: tag,
+          paths: resolveChildGroupDecorationPaths(objectXmlPath, tag),
+        },
       hidePropertiesCommand: true,
       addMetadataTarget: {
         kind: 'child',
@@ -328,6 +411,21 @@ function buildLeavesForTag(
     name: item.name,
     label: item.name,
     xmlPath: resolveLeafXmlPath(objectXmlPath, tag, item.name),
+    decorationPath: undefined,
+    gitDecorationTarget: isEmbeddedChildTag(tag)
+      ? {
+        kind: 'child',
+        ownerXmlPath: objectXmlPath,
+        childKind: tag,
+        name: item.name,
+      }
+      : {
+        kind: 'paths',
+        ownerXmlPath: objectXmlPath,
+        childKind: tag,
+        name: item.name,
+        paths: resolveChildDecorationPaths(objectXmlPath, tag, item.name),
+      },
     tooltip: item.synonym || undefined,
     metaContext: {
       rootMetaKind,
@@ -349,6 +447,12 @@ function buildTabularSectionNode(
     name: item.name,
     label: item.name,
     xmlPath: objectXmlPath,
+    gitDecorationTarget: {
+      kind: 'child',
+      ownerXmlPath: objectXmlPath,
+      childKind: 'TabularSection',
+      name: item.name,
+    },
     tooltip: item.synonym || undefined,
     metaContext: {
       rootMetaKind,
@@ -366,6 +470,13 @@ function buildTabularSectionNode(
       name: column.name,
       label: column.name,
       xmlPath: objectXmlPath,
+      gitDecorationTarget: {
+        kind: 'child',
+        ownerXmlPath: objectXmlPath,
+        childKind: 'Column',
+        name: column.name,
+        tabularSectionName: item.name,
+      },
       tooltip: column.synonym || undefined,
       metaContext: {
         rootMetaKind,
@@ -402,6 +513,7 @@ function buildSubsystemNode(
       name: label,
       label: `${label} (цикл)`,
       xmlPath,
+      decorationPath: resolveObjectDecorationPath(xmlPath),
       children: [],
     });
   }
@@ -425,6 +537,7 @@ function buildSubsystemNode(
     name,
     label: name,
     xmlPath,
+    decorationPath: resolveObjectDecorationPath(xmlPath),
     tooltip: objectInfo?.synonym || undefined,
     ownershipTag: getOwnershipTag(entry, info, name),
     canRemoveMetadata: true,
@@ -450,6 +563,57 @@ function resolveLeafXmlPath(objectXmlPath: string, tag: ChildTag, itemName: stri
   }
 
   return objectXmlPath;
+}
+
+function buildRootGroupDecorationPath(entry: ConfigEntry, kind: MetaKind): string | undefined {
+  const folder = getMetaFolder(kind);
+  return folder ? path.join(entry.rootPath, folder) : undefined;
+}
+
+function resolveObjectDecorationPath(xmlPath: string): string {
+  const loc = getObjectLocationFromXml(xmlPath);
+  return fs.existsSync(loc.objectDir) ? loc.objectDir : xmlPath;
+}
+
+function resolveChildDecorationPaths(objectXmlPath: string, tag: ChildTag, itemName: string): string[] {
+  const loc = getObjectLocationFromXml(objectXmlPath);
+  switch (tag) {
+    case 'Form':
+      return [
+        path.join(loc.objectDir, 'Forms', `${itemName}.xml`),
+        path.join(loc.objectDir, 'Forms', itemName),
+      ];
+    case 'Command':
+      return [
+        path.join(loc.objectDir, 'Commands', `${itemName}.xml`),
+        path.join(loc.objectDir, 'Commands', itemName),
+      ];
+    case 'Template':
+      return [
+        path.join(loc.objectDir, 'Templates', `${itemName}.xml`),
+        path.join(loc.objectDir, 'Templates', itemName),
+      ];
+    default:
+      return [objectXmlPath];
+  }
+}
+
+function resolveChildGroupDecorationPaths(objectXmlPath: string, tag: ChildTag): string[] {
+  const loc = getObjectLocationFromXml(objectXmlPath);
+  switch (tag) {
+    case 'Form':
+      return [path.join(loc.objectDir, 'Forms')];
+    case 'Command':
+      return [path.join(loc.objectDir, 'Commands')];
+    case 'Template':
+      return [path.join(loc.objectDir, 'Templates')];
+    default:
+      return [];
+  }
+}
+
+function isEmbeddedChildTag(tag: ChildTag): boolean {
+  return tag !== 'Form' && tag !== 'Command' && tag !== 'Template';
 }
 
 function resolveSubsystemXml(root: string, name: string): string | undefined {
@@ -516,6 +680,79 @@ function updateChildObjectCache(snapshot: MetadataCacheSnapshot, ownerObjectXmlP
   return true;
 }
 
+function rebuildObjectNodeFromXml(
+  entry: ConfigEntry,
+  info: ConfigInfo,
+  existing: MetadataCacheNode
+): MetadataCacheNode | null {
+  if (!existing.xmlPath) {
+    return null;
+  }
+
+  const objectInfo = parseObjectXml(existing.xmlPath);
+  if (!objectInfo) {
+    return null;
+  }
+
+  const childTags = getMetaType(existing.type).childTags ?? [];
+  const label = objectInfo.name || existing.name;
+  return node({
+    type: existing.type,
+    name: label,
+    label,
+    xmlPath: existing.xmlPath,
+    decorationPath: resolveObjectDecorationPath(existing.xmlPath),
+    tooltip: objectInfo.synonym || undefined,
+    ownershipTag: getOwnershipTag(entry, info, label),
+    canRemoveMetadata: existing.canRemoveMetadata,
+    children: childTags.length > 0
+      ? buildStructuredChildren(existing.xmlPath, existing.type, objectInfo.children ?? [], childTags)
+      : [],
+  });
+}
+
+function findObjectNodeByChangedPath(
+  root: MetadataCacheNode,
+  changedPath: string
+): { parent: MetadataCacheNode; index: number; node: MetadataCacheNode } | null {
+  const normalizedChangedPath = normalizePath(changedPath);
+  return findObjectNodeByChangedPathInner(root, normalizedChangedPath);
+}
+
+function findObjectNodeByChangedPathInner(
+  parent: MetadataCacheNode,
+  normalizedChangedPath: string
+): { parent: MetadataCacheNode; index: number; node: MetadataCacheNode } | null {
+  for (let index = 0; index < parent.children.length; index += 1) {
+    const child = parent.children[index];
+    if (isObjectCacheNode(child) && isPathOwnedByObject(normalizedChangedPath, child.xmlPath!)) {
+      return { parent, index, node: child };
+    }
+
+    const found = findObjectNodeByChangedPathInner(child, normalizedChangedPath);
+    if (found) {
+      return found;
+    }
+  }
+
+  return null;
+}
+
+function isObjectCacheNode(node: MetadataCacheNode): boolean {
+  return Boolean(node.xmlPath && getMetaFolder(node.type));
+}
+
+function isPathOwnedByObject(normalizedChangedPath: string, objectXmlPath: string): boolean {
+  const normalizedXmlPath = normalizePath(objectXmlPath);
+  if (normalizedChangedPath === normalizedXmlPath) {
+    return true;
+  }
+
+  const loc = getObjectLocationFromXml(objectXmlPath);
+  const normalizedObjectDir = normalizePath(loc.objectDir);
+  return normalizedChangedPath.startsWith(`${normalizedObjectDir}${path.sep}`);
+}
+
 function findRootAddContainer(node: MetadataCacheNode, targetKind: MetaKind): MetadataCacheNode | undefined {
   if (node.addMetadataTarget?.kind === 'root' && node.addMetadataTarget.targetKind === targetKind) {
     return node;
@@ -575,4 +812,19 @@ function node(params: Omit<MetadataCacheNode, 'children'> & { children?: Metadat
     ...params,
     children: params.children ?? [],
   };
+}
+
+function isConfigurationXml(filePath: string): boolean {
+  return path.basename(filePath).toLowerCase() === 'configuration.xml';
+}
+
+function isPathInside(filePath: string, rootPath: string): boolean {
+  const normalizedFilePath = normalizePath(filePath);
+  const normalizedRootPath = normalizePath(rootPath);
+  return normalizedFilePath === normalizedRootPath ||
+    normalizedFilePath.startsWith(`${normalizedRootPath}${path.sep}`);
+}
+
+function normalizePath(filePath: string): string {
+  return path.resolve(filePath).toLowerCase();
 }

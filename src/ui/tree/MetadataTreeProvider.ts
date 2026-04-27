@@ -11,11 +11,13 @@ import {
   MetadataCacheNode,
   MetadataCacheSnapshot,
   saveMetadataCacheForEntry,
+  updateMetadataCacheForChangedFiles,
 } from '../../infra/cache/MetadataCache';
 import { buildNode } from './nodes/_base';
 import { getNodeDescriptor } from './nodes/index';
 import { getIconUris } from './presentation/icon';
 import { MetadataNode } from './TreeNode';
+import { GitMetadataDecorationProvider } from './decorations/GitMetadataDecorationProvider';
 
 export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNode> {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<MetadataNode | undefined | null>();
@@ -38,6 +40,26 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
   /** Перестраивает корневые узлы дерева только из JSON-кэша метаданных. */
   refresh(): void {
     this.buildRoots();
+    this.onDidChangeTreeDataEmitter.fire(undefined);
+  }
+
+  /** Обновляет только JSON-кэш дерева для изменённых XML-файлов и перечитывает дерево при успехе. */
+  refreshCacheForFiles(filePaths: string[]): boolean {
+    let updated = false;
+    for (const entry of this.entries) {
+      const result = updateMetadataCacheForChangedFiles(this.projectRoot, entry, filePaths);
+      updated = updated || Boolean(result);
+    }
+
+    if (updated) {
+      this.refresh();
+    }
+
+    return updated;
+  }
+
+  /** Просит VS Code заново запросить элементы, не пересобирая JSON-кэш дерева. */
+  refreshDecorations(): void {
     this.onDidChangeTreeDataEmitter.fire(undefined);
   }
 
@@ -100,6 +122,7 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
 
   getTreeItem(element: MetadataNode): vscode.TreeItem {
     element.iconPath = getIconUris(element.nodeKind, element.ownershipTag, this.extensionUri);
+    this.applyFileResourceDecoration(element);
     this.applySupportDecoration(element);
     this.applyRepositoryDecoration(element);
     return element;
@@ -136,6 +159,21 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
     const mode = this.supportService.getSupportMode(element.xmlPath);
     const baseContextValue = (element.contextValue ?? '').replace(/-support\d$/, '');
     element.contextValue = `${baseContextValue}-support${mode}`;
+  }
+
+  /** Привязывает узел к реальному файлу или каталогу, чтобы работали штатные git-декорации VS Code. */
+  private applyFileResourceDecoration(element: MetadataNode): void {
+    if (element.model.gitDecorationTarget) {
+      element.resourceUri = GitMetadataDecorationProvider.makeUri(element.model.gitDecorationTarget);
+      return;
+    }
+
+    const resourcePath = element.model.decorationPath ?? element.xmlPath;
+    if (!resourcePath) {
+      return;
+    }
+
+    element.resourceUri = vscode.Uri.file(resourcePath);
   }
 
   /**
@@ -414,6 +452,8 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
         ? vscode.TreeItemCollapsibleState.Collapsed
         : vscode.TreeItemCollapsibleState.None,
       xmlPath: cached.xmlPath,
+      decorationPath: cached.decorationPath,
+      gitDecorationTarget: cached.gitDecorationTarget,
       childrenLoader: children.length > 0 ? () => children : undefined,
       ownershipTag: cached.ownershipTag,
       hidePropertiesCommand: cached.hidePropertiesCommand ||

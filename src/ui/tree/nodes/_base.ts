@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import type { MetadataGitDecorationTarget } from '../../../infra/git/GitMetadataStatusService';
 import { AddMetadataTarget, MetaTreeNodeContext, MetadataNode, NodeKind } from '../TreeNode';
 import { CommandId, NodeDescriptor } from './_types';
 
@@ -8,6 +9,8 @@ export interface BuildNodeParams {
   kind: NodeKind;
   collapsibleState: vscode.TreeItemCollapsibleState;
   xmlPath?: string;
+  decorationPath?: string;
+  gitDecorationTarget?: MetadataGitDecorationTarget;
   childrenLoader?: () => MetadataNode[];
   ownershipTag?: 'OWN' | 'BORROWED';
   hidePropertiesCommand?: boolean;
@@ -26,6 +29,8 @@ export function buildNode(descriptor: NodeDescriptor | undefined, params: BuildN
     label: params.label,
     nodeKind: params.kind,
     xmlPath: params.xmlPath,
+    decorationPath: params.decorationPath,
+    gitDecorationTarget: params.gitDecorationTarget,
     childrenLoader: params.childrenLoader,
     ownershipTag: params.ownershipTag,
     hidePropertiesCommand: params.hidePropertiesCommand,
@@ -102,4 +107,3 @@ function mapCommand(commandId: CommandId, node: MetadataNode): vscode.Command {
     }
   }
 }
-

@@ -1,5 +1,6 @@
 import { ChildTag } from '../../domain/ChildTag';
 import { MetaKind, getMetaLabel } from '../../domain/MetaTypes';
+import type { MetadataGitDecorationTarget } from '../../infra/git/GitMetadataStatusService';
 
 /**
  * Тип узла дерева совпадает с доменным идентификатором типа метаданных.
@@ -41,6 +42,10 @@ export interface TreeNodeModel {
   label: string;
   nodeKind: NodeKind;
   xmlPath?: string;
+  /** Файл или каталог, по которому VS Code показывает git-декорации узла */
+  decorationPath?: string;
+  /** Виртуальная цель для git-декорации вложенного XML-элемента */
+  gitDecorationTarget?: MetadataGitDecorationTarget;
   childrenLoader?: () => import('./TreeNode').MetadataNode[];
   ownershipTag?: 'OWN' | 'BORROWED';
   hidePropertiesCommand?: boolean;

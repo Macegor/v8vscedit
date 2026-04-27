@@ -13,7 +13,9 @@ import { OnecFileSystemProvider, ONEC_SCHEME } from './ui/vfs/OnecFileSystemProv
 import { SupportInfoService } from './infra/support/SupportInfoService';
 import { MetadataXmlCreator, MetadataXmlRemover } from './infra/xml';
 import { RepositoryService } from './infra/repository/RepositoryService';
+import { GitMetadataStatusService } from './infra/git/GitMetadataStatusService';
 import { SupportDecorationProvider } from './ui/tree/decorations/SupportDecorationProvider';
+import { GitMetadataDecorationProvider } from './ui/tree/decorations/GitMetadataDecorationProvider';
 import { LspManager } from './lsp/LspManager';
 import { BslReadonlyGuard } from './ui/readonly/BslReadonlyGuard';
 import { registerSupportIndicatorCommands } from './ui/support/SupportIndicatorCommands';
@@ -39,6 +41,8 @@ export class Container {
   readonly treeProvider: MetadataTreeProvider;
   readonly propertiesProvider: PropertiesViewProvider;
   readonly repositoryService: RepositoryService;
+  readonly gitMetadataStatusService: GitMetadataStatusService;
+  readonly gitMetadataDecorationProvider: GitMetadataDecorationProvider;
   readonly repositoryConnectionViewProvider: RepositoryConnectionViewProvider;
   readonly repositoryCommitViewProvider: RepositoryCommitViewProvider;
   readonly metadataXmlCreator: MetadataXmlCreator;
@@ -49,6 +53,9 @@ export class Container {
 
   private treeView: vscode.TreeView<MetadataNode> | undefined;
   private changeStateTimer: NodeJS.Timeout | undefined;
+  private treeCacheTimer: NodeJS.Timeout | undefined;
+  private decorationRefreshTimer: NodeJS.Timeout | undefined;
+  private readonly pendingTreeCacheFiles = new Set<string>();
   private changedConfigurations: ChangedConfiguration[] = [];
   private readonly suppressedConfigurationReloads = new Map<string, number>();
 
@@ -62,11 +69,15 @@ export class Container {
 
     this.supportService = new SupportInfoService(this.outputChannel);
     this.repositoryService = new RepositoryService(workspaceFolder.uri.fsPath);
+    this.gitMetadataStatusService = new GitMetadataStatusService(workspaceFolder.uri.fsPath);
+    this.gitMetadataDecorationProvider = new GitMetadataDecorationProvider(this.gitMetadataStatusService);
 
     this.decorationProvider = new SupportDecorationProvider();
     context.subscriptions.push(
       vscode.window.registerFileDecorationProvider(this.decorationProvider),
-      this.decorationProvider
+      this.decorationProvider,
+      vscode.window.registerFileDecorationProvider(this.gitMetadataDecorationProvider),
+      this.gitMetadataDecorationProvider
     );
 
     this.vfs = new OnecFileSystemProvider();
@@ -123,6 +134,7 @@ export class Container {
     c.wireSupportWatcher();
     c.wireConfigurationWatcher();
     c.wireConfigurationSourceWatcher();
+    c.wireGitDecorationWatcher();
     c.wireCommands();
     c.wireReadonlyGuard();
     await c.reloadEntries();
@@ -210,6 +222,7 @@ export class Container {
       if (this.consumeSuppressedConfigurationReload(uri.fsPath)) {
         return;
       }
+      this.refreshTreeCacheForFiles([uri.fsPath]);
       this.reloadEntries();
     };
 
@@ -233,11 +246,34 @@ export class Container {
       false
     );
 
-    const onSourceChange = (uri: vscode.Uri) => this.scheduleChangedConfigurationStateRefresh(uri);
+    const onSourceChange = (uri: vscode.Uri) => {
+      this.scheduleChangedConfigurationStateRefresh(uri);
+      if (path.extname(uri.fsPath).toLowerCase() === '.xml') {
+        this.scheduleTreeCacheRefresh(uri.fsPath);
+      } else {
+        this.scheduleDecorationRefresh();
+      }
+    };
     for (const watcher of [xmlWatcher, bslWatcher]) {
       watcher.onDidCreate((uri) => onSourceChange(uri), null, this.context.subscriptions);
       watcher.onDidDelete((uri) => onSourceChange(uri), null, this.context.subscriptions);
       watcher.onDidChange((uri) => onSourceChange(uri), null, this.context.subscriptions);
+      this.context.subscriptions.push(watcher);
+    }
+  }
+
+  private wireGitDecorationWatcher(): void {
+    const watchers = [
+      new vscode.RelativePattern(this.workspaceFolder, '.git/HEAD'),
+      new vscode.RelativePattern(this.workspaceFolder, '.git/index'),
+      new vscode.RelativePattern(this.workspaceFolder, '.git/packed-refs'),
+      new vscode.RelativePattern(this.workspaceFolder, '.git/refs/**'),
+    ].map((pattern) => vscode.workspace.createFileSystemWatcher(pattern, false, false, false));
+
+    for (const watcher of watchers) {
+      watcher.onDidCreate(() => this.scheduleDecorationRefresh(), null, this.context.subscriptions);
+      watcher.onDidDelete(() => this.scheduleDecorationRefresh(), null, this.context.subscriptions);
+      watcher.onDidChange(() => this.scheduleDecorationRefresh(), null, this.context.subscriptions);
       this.context.subscriptions.push(watcher);
     }
   }
@@ -269,6 +305,51 @@ export class Container {
       this.changeStateTimer = undefined;
       this.refreshChangedConfigurationState();
     }, 1_000);
+  }
+
+  private scheduleTreeCacheRefresh(filePath: string): void {
+    if (!this.treeProvider.getEntries().some((entry) => isPathInside(filePath, entry.rootPath))) {
+      return;
+    }
+
+    this.pendingTreeCacheFiles.add(filePath);
+    if (this.treeCacheTimer) {
+      return;
+    }
+
+    this.treeCacheTimer = setTimeout(() => {
+      this.treeCacheTimer = undefined;
+      const filePaths = [...this.pendingTreeCacheFiles];
+      this.pendingTreeCacheFiles.clear();
+      const refreshed = this.refreshTreeCacheForFiles(filePaths);
+      if (!refreshed) {
+        this.scheduleDecorationRefresh();
+      }
+    }, 500);
+  }
+
+  private refreshTreeCacheForFiles(filePaths: string[]): boolean {
+    try {
+      const refreshed = this.treeProvider.refreshCacheForFiles(filePaths);
+      this.gitMetadataDecorationProvider.refresh();
+      return refreshed;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.outputChannel.appendLine(`[meta-cache] Не удалось обновить кэш дерева: ${message}`);
+      return false;
+    }
+  }
+
+  private scheduleDecorationRefresh(): void {
+    if (this.decorationRefreshTimer) {
+      return;
+    }
+
+    this.decorationRefreshTimer = setTimeout(() => {
+      this.decorationRefreshTimer = undefined;
+      this.gitMetadataDecorationProvider.refresh();
+      this.treeProvider.refreshDecorations();
+    }, 500);
   }
 
   private refreshChangedConfigurationState(): void {
