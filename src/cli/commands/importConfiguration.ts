@@ -75,7 +75,8 @@ export async function importConfiguration(args: CliArgs): Promise<number> {
       connection,
       designerArgs,
       'Загрузка завершена',
-      'Error loading configuration'
+      'Error loading configuration',
+      verbose ? undefined : outFile
     );
     if (verbose) {
       printLogFile(outFile);

@@ -88,7 +88,7 @@ export async function runDecompileExtension(
       outputChannel
     );
   } finally {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
+    removeTempDir(tempRoot, outputChannel);
   }
 }
 
@@ -134,7 +134,7 @@ export async function runDecompileMainConfiguration(
       outputChannel
     );
   } finally {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
+    removeTempDir(tempRoot, outputChannel);
   }
 }
 
@@ -400,6 +400,7 @@ async function runInternalCliCommand(
   try {
     let lastStdout = '';
     let lastStderr = '';
+    const outputTail: string[] = [];
 
     const result = await runProcess({
       command: process.execPath,
@@ -410,6 +411,7 @@ async function runInternalCliCommand(
         const text = decodeProcessOutput(chunk).trim();
         if (text.length > 0) {
           lastStdout = text;
+          appendOutputTail(outputTail, text);
           outputChannel.appendLine(`[${options.logPrefix}] ${text}`);
           setOperationStatus(options.progressTitle, trimStatusMessage(text), true);
         }
@@ -418,6 +420,7 @@ async function runInternalCliCommand(
         const text = decodeProcessOutput(chunk).trim();
         if (text.length > 0) {
           lastStderr = text;
+          appendOutputTail(outputTail, text);
           outputChannel.appendLine(`[${options.logPrefix}][stderr] ${text}`);
           setOperationStatus(options.progressTitle, trimStatusMessage(`stderr: ${text}`), true);
         }
@@ -425,8 +428,9 @@ async function runInternalCliCommand(
     });
 
     if (result.exitCode !== 0) {
-      const details = [lastStderr || result.lastStderr, lastStdout || result.lastStdout]
-        .filter(Boolean);
+      const details = outputTail.length > 0
+        ? outputTail
+        : [lastStderr || result.lastStderr, lastStdout || result.lastStdout].filter(Boolean);
       const reason = extractFailureReason(details, result.exitCode);
       const operation = options.failureOperation ?? options.progressTitle.toLowerCase();
       throw new Error(`Ошибка при ${operation} по причине: ${reason}`);
@@ -445,7 +449,14 @@ async function runInternalCliCommand(
     const message = error instanceof Error ? error.message : String(error);
     outputChannel.appendLine(`[actions][error] ${message}`);
     setOperationStatus(options.progressTitle, 'ошибка', false);
-    await vscode.window.showErrorMessage(`${options.errorTitle}\n${message}`);
+    void vscode.window.showErrorMessage(
+      `${options.errorTitle}\n${message}`,
+      'Открыть журнал'
+    ).then((action) => {
+      if (action === 'Открыть журнал') {
+        outputChannel.show(true);
+      }
+    });
     return false;
   }
 }
@@ -512,6 +523,15 @@ function copyAllEntries(sourceDir: string, targetDir: string): void {
       continue;
     }
     fs.copyFileSync(sourcePath, targetPath);
+  }
+}
+
+function removeTempDir(tempRoot: string, outputChannel: vscode.OutputChannel): void {
+  try {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    outputChannel.appendLine(`[actions][warn] Не удалось удалить временный каталог ${tempRoot}: ${message}`);
   }
 }
 
@@ -675,6 +695,13 @@ function trimStatusMessage(text: string): string {
   return `${oneLine.slice(0, 77)}...`;
 }
 
+function appendOutputTail(outputTail: string[], text: string): void {
+  outputTail.push(text);
+  if (outputTail.length > 40) {
+    outputTail.splice(0, outputTail.length - 40);
+  }
+}
+
 function extractFailureReason(details: string[], exitCode: number): string {
   const merged = details
     .map((item) => item.replace(/\r/g, '').trim())
@@ -688,10 +715,24 @@ function extractFailureReason(details: string[], exitCode: number): string {
     .map((line) => line.trim())
     .filter(Boolean);
 
-  const meaningful = lines.find((line) =>
-    !/^(\[INFO\]|\[WARN\]|Getting |Git changes detected|Files for loading|Executing )/i.test(line)
+  const meaningfulLines = lines.filter((line) =>
+    !isDiagnosticNoise(line, exitCode)
   );
-  return meaningful ?? lines[lines.length - 1] ?? `команда завершилась с кодом ${exitCode}`;
+  const errorLine = [...meaningfulLines].reverse().find((line) =>
+    /(ошиб|error|failed|exception|не удалось|not found|denied|отказ|конфликт|заблок|недостаточно)/i.test(line)
+  );
+  return errorLine ?? meaningfulLines.at(-1) ?? lines.at(-1) ?? `команда завершилась с кодом ${exitCode}`;
+}
+
+function isDiagnosticNoise(line: string, exitCode: number): boolean {
+  const normalized = line.trim();
+  if (!normalized || normalized === '--- Log ---' || normalized === '--- End ---') {
+    return true;
+  }
+  if (new RegExp(`\\(code:\\s*${exitCode}\\)`, 'i').test(normalized)) {
+    return true;
+  }
+  return /^(\[INFO\]|\[WARN\]|Getting |Git changes detected|Hash changes detected|Files for loading|Executing |Created output directory:|Выгрузка исходников|Загрузка исходников|Применение изменений)$/i.test(normalized);
 }
 
 async function refreshConfigurationHashCache(

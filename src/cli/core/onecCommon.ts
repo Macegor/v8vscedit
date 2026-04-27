@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { globSync } from 'glob';
+import { decode } from 'iconv-lite';
 import { runProcess } from '../../infra/process';
 import { OnecConnection } from './types';
 
@@ -89,6 +90,12 @@ export async function runDesignerAndPrintResult(
     if (outFilePath) {
       printLogFile(outFilePath);
     }
+    const processDetails = [result.lastStderr, result.lastStdout]
+      .map((item) => item.trim())
+      .filter(Boolean);
+    for (const detail of processDetails) {
+      console.error(detail);
+    }
     console.error(`${errorMessage} (code: ${result.exitCode})`);
   }
   return result.exitCode;
@@ -100,7 +107,7 @@ export function printLogFile(filePath: string): void {
   }
   try {
     const data = fs.readFileSync(filePath);
-    const content = stripBom(data).toString('utf-8').trim();
+    const content = decodeLogFile(data).trim();
     if (!content) {
       return;
     }
@@ -112,9 +119,40 @@ export function printLogFile(filePath: string): void {
   }
 }
 
-function stripBom(data: Buffer): Buffer {
-  if (data.length >= 3 && data[0] === 0xef && data[1] === 0xbb && data[2] === 0xbf) {
-    return data.subarray(3);
+function decodeLogFile(data: Buffer): string {
+  if (data.length >= 2 && data[0] === 0xff && data[1] === 0xfe) {
+    return data.subarray(2).toString('utf16le');
   }
-  return data;
+  if (data.length >= 2 && data[0] === 0xfe && data[1] === 0xff) {
+    return decode(data.subarray(2), 'utf16-be');
+  }
+  if (data.length >= 3 && data[0] === 0xef && data[1] === 0xbb && data[2] === 0xbf) {
+    return data.subarray(3).toString('utf-8');
+  }
+
+  const utf8Text = data.toString('utf-8');
+  if (!utf8Text.includes('�')) {
+    return utf8Text;
+  }
+
+  const cp866Text = decode(data, 'cp866');
+  const cp1251Text = decode(data, 'win1251');
+  return pickMostReadableText([cp866Text, cp1251Text, utf8Text]);
+}
+
+function pickMostReadableText(candidates: string[]): string {
+  let best = candidates[0] ?? '';
+  let bestScore = -1;
+
+  for (const candidate of candidates) {
+    const cyr = (candidate.match(/[А-Яа-яЁё]/g) ?? []).length;
+    const replacement = (candidate.match(/�/g) ?? []).length;
+    const score = cyr * 2 - replacement * 3;
+    if (score > bestScore) {
+      best = candidate;
+      bestScore = score;
+    }
+  }
+
+  return best;
 }

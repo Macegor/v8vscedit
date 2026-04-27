@@ -64,7 +64,8 @@ export async function exportConfiguration(args: CliArgs): Promise<number> {
       connection,
       designerArgs,
       'Выгрузка завершена',
-      'Error dumping configuration'
+      'Error dumping configuration',
+      verbose ? undefined : outFile
     );
     if (verbose) {
       printLogFile(outFile);

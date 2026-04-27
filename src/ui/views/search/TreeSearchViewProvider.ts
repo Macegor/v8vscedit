@@ -47,7 +47,12 @@ export class TreeSearchViewProvider implements vscode.WebviewViewProvider {
 
   private async handleMessage(message: TreeSearchMessage): Promise<void> {
     if (message.type === 'command') {
-      await vscode.commands.executeCommand(message.command);
+      try {
+        await vscode.commands.executeCommand(message.command);
+      } catch (error) {
+        const text = error instanceof Error ? error.message : String(error);
+        await vscode.window.showErrorMessage(`Команда не выполнена: ${text}`);
+      }
       return;
     }
 

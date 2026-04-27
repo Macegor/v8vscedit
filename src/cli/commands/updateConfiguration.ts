@@ -43,7 +43,8 @@ export async function updateConfiguration(args: CliArgs): Promise<number> {
       connection,
       designerArgs,
       'Применение завершено',
-      'Error updating database configuration'
+      'Error updating database configuration',
+      verbose ? undefined : outFile
     );
     if (verbose) {
       printLogFile(outFile);

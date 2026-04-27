@@ -92,6 +92,9 @@ export function registerExtensionCommands(
         }
         setConfigurationOperationStatus('Импорт конфигураций', 'завершено', false);
         await services.reloadEntries();
+      } catch (error) {
+        setConfigurationOperationStatus('Импорт конфигураций', 'ошибка', false);
+        showConfigurationCommandError('Ошибка импорта конфигураций.', error, services);
       } finally {
         isUpdatingConfigurations = false;
         await vscode.commands.executeCommand('setContext', 'v8vscedit.isUpdatingConfigurations', false);
@@ -162,6 +165,10 @@ export function registerExtensionCommands(
         }
         setConfigurationOperationStatus('Обновление конфигураций', 'завершено', false);
         return true;
+      } catch (error) {
+        setConfigurationOperationStatus('Обновление конфигураций', 'ошибка', false);
+        showConfigurationCommandError('Ошибка обновления конфигураций.', error, services);
+        return false;
       } finally {
         isUpdatingConfigurations = false;
         await vscode.commands.executeCommand('setContext', 'v8vscedit.isUpdatingConfigurations', false);
@@ -413,6 +420,20 @@ function isPathInside(filePath: string, rootPath: string): boolean {
 
 function yieldToUi(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function showConfigurationCommandError(
+  title: string,
+  error: unknown,
+  services: CommandServices
+): void {
+  const message = error instanceof Error ? error.message : String(error);
+  services.outputChannel.appendLine(`[actions][error] ${title} ${message}`);
+  void vscode.window.showErrorMessage(`${title}\n${message}`, 'Открыть журнал').then((action) => {
+    if (action === 'Открыть журнал') {
+      services.outputChannel.show(true);
+    }
+  });
 }
 
 interface ImportTargetPickItem extends vscode.QuickPickItem {
