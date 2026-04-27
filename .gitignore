@@ -19,3 +19,4 @@ example/
 npm-debug.log*
 
 .vscode-test/
+.DS_Store
