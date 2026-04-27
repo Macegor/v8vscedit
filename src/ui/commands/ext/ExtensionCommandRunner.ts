@@ -3,7 +3,12 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { MetadataNode } from '../../tree/TreeNode';
-import { decodeProcessOutput, runProcess } from '../../../infra/process';
+import {
+  decodeProcessOutput,
+  normalizeInfoBasePath,
+  resolveV8PathHintFromVersion,
+  runProcess,
+} from '../../../infra/process';
 
 type NodeArg = MetadataNode | { xmlPath?: string; nodeKind?: string; label?: string };
 
@@ -26,6 +31,7 @@ interface ConnectionParams {
   infoBaseRef?: string;
   userName?: string;
   password?: string;
+  v8Path?: string;
 }
 
 let statusBarItem: vscode.StatusBarItem | undefined;
@@ -628,6 +634,7 @@ function resolveConnectionFromSettings(settingsPath: string): ConnectionParams {
   const connection: ConnectionParams = parseIbConnection(ibConnectionRaw);
   connection.userName = asString(defaults['--db-user']) ?? '';
   connection.password = asString(defaults['--db-pwd']) ?? '';
+  connection.v8Path = resolveV8PathFromSettings(defaults);
   return connection;
 }
 
@@ -652,18 +659,6 @@ function parseIbConnection(rawValue: string): ConnectionParams {
   throw new Error(`Не удалось разобрать "--ibconnection": ${rawValue}`);
 }
 
-function normalizeInfoBasePath(rawPath: string): string {
-  let value = rawPath.replace(/^"+|"+$/g, '').trim();
-  value = value.replace(/\//g, '\\');
-  // Нормализуем паттерн вида "C:\\" и "C:\"
-  value = value.replace(/^([A-Za-z]):\\+/, '$1:\\');
-  // Убираем повторные обратные слэши после диска, но не трогаем UNC пути.
-  if (!value.startsWith('\\\\')) {
-    value = value.replace(/\\{2,}/g, '\\');
-  }
-  return value;
-}
-
 function buildConnectionCliArgs(params: ConnectionParams): string[] {
   const args: string[] = [];
   if (params.infoBasePath) {
@@ -680,11 +675,18 @@ function buildConnectionCliArgs(params: ConnectionParams): string[] {
   if (params.password) {
     args.push('-Password', params.password);
   }
+  if (params.v8Path) {
+    args.push('-V8Path', params.v8Path);
+  }
   return args;
 }
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
+}
+
+function resolveV8PathFromSettings(defaults: Record<string, unknown>): string {
+  return asString(defaults['--path']) || resolveV8PathHintFromVersion(asString(defaults['--v8version']) ?? '');
 }
 
 function trimStatusMessage(text: string): string {

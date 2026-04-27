@@ -141,6 +141,16 @@
         "icon": "$(tools)"
       },
       {
+        "command": "v8vscedit.importConfigurationFromDb",
+        "title": "Импортировать из базы",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "v8vscedit.updateConfigurationInDb",
+        "title": "Обновить в базе",
+        "icon": "$(sync)"
+      },
+      {
         "command": "v8vscedit.decompileExtensionSources",
         "title": "Импортировать расширение из базы"
       },
@@ -274,13 +284,18 @@
           "group": "inline"
         },
         {
-          "command": "v8vscedit.decompileExtensionSources",
-          "when": "view == v8vsceditTree && viewItem =~ /^extension-hasXml/",
+          "command": "v8vscedit.showConfigActions",
+          "when": "view == v8vsceditTree && viewItem =~ /^(configuration|extension)-hasXml/",
           "group": "navigation@0"
         },
         {
-          "command": "v8vscedit.updateExtensionInDb",
-          "when": "view == v8vsceditTree && viewItem =~ /^extension-hasXml/",
+          "command": "v8vscedit.importConfigurationFromDb",
+          "when": "view == v8vsceditTree && viewItem =~ /^(configuration|extension)-hasXml/",
+          "group": "navigation@0"
+        },
+        {
+          "command": "v8vscedit.updateConfigurationInDb",
+          "when": "view == v8vsceditTree && viewItem =~ /^(configuration|extension)-hasXml/",
           "group": "navigation@0"
         },
         {

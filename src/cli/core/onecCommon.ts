@@ -1,9 +1,8 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { globSync } from 'glob';
 import { decode } from 'iconv-lite';
-import { runProcess } from '../../infra/process';
+import { resolveV8ExecutablePath, runProcess } from '../../infra/process';
 import { OnecConnection } from './types';
 
 export interface RepositoryConnection {
@@ -13,25 +12,7 @@ export interface RepositoryConnection {
 }
 
 export function resolveV8Path(v8Path: string): string {
-  if (!v8Path) {
-    const candidates = globSync('C:/Program Files/1cv8/*/bin/1cv8.exe', { windowsPathsNoEscape: true });
-    if (candidates.length === 0) {
-      throw new Error('Error: 1cv8.exe not found. Specify -V8Path');
-    }
-    return [...candidates].sort().at(-1) ?? '';
-  }
-
-  if (fs.existsSync(v8Path) && fs.statSync(v8Path).isDirectory()) {
-    const candidate = path.join(v8Path, '1cv8.exe');
-    if (fs.existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  if (!fs.existsSync(v8Path)) {
-    throw new Error(`Error: 1cv8.exe not found at ${v8Path}`);
-  }
-  return v8Path;
+  return resolveV8ExecutablePath(v8Path);
 }
 
 export function appendConnectionArgs(args: string[], connection: OnecConnection): void {

@@ -16,13 +16,17 @@ import {
 } from './ExtensionCommandRunner';
 
 interface ActionItem extends vscode.QuickPickItem {
-  actionId: 'decompileext' | 'updateext' | 'compileAndUpdateExt';
+  actionId: 'import' | 'update' | 'compileAndUpdateExt';
 }
 
 interface ImportTarget {
   kind: 'cf' | 'cfe';
   name: string;
   rootPath: string;
+}
+
+interface RootConfigurationTarget extends ImportTarget {
+  extensionName?: string;
 }
 
 let isUpdatingConfigurations = false;
@@ -35,6 +39,7 @@ export function registerExtensionCommands(
   context.subscriptions.push(
     vscode.commands.registerCommand('v8vscedit.importConfigurations', async () => {
       if (isUpdatingConfigurations) {
+        await showOperationAlreadyRunningMessage();
         return;
       }
 
@@ -104,6 +109,7 @@ export function registerExtensionCommands(
 
     vscode.commands.registerCommand('v8vscedit.updateChangedConfigurations', async () => {
       if (isUpdatingConfigurations) {
+        await showOperationAlreadyRunningMessage();
         return false;
       }
 
@@ -216,24 +222,20 @@ export function registerExtensionCommands(
     }),
 
     vscode.commands.registerCommand('v8vscedit.showConfigActions', async (node: NodeArg) => {
-      const nodeKind = node?.nodeKind;
-      const xmlPath = node?.xmlPath;
-      if (!nodeKind || !xmlPath) {
+      const target = extractRootConfigurationTarget(node);
+      if (!target) {
         return;
       }
 
-      if (nodeKind !== 'extension') {
-        vscode.window.showInformationMessage(`Для "${String(node.label ?? '')}" пока нет доступных команд.`);
-        return;
+      const items: ActionItem[] = [
+        { actionId: 'import', label: '$(cloud-download) Импортировать из базы' },
+        { actionId: 'update', label: '$(sync) Обновить в базе' },
+      ];
+      if (target.kind === 'cfe') {
+        items.push({ actionId: 'compileAndUpdateExt', label: '$(run-all) Полное обновление расширения' });
       }
-
-      const targetLabel = String(node.label ?? '');
-      const picked = await vscode.window.showQuickPick<ActionItem>([
-        { actionId: 'decompileext', label: '$(cloud-download) Импортировать' },
-        { actionId: 'updateext', label: '$(sync) Обновить' },
-        { actionId: 'compileAndUpdateExt', label: '$(run-all) Полное обновление' },
-      ], {
-        title: `Команды: ${targetLabel}`,
+      const picked = await vscode.window.showQuickPick<ActionItem>(items, {
+        title: `Команды: ${target.name}`,
         placeHolder: 'Выберите действие',
       });
 
@@ -241,13 +243,59 @@ export function registerExtensionCommands(
         return;
       }
 
-      if (picked.actionId === 'decompileext') {
-        await vscode.commands.executeCommand('v8vscedit.decompileExtensionSources', node);
-      } else if (picked.actionId === 'updateext') {
-        await vscode.commands.executeCommand('v8vscedit.updateExtensionInDb', node);
+      if (picked.actionId === 'import') {
+        await vscode.commands.executeCommand('v8vscedit.importConfigurationFromDb', node);
+      } else if (picked.actionId === 'update') {
+        await vscode.commands.executeCommand('v8vscedit.updateConfigurationInDb', node);
       } else if (picked.actionId === 'compileAndUpdateExt') {
         await vscode.commands.executeCommand('v8vscedit.compileAndUpdateExtensionInDb', node);
       }
+    }),
+
+    vscode.commands.registerCommand('v8vscedit.importConfigurationFromDb', async (node: NodeArg) => {
+      const target = extractRootConfigurationTarget(node);
+      if (!target) {
+        vscode.window.showWarningMessage('Команда доступна только для корневого узла конфигурации или расширения.');
+        return;
+      }
+
+      await runExclusiveConfigurationOperation(
+        {
+          title: `Импорт ${target.name}`,
+          startMessage: 'подготовка',
+          cleanRootPath: target.rootPath,
+          services,
+        },
+        async () => {
+          const ok = target.kind === 'cf'
+            ? await runDecompileMainConfiguration(target.name, target.rootPath, services.workspaceFolder, services.outputChannel)
+            : await runDecompileExtension(target.name, target.rootPath, services.workspaceFolder, services.outputChannel);
+          return ok;
+        }
+      );
+    }),
+
+    vscode.commands.registerCommand('v8vscedit.updateConfigurationInDb', async (node: NodeArg) => {
+      const target = extractRootConfigurationTarget(node);
+      if (!target) {
+        vscode.window.showWarningMessage('Команда доступна только для корневого узла конфигурации или расширения.');
+        return false;
+      }
+
+      return runExclusiveConfigurationOperation(
+        {
+          title: `Обновление ${target.name}`,
+          startMessage: 'подготовка',
+          cleanRootPath: target.rootPath,
+          services,
+        },
+        async () => {
+          const ok = target.kind === 'cf'
+            ? await runUpdateMainConfiguration(target.name, target.rootPath, services.workspaceFolder, services.outputChannel, true)
+            : await runUpdateExtension(target.name, target.rootPath, services.workspaceFolder, services.outputChannel, true);
+          return ok;
+        }
+      );
     }),
 
     vscode.commands.registerCommand('v8vscedit.decompileExtensionSources', async (node: NodeArg) => {
@@ -616,4 +664,76 @@ function orderUpdateTargets(targets: ChangedConfiguration[]): ChangedConfigurati
     }
     return left.name.localeCompare(right.name);
   });
+}
+
+function extractRootConfigurationTarget(node: NodeArg): RootConfigurationTarget | null {
+  const nodeKind = node?.nodeKind;
+  const xmlPath = node?.xmlPath;
+  if (!xmlPath) {
+    return null;
+  }
+
+  if (nodeKind === 'configuration') {
+    return {
+      kind: 'cf',
+      name: String(node.label ?? 'Основная конфигурация'),
+      rootPath: path.dirname(xmlPath),
+    };
+  }
+
+  if (nodeKind === 'extension') {
+    const extensionName = String(node.label ?? '');
+    if (!extensionName) {
+      return null;
+    }
+    return {
+      kind: 'cfe',
+      name: extensionName,
+      rootPath: path.dirname(xmlPath),
+      extensionName,
+    };
+  }
+
+  return null;
+}
+
+async function runExclusiveConfigurationOperation(
+  options: {
+    title: string;
+    startMessage: string;
+    cleanRootPath: string;
+    services: CommandServices;
+  },
+  operation: () => Promise<boolean>
+): Promise<boolean> {
+  if (isUpdatingConfigurations) {
+    await showOperationAlreadyRunningMessage();
+    return false;
+  }
+
+  isUpdatingConfigurations = true;
+  await vscode.commands.executeCommand('setContext', 'v8vscedit.isUpdatingConfigurations', true);
+  setConfigurationOperationStatus(options.title, options.startMessage, true);
+  await yieldToUi();
+  try {
+    const ok = await operation();
+    if (ok) {
+      options.services.markConfigurationsClean([options.cleanRootPath]);
+      setConfigurationOperationStatus(options.title, 'завершено', false);
+    } else {
+      setConfigurationOperationStatus(options.title, 'остановлено', false);
+    }
+    return ok;
+  } catch (error) {
+    setConfigurationOperationStatus(options.title, 'ошибка', false);
+    showConfigurationCommandError(`Ошибка операции "${options.title}".`, error, options.services);
+    return false;
+  } finally {
+    isUpdatingConfigurations = false;
+    await vscode.commands.executeCommand('setContext', 'v8vscedit.isUpdatingConfigurations', false);
+  }
+}
+
+async function showOperationAlreadyRunningMessage(): Promise<void> {
+  await vscode.window.showInformationMessage('Операция с конфигурацией уже выполняется. Дождитесь её завершения.');
 }

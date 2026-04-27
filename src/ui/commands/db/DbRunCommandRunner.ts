@@ -1,8 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { globSync } from 'glob';
 import { spawn } from 'child_process';
+import { normalizeInfoBasePath, resolveV8ExecutablePath, resolveV8PathHintFromVersion } from '../../../infra/process';
 
 interface DbRunConnectionParams {
   infoBasePath?: string;
@@ -31,7 +31,7 @@ export async function runDbClientFromWorkspace(
   try {
     const settingsPath = resolveSettingsPath(workspaceFolder.uri.fsPath);
     const connection = resolveConnectionFromSettings(settingsPath);
-    const v8Path = resolveV8Path(connection.v8Path ?? '');
+    const v8Path = resolveV8ExecutablePath(connection.v8Path ?? '');
     const args = buildLaunchArguments(options, connection);
 
     outputChannel.appendLine(`[db-run] Запуск: ${v8Path} ${args.join(' ')}`);
@@ -44,25 +44,6 @@ export async function runDbClientFromWorkspace(
     outputChannel.appendLine(`[db-run][error] ${message}`);
     await vscode.window.showErrorMessage(`Не удалось запустить 1С.\n${message}`, { modal: true });
   }
-}
-
-function resolveV8Path(v8Path: string): string {
-  if (!v8Path) {
-    const candidates = globSync('C:/Program Files/1cv8/*/bin/1cv8.exe', { windowsPathsNoEscape: true });
-    if (candidates.length === 0) {
-      throw new Error('Error: 1cv8.exe not found. Specify -V8Path');
-    }
-    return [...candidates].sort().at(-1) ?? '';
-  }
-
-  if (fs.existsSync(v8Path) && fs.statSync(v8Path).isDirectory()) {
-    v8Path = path.join(v8Path, '1cv8.exe');
-  }
-
-  if (!fs.existsSync(v8Path)) {
-    throw new Error(`Error: 1cv8.exe not found at ${v8Path}`);
-  }
-  return v8Path;
 }
 
 function buildLaunchArguments(options: DbRunOptions, params: DbRunConnectionParams): string[] {
@@ -141,7 +122,7 @@ function resolveConnectionFromSettings(settingsPath: string): DbRunConnectionPar
   const connection = parseIbConnection(ibConnectionRaw);
   connection.userName = asString(defaults['--db-user']) ?? '';
   connection.password = asString(defaults['--db-pwd']) ?? '';
-  connection.v8Path = asString(defaults['--path']);
+  connection.v8Path = resolveV8PathFromSettings(defaults);
   return connection;
 }
 
@@ -166,16 +147,10 @@ function parseIbConnection(rawValue: string): DbRunConnectionParams {
   throw new Error(`Не удалось разобрать "--ibconnection": ${rawValue}`);
 }
 
-function normalizeInfoBasePath(rawPath: string): string {
-  let value = rawPath.replace(/^"+|"+$/g, '').trim();
-  value = value.replace(/\//g, '\\');
-  value = value.replace(/^([A-Za-z]):\\+/, '$1:\\');
-  if (!value.startsWith('\\\\')) {
-    value = value.replace(/\\{2,}/g, '\\');
-  }
-  return value;
-}
-
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
+}
+
+function resolveV8PathFromSettings(defaults: Record<string, unknown>): string {
+  return asString(defaults['--path']) || resolveV8PathHintFromVersion(asString(defaults['--v8version']) ?? '');
 }

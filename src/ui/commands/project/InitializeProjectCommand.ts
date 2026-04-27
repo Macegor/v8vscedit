@@ -85,6 +85,7 @@ function createEnvJson(rootPath: string): void {
       '--ibconnection': '',
       '--db-user': '',
       '--db-pwd': '',
+      '--path': '',
       '--root': '.',
       '--workspace': '.',
       '--v8version': '',
