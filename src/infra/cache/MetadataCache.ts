@@ -139,6 +139,50 @@ export function updateMetadataCacheAfterAdd(
 }
 
 /**
+ * Точечно обновляет JSON-кэш после переименования корневого объекта метаданных.
+ * Находит узел по oldXmlPath, перестраивает его из newXmlPath и сохраняет кэш.
+ * Намного быстрее полного пересоздания снимка — не читает остальные XML-файлы.
+ */
+export function updateMetadataCacheAfterRename(
+  projectRoot: string,
+  entry: ConfigEntry,
+  oldXmlPath: string,
+  newXmlPath: string
+): MetadataCacheUpdateResult | null {
+  const info = parseConfigXml(path.join(entry.rootPath, 'Configuration.xml'));
+  const scopeKey = buildMetadataCacheScopeKey(entry, info);
+  const cached = loadMetadataCache(projectRoot, scopeKey);
+
+  if (!cached) {
+    const snapshot = buildMetadataCacheSnapshot(scopeKey, entry);
+    saveMetadataCache(projectRoot, snapshot);
+    return { snapshot, updatedPartially: false };
+  }
+
+  const target = findObjectNodeByChangedPath(cached.root, oldXmlPath);
+  if (!target) {
+    const snapshot = buildMetadataCacheSnapshot(scopeKey, entry);
+    saveMetadataCache(projectRoot, snapshot);
+    return { snapshot, updatedPartially: false };
+  }
+
+  // Патчим xmlPath перед вызовом rebuildObjectNodeFromXml — он перечитает XML с нового пути
+  target.node.xmlPath = newXmlPath;
+  const refreshed = rebuildObjectNodeFromXml(entry, info, target.node);
+
+  if (!refreshed) {
+    const snapshot = buildMetadataCacheSnapshot(scopeKey, entry);
+    saveMetadataCache(projectRoot, snapshot);
+    return { snapshot, updatedPartially: false };
+  }
+
+  target.parent.children[target.index] = refreshed;
+  cached.generatedAt = new Date().toISOString();
+  saveMetadataCache(projectRoot, cached);
+  return { snapshot: cached, updatedPartially: true };
+}
+
+/**
  * Обновляет JSON-кэш дерева по внешним изменениям файлов выгрузки.
  * Hash-кэш загрузки в 1С не трогается: он должен отражать последнее успешное
  * состояние синхронизации, а не каждое локальное редактирование.

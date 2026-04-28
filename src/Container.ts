@@ -23,6 +23,7 @@ import { registerSupportIndicatorCommands } from './ui/support/SupportIndicatorC
 import { registerSupportWatcher } from './ui/support/SupportWatcher';
 import { RepositoryCommitViewProvider } from './ui/views/RepositoryCommitViewProvider';
 import { RepositoryConnectionViewProvider } from './ui/views/RepositoryConnectionViewProvider';
+import { updateMetadataCacheAfterRename } from './infra/cache/MetadataCache';
 
 /**
  * Композиционный корень расширения. Собирает зависимости в одном месте,
@@ -108,7 +109,11 @@ export class Container {
       this.supportService,
       this.repositoryService
     );
-    this.propertiesProvider = new PropertiesViewProvider(this.supportService, this.repositoryService);
+    this.propertiesProvider = new PropertiesViewProvider(
+      this.supportService,
+      this.repositoryService,
+      (configRoot, oldXmlPath, newXmlPath) => this.handleAfterRename(configRoot, oldXmlPath, newXmlPath)
+    );
     this.repositoryConnectionViewProvider = new RepositoryConnectionViewProvider(context.extensionUri);
     this.repositoryCommitViewProvider = new RepositoryCommitViewProvider(context.extensionUri);
     this.aiSkillsInstaller = new AiSkillsInstaller(this.outputChannel);
@@ -462,6 +467,30 @@ export class Container {
     }
 
     return true;
+  }
+
+  /**
+   * Точечно обновляет кэш метаданных после переименования объекта и сразу обновляет дерево.
+   * Подавляет полную перестройку кэша, которую иначе вызвал бы watcher на Configuration.xml.
+   */
+  private handleAfterRename(configRoot: string, oldXmlPath: string, newXmlPath: string): void {
+    const configXmlPath = path.join(configRoot, 'Configuration.xml');
+    this.suppressConfigurationReloadForFiles([configXmlPath]);
+
+    const entry = this.treeProvider.getEntries().find(
+      (e) => path.resolve(e.rootPath).toLowerCase() === path.resolve(configRoot).toLowerCase()
+    );
+
+    if (entry) {
+      try {
+        updateMetadataCacheAfterRename(this.workspaceFolder.uri.fsPath, entry, oldXmlPath, newXmlPath);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.outputChannel.appendLine(`[meta-cache] Точечное обновление кэша при переименовании не удалось: ${message}`);
+      }
+    }
+
+    this.treeProvider.refresh();
   }
 
   private wireReadonlyGuard(): void {
