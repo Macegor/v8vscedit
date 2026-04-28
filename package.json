@@ -89,6 +89,11 @@
         "icon": "$(add)"
       },
       {
+        "command": "v8vscedit.installAiSkills",
+        "title": "Установить ИИ-скилы 1С",
+        "icon": "$(extensions)"
+      },
+      {
         "command": "v8vscedit.openXmlFile",
         "title": "Открыть XML"
       },

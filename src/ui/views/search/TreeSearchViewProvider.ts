@@ -263,6 +263,9 @@ export class TreeSearchViewProvider implements vscode.WebviewViewProvider {
     <button type="button" data-command="v8vscedit.runConfigurator" title="Запустить конфигуратор" aria-label="Запустить конфигуратор">
       ${toolsIcon()}
     </button>
+    <button type="button" data-command="v8vscedit.installAiSkills" title="Установить ИИ-скилы 1С" aria-label="Установить ИИ-скилы 1С">
+      ${skillsIcon()}
+    </button>
   </div>
   <div class="search">
     <input id="search" type="text" value="${initialSearch}" placeholder="Поиск по метаданным" aria-label="Поиск по метаданным" autocomplete="off" spellcheck="false">
@@ -344,6 +347,12 @@ function runIcon(): string {
 function toolsIcon(): string {
   return `<svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
     <path fill="currentColor" d="M14.1 4.1 12 6.2l-2.2-2.1L12 1.9A4 4 0 0 0 7.1 6.8L2 11.9A1.5 1.5 0 1 0 4.1 14l5.1-5.1a4 4 0 0 0 4.9-4.8ZM3.4 13.3a.5.5 0 1 1-.7-.7.5.5 0 0 1 .7.7Z"/>
+  </svg>`;
+}
+
+function skillsIcon(): string {
+  return `<svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+    <path fill="currentColor" d="M3 2h4.5L10 4.5V14H3V2Zm1 1v10h5V5H7V3H4Zm6.8 1.2 1.1-2.2 1.1 2.2 2.2 1.1L13 6.4l-1.1 2.2-1.1-2.2-2.2-1.1 2.2-1.1Zm.8 1.1.3.6.3-.6.6-.3-.6-.3-.3-.6-.3.6-.6.3.6.3Z"/>
   </svg>`;
 }
 

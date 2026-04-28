@@ -14,6 +14,7 @@ import { SupportInfoService } from './infra/support/SupportInfoService';
 import { MetadataXmlCreator, MetadataXmlRemover } from './infra/xml';
 import { RepositoryService } from './infra/repository/RepositoryService';
 import { GitMetadataStatusService } from './infra/git/GitMetadataStatusService';
+import { AiSkillsInstaller } from './infra/skills/AiSkillsInstaller';
 import { SupportDecorationProvider } from './ui/tree/decorations/SupportDecorationProvider';
 import { GitMetadataDecorationProvider } from './ui/tree/decorations/GitMetadataDecorationProvider';
 import { LspManager } from './lsp/LspManager';
@@ -45,6 +46,7 @@ export class Container {
   readonly gitMetadataDecorationProvider: GitMetadataDecorationProvider;
   readonly repositoryConnectionViewProvider: RepositoryConnectionViewProvider;
   readonly repositoryCommitViewProvider: RepositoryCommitViewProvider;
+  readonly aiSkillsInstaller: AiSkillsInstaller;
   readonly metadataXmlCreator: MetadataXmlCreator;
   readonly metadataXmlRemover: MetadataXmlRemover;
   readonly treeSearchViewProvider: TreeSearchViewProvider;
@@ -109,6 +111,7 @@ export class Container {
     this.propertiesProvider = new PropertiesViewProvider(this.supportService, this.repositoryService);
     this.repositoryConnectionViewProvider = new RepositoryConnectionViewProvider(context.extensionUri);
     this.repositoryCommitViewProvider = new RepositoryCommitViewProvider(context.extensionUri);
+    this.aiSkillsInstaller = new AiSkillsInstaller(this.outputChannel);
     this.metadataXmlCreator = new MetadataXmlCreator();
     this.metadataXmlRemover = new MetadataXmlRemover();
     context.subscriptions.push(this.propertiesProvider);
@@ -195,6 +198,7 @@ export class Container {
       repositoryService: this.repositoryService,
       repositoryConnectionViewProvider: this.repositoryConnectionViewProvider,
       repositoryCommitViewProvider: this.repositoryCommitViewProvider,
+      aiSkillsInstaller: this.aiSkillsInstaller,
       refreshChangedConfigurationState: () => this.refreshChangedConfigurationState(),
       markChangedConfigurationByFiles: (filePaths) => this.markChangedConfigurationByFiles(filePaths),
       getChangedConfigurations: () => this.getChangedConfigurations(),

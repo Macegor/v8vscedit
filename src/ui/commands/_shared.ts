@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { ChangedConfiguration } from '../../infra/fs/ConfigurationChangeDetector';
 import { RepositoryService } from '../../infra/repository/RepositoryService';
+import { AiSkillsInstaller } from '../../infra/skills/AiSkillsInstaller';
 import { SupportInfoService } from '../../infra/support/SupportInfoService';
 import { MetadataXmlCreator, MetadataXmlRemover } from '../../infra/xml';
 import { MetadataTreeProvider } from '../tree/MetadataTreeProvider';
@@ -25,6 +26,7 @@ export interface CommandServices {
   repositoryService: RepositoryService;
   repositoryConnectionViewProvider: RepositoryConnectionViewProvider;
   repositoryCommitViewProvider: RepositoryCommitViewProvider;
+  aiSkillsInstaller: AiSkillsInstaller;
   refreshChangedConfigurationState: () => void;
   markChangedConfigurationByFiles: (filePaths: string[]) => void;
   getChangedConfigurations: () => ChangedConfiguration[];
