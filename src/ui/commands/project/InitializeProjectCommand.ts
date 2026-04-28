@@ -53,6 +53,7 @@ export function registerInitializeProjectCommand(
     vscode.commands.registerCommand('v8vscedit.initializeProject', async () => {
       const rootPath = services.workspaceFolder.uri.fsPath;
       try {
+        ensureProjectDirectoryIsEmpty(rootPath);
         createProjectDirectories(rootPath);
         createEnvJson(rootPath);
         ensureGitignore(rootPath);
@@ -65,6 +66,16 @@ export function registerInitializeProjectCommand(
       }
     })
   );
+}
+
+/**
+ * Защищает от инициализации поверх уже существующего проекта или произвольного набора файлов.
+ */
+export function ensureProjectDirectoryIsEmpty(rootPath: string): void {
+  const entries = fs.readdirSync(rootPath);
+  if (entries.length > 0) {
+    throw new Error('Каталог проекта не пуст. Для инициализации нужен пустой каталог.');
+  }
 }
 
 function createProjectDirectories(rootPath: string): void {
