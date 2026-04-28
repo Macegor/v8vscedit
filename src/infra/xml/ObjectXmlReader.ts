@@ -144,7 +144,7 @@ export class ObjectXmlReader {
   private toMetaChild(tag: string, element: XmlElementNode): MetaChild {
     return {
       tag,
-      name: extractSimpleTagFromElement(element, 'Name') ?? '',
+      name: extractSimpleTagFromElement(element, 'Name') ?? collectDirectText(getElementChildren(element)),
       synonym: extractSynonymFromElement(element),
     };
   }
@@ -160,7 +160,7 @@ export class ObjectXmlReader {
 
     return {
       tag: 'TabularSection',
-      name: extractSimpleTagFromElement(element, 'Name') ?? '',
+      name: extractSimpleTagFromElement(element, 'Name') ?? collectDirectText(getElementChildren(element)),
       synonym: extractSynonymFromElement(element),
       columns,
     };

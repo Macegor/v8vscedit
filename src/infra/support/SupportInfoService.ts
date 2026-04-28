@@ -26,12 +26,6 @@ interface ConfigSupportData {
 
 const UUID_ATTR_RE = /uuid="([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i;
 
-const SUPPORT_MODE_LABEL: Record<number, string> = {
-  [SupportMode.None]: 'снято с поддержки',
-  [SupportMode.Locked]: 'запрещено',
-  [SupportMode.Editable]: 'разрешено',
-};
-
 /**
  * Разбирает `ParentConfigurations.bin` и по пути к файлу выдаёт режим поддержки.
  *
@@ -120,9 +114,6 @@ export class SupportInfoService {
       }
 
       const mode = data.uuidToMode.get(uuid) ?? SupportMode.None;
-      this.log.appendLine(
-        `[support] ${path.basename(filePath)}: uuid=${uuid.slice(0, 8)}… → ${SUPPORT_MODE_LABEL[mode] ?? 'нет данных'}`
-      );
       return mode;
     }
     return SupportMode.None;

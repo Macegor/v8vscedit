@@ -38,6 +38,16 @@ interface RepositoryStateFile {
   scopes: Record<string, RepositoryScopeState>;
 }
 
+interface CachedFileValue<T> {
+  mtimeMs: number;
+  value: T;
+}
+
+interface CachedTarget {
+  mtimeMs: number;
+  target: RepositoryTarget | null;
+}
+
 const REPOSITORY_STATE_VERSION = 2;
 const REPOSITORY_NAMESPACE = 'http://v8.1c.ru/8.3/config/objects';
 const CONFIGURATION_ROOT_LOCK_NAME = '__configuration_root__';
@@ -113,6 +123,11 @@ const CHILD_KIND_NAMES: Partial<Record<MetaKind, string>> = {
  * локальный кэш захваченных объектов и генерирует `Objects.xml`.
  */
 export class RepositoryService {
+  private readonly targetCache = new Map<string, CachedTarget>();
+  private readonly rootFullNameCache = new Map<string, CachedFileValue<string | null>>();
+  private envCache: CachedFileValue<Record<string, unknown>> | undefined;
+  private stateCache: CachedFileValue<RepositoryStateFile> | undefined;
+
   constructor(private readonly workspaceRoot: string) {}
 
   getEnvJsonPath(): string {
@@ -134,17 +149,26 @@ export class RepositoryService {
    */
   resolveTargetByConfigRoot(configRoot: string): RepositoryTarget | null {
     const configurationXmlPath = path.join(configRoot, 'Configuration.xml');
-    if (!fs.existsSync(configurationXmlPath)) {
+    const mtimeMs = getFileMtimeMs(configurationXmlPath);
+    if (mtimeMs === undefined) {
       return null;
     }
 
+    const cacheKey = normalizePathKey(configRoot);
+    const cached = this.targetCache.get(cacheKey);
+    if (cached?.mtimeMs === mtimeMs) {
+      return cached.target;
+    }
+
     const info = parseConfigXml(configurationXmlPath);
-    return {
+    const target = {
       configRoot,
       configKind: info.kind,
       extensionName: info.kind === 'cfe' ? info.name : undefined,
       displayName: info.name || path.basename(configRoot),
     };
+    this.targetCache.set(cacheKey, { mtimeMs, target });
+    return target;
   }
 
   loadBinding(target: RepositoryTarget): RepositoryBinding | null {
@@ -356,20 +380,7 @@ export class RepositoryService {
       return null;
     }
 
-    const ownerObject = parseObjectXml(ownerXmlPath);
-    if (!ownerObject) {
-      return null;
-    }
-
-    const ownerKind = ownerObject.tag as MetaKind;
-    const ownerName = ownerObject.name || path.basename(ownerXmlPath, '.xml');
-    const ownerKindName = ROOT_KIND_NAMES[ownerKind];
-    if (!ownerKindName) {
-      return null;
-    }
-
-    const ownerFullName = `${ownerKindName}.${ownerName}`;
-    return ownerFullName;
+    return this.resolveRootObjectFullName(ownerXmlPath);
   }
 
   createObjectsFileForNode(node: RepositoryNodeRef, recursive: boolean): { filePath: string; fullNames: string[] } {
@@ -423,8 +434,7 @@ export class RepositoryService {
       return null;
     }
 
-    const objectInfo = xmlPath ? parseObjectXml(xmlPath) : null;
-    const objectName = objectInfo?.name || fallbackLabel;
+    const objectName = fallbackLabel || (xmlPath ? parseObjectXml(xmlPath)?.name : undefined);
     if (!objectName) {
       return null;
     }
@@ -433,12 +443,23 @@ export class RepositoryService {
   }
 
   private resolveRootObjectFullName(xmlPath: string): string | null {
-    const objectInfo = parseObjectXml(xmlPath);
-    if (!objectInfo) {
+    const mtimeMs = getFileMtimeMs(xmlPath);
+    if (mtimeMs === undefined) {
       return null;
     }
 
-    return this.buildRootObjectFullName(objectInfo.tag as MetaKind, xmlPath, objectInfo.name);
+    const cacheKey = normalizePathKey(xmlPath);
+    const cached = this.rootFullNameCache.get(cacheKey);
+    if (cached?.mtimeMs === mtimeMs) {
+      return cached.value;
+    }
+
+    const objectInfo = parseObjectXml(xmlPath);
+    const fullName = objectInfo
+      ? this.buildRootObjectFullName(objectInfo.tag as MetaKind, undefined, objectInfo.name || path.basename(xmlPath, '.xml'))
+      : null;
+    this.rootFullNameCache.set(cacheKey, { mtimeMs, value: fullName });
+    return fullName;
   }
 
   private resolveOwnerObjectXmlPath(filePath: string): string | null {
@@ -474,18 +495,31 @@ export class RepositoryService {
 
   private readEnvFile(): Record<string, unknown> {
     const envPath = this.getEnvJsonPath();
-    if (!fs.existsSync(envPath)) {
-      return { default: {} };
+    const mtimeMs = getFileMtimeMs(envPath) ?? -1;
+    if (this.envCache?.mtimeMs === mtimeMs) {
+      return this.envCache.value;
+    }
+
+    if (mtimeMs < 0) {
+      const empty = { default: {} };
+      this.envCache = { mtimeMs, value: empty };
+      return empty;
     }
 
     const raw = fs.readFileSync(envPath, 'utf-8');
-    return JSON.parse(raw) as Record<string, unknown>;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    this.envCache = { mtimeMs, value: parsed };
+    return parsed;
   }
 
   private writeEnvFile(env: Record<string, unknown>): void {
     const envPath = this.getEnvJsonPath();
     fs.mkdirSync(path.dirname(envPath), { recursive: true });
     fs.writeFileSync(envPath, `${JSON.stringify(env, null, 2)}\n`, 'utf-8');
+    this.envCache = {
+      mtimeMs: getFileMtimeMs(envPath) ?? Date.now(),
+      value: env,
+    };
   }
 
   private getDefaultSection(env: Record<string, unknown>): Record<string, unknown> {
@@ -544,30 +578,43 @@ export class RepositoryService {
 
   private loadStateFile(): RepositoryStateFile {
     const filePath = this.getStateFilePath();
-    if (!fs.existsSync(filePath)) {
-      return {
+    const mtimeMs = getFileMtimeMs(filePath) ?? -1;
+    if (this.stateCache?.mtimeMs === mtimeMs) {
+      return this.stateCache.value;
+    }
+
+    if (mtimeMs < 0) {
+      const empty: RepositoryStateFile = {
         version: REPOSITORY_STATE_VERSION,
         scopes: {},
       };
+      this.stateCache = { mtimeMs, value: empty };
+      return empty;
     }
 
     try {
       const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as Partial<RepositoryStateFile>;
       if (parsed.version !== REPOSITORY_STATE_VERSION || !parsed.scopes) {
-        return {
+        const empty: RepositoryStateFile = {
           version: REPOSITORY_STATE_VERSION,
           scopes: {},
         };
+        this.stateCache = { mtimeMs, value: empty };
+        return empty;
       }
-      return {
+      const state: RepositoryStateFile = {
         version: REPOSITORY_STATE_VERSION,
         scopes: parsed.scopes,
       };
+      this.stateCache = { mtimeMs, value: state };
+      return state;
     } catch {
-      return {
+      const empty: RepositoryStateFile = {
         version: REPOSITORY_STATE_VERSION,
         scopes: {},
       };
+      this.stateCache = { mtimeMs, value: empty };
+      return empty;
     }
   }
 
@@ -575,6 +622,10 @@ export class RepositoryService {
     const filePath = this.getStateFilePath();
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, `${JSON.stringify(state, null, 2)}\n`, 'utf-8');
+    this.stateCache = {
+      mtimeMs: getFileMtimeMs(filePath) ?? Date.now(),
+      value: state,
+    };
   }
 
   private ensureScopeState(target: RepositoryTarget): void {
@@ -632,4 +683,16 @@ function escapeXml(value: string): string {
     .replace(/"/g, '&quot;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+function getFileMtimeMs(filePath: string): number | undefined {
+  try {
+    return fs.statSync(filePath).mtimeMs;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizePathKey(filePath: string): string {
+  return path.resolve(filePath).toLowerCase();
 }

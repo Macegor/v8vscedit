@@ -88,6 +88,12 @@ export interface ObjectPropertyItem {
   title: string;
   kind: PropertyValueKind;
   value: PropertyValue;
+  /** Значение пришло из основной конфигурации, а не из XML расширения */
+  inherited?: boolean;
+  /** Свойство показано только для чтения */
+  readonly?: boolean;
+  /** Технический источник значения для панели свойств */
+  source?: 'local' | 'inherited';
 }
 
 /** Коллекция свойств объекта метаданных */

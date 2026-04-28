@@ -15,6 +15,10 @@ import {
   buildTemplateMetaProperties,
   buildTypedFieldProperties,
 } from '../../views/properties/PropertyBuilder';
+import {
+  readInheritedObjectXmlForBorrowed,
+  resolveInheritedDefinitionXmlPath,
+} from '../../views/properties/BorrowedPropertiesResolver';
 
 /** Виды дочерних узлов, для которых есть общий разбор свойств из XML */
 const SUPPORTED_CHILD_KINDS = new Set<NodeKind>([
@@ -55,6 +59,7 @@ export const structuredMetaChildHandler: ObjectHandler = {
     }
 
     const objectXml = fs.readFileSync(objectMainXmlPath, 'utf-8');
+    const inheritedObjectXml = readInheritedObjectXmlForBorrowed(objectMainXmlPath);
     const { nodeKind } = node;
     const label = node.textLabel;
     const tsName = node.metaContext.tabularSectionName;
@@ -62,48 +67,80 @@ export const structuredMetaChildHandler: ObjectHandler = {
     try {
       switch (nodeKind) {
         case 'Attribute':
-          return propsFromElementXml(extractChildMetaElementXml(objectXml, 'Attribute', label));
+          return propsFromElementXml(
+            extractChildMetaElementXml(objectXml, 'Attribute', label),
+            'typed',
+            inheritedObjectXml ? extractChildMetaElementXml(inheritedObjectXml, 'Attribute', label) : null
+          );
         case 'AddressingAttribute':
-          return propsFromElementXml(extractChildMetaElementXml(objectXml, 'AddressingAttribute', label));
+          return propsFromElementXml(
+            extractChildMetaElementXml(objectXml, 'AddressingAttribute', label),
+            'typed',
+            inheritedObjectXml ? extractChildMetaElementXml(inheritedObjectXml, 'AddressingAttribute', label) : null
+          );
         case 'Dimension':
-          return propsFromElementXml(extractChildMetaElementXml(objectXml, 'Dimension', label));
+          return propsFromElementXml(
+            extractChildMetaElementXml(objectXml, 'Dimension', label),
+            'typed',
+            inheritedObjectXml ? extractChildMetaElementXml(inheritedObjectXml, 'Dimension', label) : null
+          );
         case 'Resource':
-          return propsFromElementXml(extractChildMetaElementXml(objectXml, 'Resource', label));
+          return propsFromElementXml(
+            extractChildMetaElementXml(objectXml, 'Resource', label),
+            'typed',
+            inheritedObjectXml ? extractChildMetaElementXml(inheritedObjectXml, 'Resource', label) : null
+          );
         case 'EnumValue':
           return propsFromElementXml(
             extractChildMetaElementXml(objectXml, 'EnumValue', label),
-            'enumValue'
+            'enumValue',
+            inheritedObjectXml ? extractChildMetaElementXml(inheritedObjectXml, 'EnumValue', label) : null
           );
         case 'TabularSection':
-          return propsFromElementXml(extractChildMetaElementXml(objectXml, 'TabularSection', label), 'tabular');
+          return propsFromElementXml(
+            extractChildMetaElementXml(objectXml, 'TabularSection', label),
+            'tabular',
+            inheritedObjectXml ? extractChildMetaElementXml(inheritedObjectXml, 'TabularSection', label) : null
+          );
         case 'Column': {
           if (!tsName) {
             return [];
           }
           return propsFromElementXml(
-            extractColumnXmlFromTabularSection(objectXml, tsName, label)
+            extractColumnXmlFromTabularSection(objectXml, tsName, label),
+            'typed',
+            inheritedObjectXml ? extractColumnXmlFromTabularSection(inheritedObjectXml, tsName, label) : null
           );
         }
         case 'Form': {
           const formPath = resolveFormDefinitionXmlPath(objectMainXmlPath, label);
-          if (!formPath) {
+          const inheritedFormPath = inheritedObjectXml
+            ? resolveInheritedDefinitionXmlPath(objectMainXmlPath, 'Forms', label)
+            : null;
+          if (!formPath && !inheritedFormPath) {
             return notFoundProps('Файл описания формы не найден');
           }
-          return buildFormLikeProperties(fs.readFileSync(formPath, 'utf-8'));
+          return buildFormLikeProperties(readXmlOrEmpty(formPath), readXmlOrEmpty(inheritedFormPath));
         }
         case 'Command': {
           const cmdPath = resolveCommandDefinitionXmlPath(objectMainXmlPath, label);
-          if (!cmdPath) {
+          const inheritedCmdPath = inheritedObjectXml
+            ? resolveInheritedDefinitionXmlPath(objectMainXmlPath, 'Commands', label)
+            : null;
+          if (!cmdPath && !inheritedCmdPath) {
             return notFoundProps('Файл описания команды не найден');
           }
-          return buildCommandProperties(fs.readFileSync(cmdPath, 'utf-8'));
+          return buildCommandProperties(readXmlOrEmpty(cmdPath), readXmlOrEmpty(inheritedCmdPath));
         }
         case 'Template': {
           const tplPath = resolveTemplateDefinitionXmlPath(objectMainXmlPath, label);
-          if (!tplPath) {
+          const inheritedTplPath = inheritedObjectXml
+            ? resolveInheritedDefinitionXmlPath(objectMainXmlPath, 'Templates', label)
+            : null;
+          if (!tplPath && !inheritedTplPath) {
             return notFoundProps('Файл макета не найден');
           }
-          return buildTemplateMetaProperties(fs.readFileSync(tplPath, 'utf-8'));
+          return buildTemplateMetaProperties(readXmlOrEmpty(tplPath), readXmlOrEmpty(inheritedTplPath));
         }
         default:
           return [];
@@ -116,22 +153,34 @@ export const structuredMetaChildHandler: ObjectHandler = {
 
 function propsFromElementXml(
   elementXml: string | null,
-  mode: 'typed' | 'tabular' | 'enumValue' = 'typed'
+  mode: 'typed' | 'tabular' | 'enumValue' = 'typed',
+  inheritedElementXml: string | null = null
 ): ObjectPropertiesCollection {
-  if (!elementXml) {
+  if (!elementXml && !inheritedElementXml) {
     return [];
   }
   if (mode === 'tabular') {
-    return buildTabularSectionProperties(elementXml);
+    return buildTabularSectionProperties(elementXml ?? '', inheritedElementXml);
   }
   if (mode === 'enumValue') {
-    return buildEnumValueProperties(elementXml);
+    return buildEnumValueProperties(elementXml ?? '', inheritedElementXml);
   }
-  return buildTypedFieldProperties(elementXml);
+  return buildTypedFieldProperties(elementXml ?? '', inheritedElementXml);
 }
 
 function notFoundProps(message: string): ObjectPropertiesCollection {
-  return [{ key: '_note', title: 'Примечание', kind: 'string', value: message }];
+  return [{ key: '_note', title: 'Примечание', kind: 'string', value: message, readonly: true }];
+}
+
+function readXmlOrEmpty(filePath: string | null): string {
+  if (!filePath) {
+    return '';
+  }
+  try {
+    return fs.readFileSync(filePath, 'utf-8');
+  } catch {
+    return '';
+  }
 }
 
 /** Путь к XML описания формы объекта */

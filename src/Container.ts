@@ -157,6 +157,8 @@ export class Container {
     this.ensureHashCaches(entries);
     this.treeProvider.updateEntries(entries);
     this.refreshChangedConfigurationState();
+    const hasCfe = entries.some((e) => e.kind === 'cfe');
+    void vscode.commands.executeCommand('setContext', 'v8vscedit.hasCfeEntries', hasCfe);
     this.outputChannel.appendLine(`[init] Найдено конфигураций: ${entries.length}`);
   }
 
@@ -209,6 +211,7 @@ export class Container {
       getChangedConfigurations: () => this.getChangedConfigurations(),
       markConfigurationsClean: (rootPaths) => this.markConfigurationsClean(rootPaths),
       suppressConfigurationReloadForFiles: (filePaths) => this.suppressConfigurationReloadForFiles(filePaths),
+      revealTreeNode: (predicate, rootPath) => this.revealTreeNode(predicate, rootPath),
       setTreeMessage: (message) => {
         if (this.treeView) {
           this.treeView.message = message;
@@ -292,7 +295,12 @@ export class Container {
       this.treeView.message = 'Проверка кэша метаданных...';
     }
     try {
-      const created = this.changeDetector.ensureCaches(entries);
+      const created = this.changeDetector.ensureCaches(entries, (message) => {
+        if (this.treeView) {
+          this.treeView.message = message;
+        }
+        this.outputChannel.appendLine(`[init] ${message}`);
+      });
       if (created > 0) {
         this.outputChannel.appendLine(`[hash-cache] Создано первичных кэшей: ${created}`);
       }
@@ -318,6 +326,10 @@ export class Container {
 
   private scheduleTreeCacheRefresh(filePath: string): void {
     if (!this.treeProvider.getEntries().some((entry) => isPathInside(filePath, entry.rootPath))) {
+      return;
+    }
+
+    if (this.consumeSuppressedConfigurationReload(filePath)) {
       return;
     }
 
@@ -447,9 +459,6 @@ export class Container {
   private suppressConfigurationReloadForFiles(filePaths: string[]): void {
     const expiresAt = Date.now() + 5_000;
     for (const filePath of filePaths) {
-      if (path.basename(filePath).toLowerCase() !== 'configuration.xml') {
-        continue;
-      }
       this.suppressedConfigurationReloads.set(path.resolve(filePath).toLowerCase(), expiresAt);
     }
   }
@@ -467,6 +476,31 @@ export class Container {
     }
 
     return true;
+  }
+
+  private async revealTreeNode(predicate: (node: MetadataNode) => boolean, rootPath?: string): Promise<boolean> {
+    if (!this.treeView) {
+      return false;
+    }
+
+    this.treeProvider.clearSearchQuery();
+    const node = this.treeProvider.findNode(predicate, rootPath);
+    if (!node) {
+      return false;
+    }
+
+    try {
+      await this.treeView.reveal(node, {
+        select: true,
+        focus: true,
+        expand: 3,
+      });
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.outputChannel.appendLine(`[tree] Не удалось выделить узел после операции: ${message}`);
+      return false;
+    }
   }
 
   /**

@@ -46,7 +46,7 @@ export type MetadataCacheAddTarget =
   };
 
 export interface MetadataCacheSnapshot {
-  schemaVersion: 7;
+  schemaVersion: 8;
   scopeKey: string;
   generatedAt: string;
   rootPath: string;
@@ -60,7 +60,7 @@ export interface MetadataCacheUpdateResult {
 }
 
 const METADATA_CACHE_DIR = path.join('.v8vscedit', 'meta');
-const CACHE_SCHEMA_VERSION = 7;
+const CACHE_SCHEMA_VERSION = 8;
 
 /**
  * Строит полный снимок дерева метаданных без ленивых загрузчиков, чтобы UI мог восстановить дерево из JSON.

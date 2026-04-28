@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { CommandServices } from './_shared';
 import { registerDbCommands } from './db/DbCommands';
+import { registerBorrowToExtensionCommand } from './ext/BorrowToExtensionCommand';
 import { registerExtensionCommands } from './ext/ExtensionCommands';
 import { registerAddMetadataCommand } from './metadata/AddMetadataCommand';
 import { registerRemoveMetadataCommand } from './metadata/RemoveMetadataCommand';
@@ -26,6 +27,7 @@ export function registerCommands(
   );
 
   registerOpenXmlCommand(context, services);
+  registerBorrowToExtensionCommand(context, services);
   registerOpenModuleCommands(context, services);
   registerShowPropertiesCommand(context, services);
   registerAddMetadataCommand(context, services);

@@ -24,6 +24,7 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
   readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
 
   private roots: MetadataNode[] = [];
+  private parentByNode = new WeakMap<MetadataNode, MetadataNode>();
   private searchQuery = '';
 
   constructor(
@@ -56,6 +57,24 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
     }
 
     return updated;
+  }
+
+  /**
+   * Подменяет ветку дерева уже обновлённым JSON-снимком, не перечитывая
+   * остальные конфигурации рабочей области.
+   */
+  applyCacheSnapshot(snapshot: MetadataCacheSnapshot): boolean {
+    if (!snapshot.root.xmlPath) {
+      return false;
+    }
+
+    const node = this.buildNodeFromCache(snapshot.root);
+    if (!this.replaceRootBySnapshot(snapshot, node)) {
+      return false;
+    }
+
+    this.onDidChangeTreeDataEmitter.fire(undefined);
+    return true;
   }
 
   /** Просит VS Code заново запросить элементы, не пересобирая JSON-кэш дерева. */
@@ -111,11 +130,14 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
       return false;
     }
 
-    const children = cachedNode.children.map((child) => this.buildNodeFromCache(child));
+    const children = cachedNode.children.map((child) => this.buildNodeFromCache(child, targetNode));
     targetNode.replaceChildren(
       children,
       children.length > 0 ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None
     );
+    for (const child of children) {
+      this.parentByNode.set(child, targetNode);
+    }
     this.onDidChangeTreeDataEmitter.fire(targetNode);
     return true;
   }
@@ -126,6 +148,10 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
     this.applySupportDecoration(element);
     this.applyRepositoryDecoration(element);
     return element;
+  }
+
+  getParent(element: MetadataNode): vscode.ProviderResult<MetadataNode> {
+    return this.parentByNode.get(element);
   }
 
   getChildren(element?: MetadataNode): MetadataNode[] {
@@ -143,6 +169,27 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
     }
 
     return element.childrenLoader ? element.childrenLoader() : [];
+  }
+
+  /** Ищет узел в текущей модели дерева без пересборки кэша. */
+  findNode(predicate: (node: MetadataNode) => boolean, rootPath?: string): MetadataNode | undefined {
+    if (rootPath) {
+      const normalizedRootPath = this.normalizePath(rootPath);
+      for (const root of this.roots) {
+        if (this.isConfigRootNode(root, normalizedRootPath)) {
+          return this.findNodeIn([root], predicate);
+        }
+
+        const children = root.childrenLoader?.();
+        const targetRoot = children?.find((child) => this.isConfigRootNode(child, normalizedRootPath));
+        if (targetRoot) {
+          return this.findNodeIn([targetRoot], predicate);
+        }
+      }
+      return undefined;
+    }
+
+    return this.findNodeIn(this.roots, predicate);
   }
 
   /**
@@ -314,7 +361,7 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
   }
 
   private buildRoots(): void {
-    let rebuiltCache = false;
+    this.parentByNode = new WeakMap<MetadataNode, MetadataNode>();
     if (this.supportService) {
       for (const entry of this.entries) {
         this.supportService.loadConfig(entry.rootPath);
@@ -326,7 +373,6 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
 
     for (const entry of this.entries) {
       const result = this.buildConfigNode(entry);
-      rebuiltCache = rebuiltCache || result.rebuiltCache;
       if (entry.kind === 'cfe') {
         extensionRoots.push(result.node);
       } else {
@@ -339,13 +385,11 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
       this.buildExtensionsRoot(extensionRoots),
     ];
 
-    if (rebuiltCache) {
-      this.setStatusMessage?.(undefined);
-    }
+    this.setStatusMessage?.(undefined);
   }
 
   private buildExtensionsRoot(children: MetadataNode[]): MetadataNode {
-    return new MetadataNode({
+    const root = new MetadataNode({
       label: 'Расширения',
       nodeKind: 'extensions-root',
       hidePropertiesCommand: true,
@@ -353,6 +397,10 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
     }, children.length > 0
       ? vscode.TreeItemCollapsibleState.Collapsed
       : vscode.TreeItemCollapsibleState.None);
+    for (const child of children) {
+      this.parentByNode.set(child, root);
+    }
+    return root;
   }
 
   private getVisibleRoots(): MetadataNode[] {
@@ -417,6 +465,7 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
   private buildConfigNode(entry: ConfigEntry): { node: MetadataNode; rebuiltCache: boolean } {
     const configXmlPath = path.join(entry.rootPath, 'Configuration.xml');
     const info = parseConfigXml(configXmlPath);
+    this.setStatusMessage?.(`Инициализация дерева метаданных: ${info.name}`);
     const scopeKey = buildMetadataCacheScopeKey(entry, info);
     let cached = loadMetadataCache(this.projectRoot, scopeKey);
     let rebuiltCache = false;
@@ -442,19 +491,17 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
     return { node: this.buildNodeFromCache(cached.root), rebuiltCache };
   }
 
-  private buildNodeFromCache(cached: MetadataCacheNode): MetadataNode {
-    const children = cached.children.map((child) => this.buildNodeFromCache(child));
+  private buildNodeFromCache(cached: MetadataCacheNode, parent?: MetadataNode): MetadataNode {
     const descriptor = getNodeDescriptor(cached.type);
     const node = buildNode(descriptor, {
       label: cached.label,
       kind: cached.type,
-      collapsibleState: children.length > 0
+      collapsibleState: cached.children.length > 0
         ? vscode.TreeItemCollapsibleState.Collapsed
         : vscode.TreeItemCollapsibleState.None,
       xmlPath: cached.xmlPath,
       decorationPath: cached.decorationPath,
       gitDecorationTarget: cached.gitDecorationTarget,
-      childrenLoader: children.length > 0 ? () => children : undefined,
       ownershipTag: cached.ownershipTag,
       hidePropertiesCommand: cached.hidePropertiesCommand ||
         cached.type === 'configuration' ||
@@ -468,7 +515,73 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
       node.tooltip = cached.tooltip;
     }
 
+    if (parent) {
+      this.parentByNode.set(node, parent);
+    }
+
+    if (cached.children.length > 0) {
+      const children = cached.children.map((child) => this.buildNodeFromCache(child, node));
+      node.replaceChildren(children, vscode.TreeItemCollapsibleState.Collapsed);
+    }
+
     return node;
+  }
+
+  private replaceRootBySnapshot(snapshot: MetadataCacheSnapshot, nextNode: MetadataNode): boolean {
+    const normalizedRootPath = this.normalizePath(snapshot.rootPath);
+
+    for (let index = 0; index < this.roots.length; index += 1) {
+      const root = this.roots[index];
+      if (this.isConfigRootNode(root, normalizedRootPath)) {
+        this.roots[index] = nextNode;
+        return true;
+      }
+
+      if (root.nodeKind !== 'extensions-root') {
+        continue;
+      }
+
+      const children = root.childrenLoader?.();
+      const childIndex = children?.findIndex((child) => this.isConfigRootNode(child, normalizedRootPath)) ?? -1;
+      if (children && childIndex >= 0) {
+        children[childIndex] = nextNode;
+        this.parentByNode.set(nextNode, root);
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private findNodeIn(
+    nodes: MetadataNode[],
+    predicate: (node: MetadataNode) => boolean
+  ): MetadataNode | undefined {
+    for (const node of nodes) {
+      if (predicate(node)) {
+        return node;
+      }
+
+      const children = node.childrenLoader?.();
+      const found = children ? this.findNodeIn(children, predicate) : undefined;
+      if (found) {
+        return found;
+      }
+    }
+
+    return undefined;
+  }
+
+  private isConfigRootNode(node: MetadataNode, normalizedRootPath: string): boolean {
+    if (node.model.decorationPath && this.normalizePath(node.model.decorationPath) === normalizedRootPath) {
+      return true;
+    }
+
+    return Boolean(
+      node.xmlPath &&
+      path.basename(node.xmlPath).toLowerCase() === 'configuration.xml' &&
+      this.normalizePath(path.dirname(node.xmlPath)) === normalizedRootPath
+    );
   }
 
   private findCacheNodeByAddTarget(node: MetadataCacheNode, target: MetadataCacheAddTarget): MetadataCacheNode | undefined {
@@ -511,6 +624,10 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
   }
 
   private samePath(left: string, right: string): boolean {
-    return path.resolve(left).toLowerCase() === path.resolve(right).toLowerCase();
+    return this.normalizePath(left) === this.normalizePath(right);
+  }
+
+  private normalizePath(filePath: string): string {
+    return path.resolve(filePath).toLowerCase();
   }
 }

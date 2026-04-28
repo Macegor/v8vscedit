@@ -3,12 +3,14 @@ import {
   EnumPropertyOption,
   EnumPropertyValue,
   LocalizedStringValue,
+  MetadataTypeValue,
   ObjectPropertyItem,
   ObjectPropertiesCollection,
 } from './_types';
 import { extractSimpleTag } from '../../../infra/xml';
 import { getTypedFieldPropertyKeys } from '../../../infra/xml/TypedFieldPropertyRules';
 import { parseMetadataType } from './MetadataTypeService';
+import { extractTopLevelPropertiesChildren } from './MetadataXmlPropertiesService';
 
 /** Теги со строкой локализации (v8:item) */
 const LOCALIZED_PROPERTY_TAGS = new Set([
@@ -45,6 +47,8 @@ const BOOLEAN_PROPERTY_TAGS = new Set([
   'SendData',
   'ReceiveData',
   'SequentialDataExchange',
+  'PostInPrivilegedMode',
+  'UnpostInPrivilegedMode',
 ]);
 
 const FILL_CHECKING_OPTIONS: EnumPropertyOption[] = [
@@ -122,6 +126,18 @@ const PROPERTY_TITLE_RU: Record<string, string> = {
   SendData: 'Отправка данных',
   ReceiveData: 'Получение данных',
   SequentialDataExchange: 'Последовательный обмен данными',
+  NumberType: 'Тип номера',
+  NumberLength: 'Длина номера',
+  NumberAllowedLength: 'Допустимая длина номера',
+  NumberPeriodicity: 'Периодичность номера',
+  Posting: 'Проведение',
+  RealTimePosting: 'Оперативное проведение',
+  RegisterRecordsDeletion: 'Удаление движений',
+  RegisterRecordsWritingOnPost: 'Запись движений при проведении',
+  SequenceFilling: 'Заполнение последовательностей',
+  RegisterRecords: 'Движения',
+  PostInPrivilegedMode: 'Проведение в привилегированном режиме',
+  UnpostInPrivilegedMode: 'Отмена проведения в привилегированном режиме',
   Group: 'Группа командного интерфейса',
   Representation: 'Представление',
   Modality: 'Модальность',
@@ -206,6 +222,26 @@ const EXCHANGE_PLAN_ROOT_EXTRA_KEYS: string[] = [
   'SequentialDataExchange',
 ];
 
+/** Дополнительные поля корня «Документ» */
+const DOCUMENT_ROOT_EXTRA_KEYS: string[] = [
+  'UseStandardCommands',
+  'NumberType',
+  'NumberLength',
+  'NumberAllowedLength',
+  'NumberPeriodicity',
+  'CheckUnique',
+  'Autonumbering',
+  'Posting',
+  'RealTimePosting',
+  'RegisterRecordsDeletion',
+  'RegisterRecordsWritingOnPost',
+  'SequenceFilling',
+  'RegisterRecords',
+  'PostInPrivilegedMode',
+  'UnpostInPrivilegedMode',
+  'IncludeHelpInContents',
+];
+
 /** Поля типового реквизита / колонки / измерения / ресурса */
 const TYPED_FIELD_PROPERTY_KEYS: string[] = [
   'Name',
@@ -282,6 +318,9 @@ export function getRootPropertyKeyOrder(rootMetaKind: NodeKind): string[] {
   }
   if (rootMetaKind === 'Enum') {
     return ENUM_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'Document') {
+    return mergePropertyKeys(COMMON_ROOT_META_PROPERTY_KEYS, DOCUMENT_ROOT_EXTRA_KEYS);
   }
   return COMMON_ROOT_META_PROPERTY_KEYS;
 }
@@ -444,19 +483,87 @@ export function buildPropertyItemsForKeys(
   return items;
 }
 
+/**
+ * Строит свойства с учётом заимствования: локальное значение имеет приоритет,
+ * совпадающее с основной конфигурацией значение считается унаследованным.
+ */
+export function buildEffectivePropertyItemsForKeys(
+  localXmlOrPropertiesInner: string,
+  inheritedXmlOrPropertiesInner: string | null | undefined,
+  orderedKeys: string[],
+  options?: {
+    elementXmlForType?: string;
+    inheritedElementXmlForType?: string;
+    includeExtraKeys?: boolean;
+  }
+): ObjectPropertiesCollection {
+  if (!inheritedXmlOrPropertiesInner) {
+    return buildPropertyItemsForKeys(localXmlOrPropertiesInner, orderedKeys, {
+      elementXmlForType: options?.elementXmlForType,
+    }).map(markLocal);
+  }
+
+  const effectiveKeys = options?.includeExtraKeys
+    ? extendKeysWithTopLevelProperties(orderedKeys, [localXmlOrPropertiesInner, inheritedXmlOrPropertiesInner])
+    : orderedKeys;
+
+  const localItems = buildPropertyItemsForKeys(localXmlOrPropertiesInner, effectiveKeys, {
+    elementXmlForType: options?.elementXmlForType,
+  });
+  const inheritedItems = buildPropertyItemsForKeys(inheritedXmlOrPropertiesInner, effectiveKeys, {
+    elementXmlForType: options?.inheritedElementXmlForType ?? inheritedXmlOrPropertiesInner,
+  });
+
+  const localByKey = new Map(localItems.map((item) => [item.key, item]));
+  const inheritedByKey = new Map(inheritedItems.map((item) => [item.key, item]));
+  const result: ObjectPropertyItem[] = [];
+
+  for (const key of effectiveKeys) {
+    const local = localByKey.get(key);
+    const inherited = inheritedByKey.get(key);
+    if (local && inherited && arePropertyItemsEquivalent(local, inherited)) {
+      result.push(markInherited(local));
+      continue;
+    }
+    if (local) {
+      result.push(markLocal(local));
+      continue;
+    }
+    if (inherited) {
+      result.push(markInherited(inherited));
+    }
+  }
+
+  return result;
+}
+
 /** Свойства корневого объекта метаданных по его полному XML */
-export function buildRootMetaObjectProperties(fullObjectXml: string, rootMetaKind: NodeKind): ObjectPropertiesCollection {
+export function buildRootMetaObjectProperties(
+  fullObjectXml: string,
+  rootMetaKind: NodeKind,
+  inheritedFullObjectXml?: string | null
+): ObjectPropertiesCollection {
   const inner = extractRootObjectPropertiesInnerXml(fullObjectXml);
   if (!inner) {
     return [];
   }
-  return buildPropertyItemsForKeys(inner, getRootPropertyKeyOrder(rootMetaKind));
+  const inheritedInner = inheritedFullObjectXml
+    ? extractRootObjectPropertiesInnerXml(inheritedFullObjectXml)
+    : null;
+  return buildEffectivePropertyItemsForKeys(inner, inheritedInner, getRootPropertyKeyOrder(rootMetaKind), {
+    includeExtraKeys: Boolean(inheritedInner),
+  });
 }
 
 /** Свойства типового реквизита / измерения / ресурса / колонки */
-export function buildTypedFieldProperties(elementFullXml: string): ObjectPropertiesCollection {
-  return buildPropertyItemsForKeys(elementFullXml, getTypedFieldPropertyKeyOrder(elementFullXml), {
+export function buildTypedFieldProperties(
+  elementFullXml: string,
+  inheritedElementFullXml?: string | null
+): ObjectPropertiesCollection {
+  const keySource = elementFullXml || inheritedElementFullXml || '';
+  return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, getTypedFieldPropertyKeyOrder(keySource), {
     elementXmlForType: elementFullXml,
+    inheritedElementXmlForType: inheritedElementFullXml ?? undefined,
   });
 }
 
@@ -476,25 +583,139 @@ function getTypedFieldPropertyKeyOrder(elementFullXml: string): string[] {
   return TYPED_FIELD_PROPERTY_KEYS;
 }
 
-export function buildTabularSectionProperties(elementFullXml: string): ObjectPropertiesCollection {
-  return buildPropertyItemsForKeys(elementFullXml, TABULAR_SECTION_PROPERTY_KEYS);
+export function buildTabularSectionProperties(
+  elementFullXml: string,
+  inheritedElementFullXml?: string | null
+): ObjectPropertiesCollection {
+  return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, TABULAR_SECTION_PROPERTY_KEYS);
 }
 
-export function buildFormLikeProperties(elementFullXml: string): ObjectPropertiesCollection {
-  return buildPropertyItemsForKeys(elementFullXml, FORM_PROPERTY_KEYS);
+export function buildFormLikeProperties(elementFullXml: string, inheritedElementFullXml?: string | null): ObjectPropertiesCollection {
+  return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, FORM_PROPERTY_KEYS);
 }
 
-export function buildCommandProperties(elementFullXml: string): ObjectPropertiesCollection {
-  return buildPropertyItemsForKeys(elementFullXml, COMMAND_PROPERTY_KEYS);
+export function buildCommandProperties(elementFullXml: string, inheritedElementFullXml?: string | null): ObjectPropertiesCollection {
+  return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, COMMAND_PROPERTY_KEYS);
 }
 
-export function buildEnumValueProperties(elementFullXml: string): ObjectPropertiesCollection {
-  return buildPropertyItemsForKeys(elementFullXml, ENUM_VALUE_PROPERTY_KEYS);
+export function buildEnumValueProperties(elementFullXml: string, inheritedElementFullXml?: string | null): ObjectPropertiesCollection {
+  return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, ENUM_VALUE_PROPERTY_KEYS);
 }
 
 const TEMPLATE_META_PROPERTY_KEYS: string[] = ['Name', 'Synonym', 'Comment', 'TemplateType'];
 
 /** Свойства макета по файлу описания в каталоге Templates */
-export function buildTemplateMetaProperties(elementFullXml: string): ObjectPropertiesCollection {
-  return buildPropertyItemsForKeys(elementFullXml, TEMPLATE_META_PROPERTY_KEYS);
+export function buildTemplateMetaProperties(elementFullXml: string, inheritedElementFullXml?: string | null): ObjectPropertiesCollection {
+  return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, TEMPLATE_META_PROPERTY_KEYS);
+}
+
+const READONLY_SYSTEM_PROPERTY_KEYS = new Set(['ObjectBelonging', 'ExtendedConfigurationObject']);
+
+function markInherited(item: ObjectPropertyItem): ObjectPropertyItem {
+  return {
+    ...item,
+    inherited: true,
+    readonly: true,
+    source: 'inherited',
+  };
+}
+
+function markLocal(item: ObjectPropertyItem): ObjectPropertyItem {
+  if (!READONLY_SYSTEM_PROPERTY_KEYS.has(item.key)) {
+    return {
+      ...item,
+      source: 'local',
+    };
+  }
+
+  return {
+    ...item,
+    readonly: true,
+    source: 'local',
+  };
+}
+
+function extendKeysWithTopLevelProperties(orderedKeys: string[], sources: string[]): string[] {
+  const result = [...orderedKeys];
+  const seen = new Set(result);
+
+  for (const source of sources) {
+    const propertiesXml = source.includes('<Properties') ? source : `<Properties>${source}</Properties>`;
+    for (const child of extractTopLevelPropertiesChildren(propertiesXml)) {
+      if (seen.has(child.tag)) {
+        continue;
+      }
+      seen.add(child.tag);
+      result.push(child.tag);
+    }
+  }
+
+  return result;
+}
+
+function mergePropertyKeys(...groups: string[][]): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const group of groups) {
+    for (const key of group) {
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      result.push(key);
+    }
+  }
+  return result;
+}
+
+function arePropertyItemsEquivalent(left: ObjectPropertyItem, right: ObjectPropertyItem): boolean {
+  if (left.kind !== right.kind) {
+    return false;
+  }
+
+  switch (left.kind) {
+    case 'boolean':
+      return left.value === right.value;
+    case 'enum':
+      return (left.value as EnumPropertyValue).current === (right.value as EnumPropertyValue).current;
+    case 'localizedString':
+      return areLocalizedValuesEquivalent(left.value as LocalizedStringValue, right.value as LocalizedStringValue);
+    case 'metadataType':
+      return areMetadataTypesEquivalent(left.value as MetadataTypeValue, right.value as MetadataTypeValue);
+    case 'string':
+    default:
+      return normalizeScalarValue(String(left.value ?? '')) === normalizeScalarValue(String(right.value ?? ''));
+  }
+}
+
+function areLocalizedValuesEquivalent(left: LocalizedStringValue, right: LocalizedStringValue): boolean {
+  if (normalizeScalarValue(left.presentation) !== normalizeScalarValue(right.presentation)) {
+    return false;
+  }
+  if (left.values.length !== right.values.length) {
+    return false;
+  }
+  return left.values.every((item, index) => {
+    const other = right.values[index];
+    return item.lang === other?.lang && normalizeScalarValue(item.content) === normalizeScalarValue(other.content);
+  });
+}
+
+function areMetadataTypesEquivalent(left: MetadataTypeValue, right: MetadataTypeValue): boolean {
+  if (left.items.length !== right.items.length) {
+    return false;
+  }
+  const sameItems = left.items.every((item, index) => item.canonical === right.items[index]?.canonical);
+  if (!sameItems) {
+    return false;
+  }
+  return (
+    JSON.stringify(left.stringQualifiers ?? null) === JSON.stringify(right.stringQualifiers ?? null) &&
+    JSON.stringify(left.numberQualifiers ?? null) === JSON.stringify(right.numberQualifiers ?? null) &&
+    JSON.stringify(left.dateQualifiers ?? null) === JSON.stringify(right.dateQualifiers ?? null)
+  );
+}
+
+function normalizeScalarValue(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
 }

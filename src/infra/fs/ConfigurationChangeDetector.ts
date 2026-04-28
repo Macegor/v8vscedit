@@ -35,7 +35,7 @@ export class ConfigurationChangeDetector {
   /**
    * Создаёт первичный хеш-кэш для конфигураций, у которых его ещё нет.
    */
-  ensureCaches(entries: ConfigEntry[]): number {
+  ensureCaches(entries: ConfigEntry[], reportStatus?: (message: string) => void): number {
     let created = 0;
     for (const entry of entries) {
       const scope = this.resolveScope(entry);
@@ -46,11 +46,20 @@ export class ConfigurationChangeDetector {
         continue;
       }
 
+      let entryCreated = false;
       if (!hasHashCache) {
+        reportStatus?.(`Инициализация хеш-кэша: ${scope.name}`);
         saveHashCache(this.projectRoot, buildHashSnapshot(scope.scopeKey, entry.rootPath));
+        entryCreated = true;
       }
-      saveMetadataCacheForEntry(this.projectRoot, scope.scopeKey, entry);
-      created += 1;
+      if (!metadata) {
+        reportStatus?.(`Инициализация дерева метаданных: ${scope.name}`);
+        saveMetadataCacheForEntry(this.projectRoot, scope.scopeKey, entry);
+        entryCreated = true;
+      }
+      if (entryCreated) {
+        created += 1;
+      }
     }
     return created;
   }

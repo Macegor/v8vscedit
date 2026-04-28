@@ -720,10 +720,35 @@ function extractFailureReason(details: string[], exitCode: number): string {
   const meaningfulLines = lines.filter((line) =>
     !isDiagnosticNoise(line, exitCode)
   );
-  const errorLine = [...meaningfulLines].reverse().find((line) =>
-    /(ошиб|error|failed|exception|не удалось|not found|denied|отказ|конфликт|заблок|недостаточно)/i.test(line)
-  );
-  return errorLine ?? meaningfulLines.at(-1) ?? lines.at(-1) ?? `команда завершилась с кодом ${exitCode}`;
+  const errorIndex = findLastIndex(meaningfulLines, (line) => isErrorLine(line));
+  if (errorIndex >= 0) {
+    const start = errorIndex > 0 && shouldIncludePreviousErrorLine(meaningfulLines[errorIndex - 1])
+      ? errorIndex - 1
+      : errorIndex;
+    const end = meaningfulLines[errorIndex].endsWith(':')
+      ? Math.min(meaningfulLines.length, errorIndex + 5)
+      : errorIndex + 1;
+    return meaningfulLines.slice(start, end).join('\n');
+  }
+
+  return meaningfulLines.at(-1) ?? lines.at(-1) ?? `команда завершилась с кодом ${exitCode}`;
+}
+
+function findLastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (predicate(items[index])) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function isErrorLine(line: string): boolean {
+  return /(ошиб|error|failed|exception|не удалось|not found|denied|отказ|конфликт|заблок|недостаточно)/i.test(line);
+}
+
+function shouldIncludePreviousErrorLine(line: string | undefined): boolean {
+  return Boolean(line && /(ошиб|error|failed|exception)/i.test(line));
 }
 
 function isDiagnosticNoise(line: string, exitCode: number): boolean {

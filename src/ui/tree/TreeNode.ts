@@ -28,6 +28,8 @@ export class MetadataNode extends vscode.TreeItem {
 
     if (model.ownershipTag) {
       this.description = model.ownershipTag === 'OWN' ? '[свой]' : '[заим.]';
+      // Суффикс для фильтрации команд, работающих только с объектами CF
+      this.contextValue = `${this.contextValue}-fromCfe`;
     }
   }
 

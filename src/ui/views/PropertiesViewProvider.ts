@@ -264,20 +264,26 @@ export class PropertiesViewProvider implements vscode.Disposable {
   }
 
   /** Формирует строку свойства */
-  private renderProperty(property: ObjectPropertyItem, isEditLockedBySupport: boolean): string {
-    const valueHtml = this.renderPropertyValue(property, isEditLockedBySupport);
+  private renderProperty(property: ObjectPropertyItem, isEditLocked: boolean): string {
+    const valueHtml = this.renderPropertyValue(property, isEditLocked);
+    const noteHtml = this.renderPropertyNote(property);
     return `
       <div class="row">
         <label class="label" title="${escapeHtml(property.key)}">${escapeHtml(property.title)}</label>
-        <div class="control">${valueHtml}</div>
+        <div class="control">${valueHtml}${noteHtml}</div>
       </div>
     `;
   }
 
   /** Формирует HTML значения свойства */
-  private renderPropertyValue(property: ObjectPropertyItem, isEditLockedBySupport: boolean): string {
-    const isEditable = !isEditLockedBySupport && property.key !== '_note';
-    const disabledAttr = isEditable ? '' : 'disabled';
+  private renderPropertyValue(property: ObjectPropertyItem, isEditLocked: boolean): string {
+    if (property.key === '_note') {
+      return `<div class="static-text">${escapeHtml(String(property.value ?? ''))}</div>`;
+    }
+
+    const isEditable = !isEditLocked && !property.readonly;
+    const disabledAttr = isEditable ? '' : 'disabled data-readonly="true"';
+    const readonlyAttr = isEditable ? '' : 'readonly data-readonly="true"';
     switch (property.kind) {
       case 'boolean':
         return `<div class="checkbox-row"><input class="checkbox" data-prop-key="${escapeHtml(property.key)}" type="checkbox" ${property.value === true ? 'checked' : ''} ${disabledAttr} /></div>`;
@@ -300,29 +306,29 @@ export class PropertiesViewProvider implements vscode.Disposable {
           .join('');
 
         return `
-          <input class="input" data-prop-key="${escapeHtml(property.key)}" data-prop-kind="localizedString" type="text" value="${escapeHtml(renderValue)}" ${isEditable ? '' : 'readonly'} />
+          <input class="input" data-prop-key="${escapeHtml(property.key)}" data-prop-kind="localizedString" type="text" value="${escapeHtml(renderValue)}" ${readonlyAttr} />
           ${items ? `<div class="property-note">Локализации:</div>${items}` : ''}
         `;
       }
       case 'string':
       default:
         if (property.kind === 'metadataType') {
-          return this.renderMetadataTypeControl(property, isEditLockedBySupport);
+          return this.renderMetadataTypeControl(property, isEditLocked || property.readonly === true);
         }
-        return `<input class="input" data-prop-key="${escapeHtml(property.key)}" data-prop-kind="string" type="text" value="${escapeHtml(String(property.value ?? ''))}" ${isEditable ? '' : 'readonly'} />`;
+        return `<input class="input" data-prop-key="${escapeHtml(property.key)}" data-prop-kind="string" type="text" value="${escapeHtml(String(property.value ?? ''))}" ${readonlyAttr} />`;
     }
   }
 
-  private renderMetadataTypeControl(property: ObjectPropertyItem, isEditLockedBySupport: boolean): string {
+  private renderMetadataTypeControl(property: ObjectPropertyItem, isLocked: boolean): string {
     const value = this.getRenderTypeValue(property);
-    const disabledAttr = isEditLockedBySupport ? 'disabled' : '';
+    const disabledAttr = isLocked ? 'disabled' : '';
     return `
       <div class="type-control">
         <div class="type-row">
           <input class="input" id="typePresentation" type="text" value="${escapeHtml(value.presentation)}" readonly />
           <button class="btn" id="pickTypeBtn" ${disabledAttr}>Выбрать</button>
         </div>
-        ${this.renderTypeQualifiers(value, isEditLockedBySupport)}
+        ${this.renderTypeQualifiers(value, isLocked)}
       </div>
     `;
   }
@@ -370,6 +376,16 @@ export class PropertiesViewProvider implements vscode.Disposable {
       `);
     }
     return blocks.join('');
+  }
+
+  private renderPropertyNote(property: ObjectPropertyItem): string {
+    if (property.inherited) {
+      return '<div class="property-note">Значение из основной конфигурации. Переопределение через панель свойств пока недоступно.</div>';
+    }
+    if (property.readonly && property.key !== '_note') {
+      return '<div class="property-note">Служебное свойство доступно только для чтения.</div>';
+    }
+    return '';
   }
 
   private renderScript(isEditLocked: boolean): string {
@@ -432,7 +448,7 @@ export class PropertiesViewProvider implements vscode.Disposable {
       document.querySelectorAll('[data-prop-key]').forEach((el) => {
         const key = el.getAttribute('data-prop-key');
         const kind = el.getAttribute('data-prop-kind') || (el.type === 'checkbox' ? 'boolean' : 'string');
-        if (!key || isEditLocked) return;
+        if (!key || isEditLocked || el.dataset.readonly === 'true') return;
         if (el.type !== 'checkbox') {
           lastValidByKey.set(key, String(el.value ?? ''));
         }
@@ -481,6 +497,10 @@ export class PropertiesViewProvider implements vscode.Disposable {
       return;
     }
     if (msg.type === 'openTypePicker') {
+      if (this.isCurrentTypeReadonly()) {
+        this.showReadonlyPropertyWarning(this.activeProperties.find((item) => item.key === 'Type'));
+        return;
+      }
       await this.enqueuePropertyOperation(() => this.handleOpenTypePicker());
       return;
     }
@@ -489,10 +509,19 @@ export class PropertiesViewProvider implements vscode.Disposable {
       return;
     }
     if (msg.type === 'updateTypeQualifiers') {
+      if (this.isCurrentTypeReadonly()) {
+        this.showReadonlyPropertyWarning(this.activeProperties.find((item) => item.key === 'Type'));
+        return;
+      }
       await this.enqueuePropertyOperation(() => this.applyQualifierChanges(msg.qualifiers ?? {}));
       return;
     }
     if (msg.type === 'propertyChanged') {
+      const currentProperty = this.activeProperties.find((item) => item.key === msg.key);
+      if (currentProperty?.readonly) {
+        this.showReadonlyPropertyWarning(currentProperty);
+        return;
+      }
       await this.enqueuePropertyOperation(() => this.applyPropertyChange(msg.key, msg.value));
     }
   }
@@ -625,6 +654,10 @@ export class PropertiesViewProvider implements vscode.Disposable {
     if (!currentProperty) {
       return;
     }
+    if (currentProperty.readonly) {
+      this.showReadonlyPropertyWarning(currentProperty);
+      return;
+    }
     if (currentProperty.kind !== 'string' && currentProperty.kind !== 'boolean' && currentProperty.kind !== 'localizedString') {
       return;
     }
@@ -671,6 +704,19 @@ export class PropertiesViewProvider implements vscode.Disposable {
 
   private getRenderTypeValue(property: ObjectPropertyItem): MetadataTypeValue {
     return ensureDefaultQualifiers(property.value as MetadataTypeValue);
+  }
+
+  private isCurrentTypeReadonly(): boolean {
+    const original = this.activeProperties.find((item) => item.key === 'Type');
+    return original?.readonly === true;
+  }
+
+  private showReadonlyPropertyWarning(property: ObjectPropertyItem | undefined): void {
+    if (property?.inherited) {
+      void vscode.window.showWarningMessage('Свойство получено из основной конфигурации. Переопределение через панель свойств пока недоступно.');
+      return;
+    }
+    void vscode.window.showWarningMessage('Это свойство доступно только для чтения.');
   }
 
   private async renameObject(nextName: string): Promise<void> {
@@ -957,4 +1003,3 @@ function isRootObjectNode(
   }
   return node.nodeKind !== 'NumeratorsBranch' && node.nodeKind !== 'SequencesBranch';
 }
-

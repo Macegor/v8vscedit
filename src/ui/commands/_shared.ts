@@ -32,6 +32,7 @@ export interface CommandServices {
   getChangedConfigurations: () => ChangedConfiguration[];
   markConfigurationsClean: (rootPaths: string[]) => void;
   suppressConfigurationReloadForFiles: (filePaths: string[]) => void;
+  revealTreeNode: (predicate: (node: MetadataNode) => boolean, rootPath?: string) => Promise<boolean>;
   setTreeMessage: (message: string | undefined) => void;
   refreshActionsView: () => void;
 }

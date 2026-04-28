@@ -13,6 +13,7 @@ import { ChildTag, CHILD_TAG_CONFIG } from '../nodes/_types';
 import { MetaChild, parseObjectXml, resolveObjectXmlPath, extractSynonym } from '../../../infra/xml';
 import { getObjectLocationFromXml } from '../../../infra/fs/MetaPathResolver';
 import { buildRootMetaObjectProperties } from '../../views/properties/PropertyBuilder';
+import { readInheritedObjectXmlForBorrowed } from '../../views/properties/BorrowedPropertiesResolver';
 import { HandlerContext, ObjectPropertiesCollection } from './_types';
 
 /** Строит плоский список узлов объекта без дочерней структуры ChildObjects */
@@ -118,7 +119,10 @@ export function rootMetaObjectGetProperties(node: MetadataNode, nodeKind: NodeKi
   }
   try {
     const xml = fs.readFileSync(node.xmlPath, 'utf-8');
-    return buildRootMetaObjectProperties(xml, nodeKind);
+    const inheritedXml = node.ownershipTag === 'BORROWED'
+      ? readInheritedObjectXmlForBorrowed(node.xmlPath)
+      : null;
+    return buildRootMetaObjectProperties(xml, nodeKind, inheritedXml);
   } catch {
     return [];
   }

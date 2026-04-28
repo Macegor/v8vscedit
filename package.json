@@ -2,7 +2,7 @@
   "name": "v8vscedit",
   "displayName": "Редактор конфигураций 1С",
   "description": "Редактор конфигураций и расширений 1С:Предприятие — навигация по метаданным, LSP для BSL, работа с XML-выгрузкой",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "repository": {
     "type": "git",
     "url": "https://github.com/Macegor/v8vscedit.git"
@@ -92,6 +92,10 @@
         "command": "v8vscedit.installAiSkills",
         "title": "Установить ИИ-скилы 1С",
         "icon": "$(extensions)"
+      },
+      {
+        "command": "v8vscedit.borrowToExtension",
+        "title": "Добавить в расширение"
       },
       {
         "command": "v8vscedit.openXmlFile",
@@ -307,6 +311,11 @@
           "command": "v8vscedit.compileAndUpdateExtensionInDb",
           "when": "view == v8vsceditTree && viewItem =~ /^extension-hasXml/",
           "group": "navigation@0"
+        },
+        {
+          "command": "v8vscedit.borrowToExtension",
+          "when": "view == v8vsceditTree && v8vscedit.hasCfeEntries && viewItem =~ /-hasXml/ && !(viewItem =~ /^(configuration|extension|extensions-root|group-)/) && !(viewItem =~ /-fromCfe/) && !(viewItem =~ /-repoEditRestricted/)",
+          "group": "borrow@1"
         },
         {
           "command": "v8vscedit.openXmlFile",
