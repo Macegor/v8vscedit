@@ -2,7 +2,7 @@
   "name": "v8vscedit",
   "displayName": "Редактор конфигураций 1С",
   "description": "Редактор конфигураций и расширений 1С:Предприятие — навигация по метаданным, LSP для BSL, работа с XML-выгрузкой",
-  "version": "0.2.9",
+  "version": "0.3.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/Macegor/v8vscedit.git"
@@ -77,6 +77,11 @@
         "command": "v8vscedit.runConfigurator",
         "title": "Запустить конфигуратор",
         "icon": "$(tools)"
+      },
+      {
+        "command": "v8vscedit.configureEnvironment",
+        "title": "Настройки проекта",
+        "icon": "$(settings-gear)"
       },
       {
         "command": "v8vscedit.initializeProject",

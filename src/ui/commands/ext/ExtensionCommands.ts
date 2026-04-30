@@ -219,6 +219,7 @@ export function registerExtensionCommands(
 
       services.markConfigurationsClean([extensionRoot]);
       await services.reloadEntries();
+      services.bslAnalyzerConfigService.updateSource(getConnectedExtensionRoots(services, extensionRoot));
     }),
 
     vscode.commands.registerCommand('v8vscedit.showConfigActions', async (node: NodeArg) => {
@@ -426,6 +427,17 @@ function appendInitialMainConfigurationTarget(targets: ImportTarget[], workspace
     name: 'Основная конфигурация',
     rootPath: mainConfigRoot,
   });
+}
+
+function getConnectedExtensionRoots(services: CommandServices, extensionRoot: string): string[] {
+  const roots = new Set(
+    services.treeProvider
+      .getEntries()
+      .filter((entry) => entry.kind === 'cfe')
+      .map((entry) => entry.rootPath)
+  );
+  roots.add(extensionRoot);
+  return [...roots];
 }
 
 function readConfigName(entry: ConfigEntry): string {

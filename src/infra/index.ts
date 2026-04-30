@@ -30,3 +30,4 @@ export {
 export * from './fs/ObjectLocation';
 export * from './support';
 export * from './process';
+export * from './environment';

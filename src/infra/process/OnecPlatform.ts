@@ -6,6 +6,12 @@ import { globSync } from 'glob';
 const WINDOWS_EXECUTABLE = '1cv8.exe';
 const UNIX_EXECUTABLES = ['1cv8', '1cv8c'] as const;
 
+export interface InstalledOnecPlatform {
+  readonly executablePath: string;
+  readonly version: string;
+  readonly label: string;
+}
+
 /**
  * Находит исполняемый файл платформы 1С без привязки к Windows-каталогу.
  * Путь из настроек может быть файлом, каталогом bin, каталогом .app или именем из PATH.
@@ -73,6 +79,46 @@ export function resolveV8PathHintFromVersion(version: string, platform: NodeJS.P
     ];
 
   return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[0] ?? '';
+}
+
+/**
+ * Возвращает все найденные установки платформы, чтобы пользователь мог явно выбрать версию для проекта.
+ */
+export function scanInstalledOnecPlatforms(platform: NodeJS.Platform = process.platform): InstalledOnecPlatform[] {
+  const candidates = collectDefaultV8Candidates(platform);
+  const existing = Array.from(new Set(candidates)).filter((candidate) =>
+    isExistingFile(candidate) && isAllowedExecutable(candidate, platform)
+  );
+
+  const ordered = existing.sort((left, right) => compareCandidatePaths(right, left));
+
+  return deduplicatePlatformCandidates(ordered)
+    .map((executablePath) => {
+      const version = extractVersion(executablePath).join('.');
+      const name = path.basename(executablePath);
+      return {
+        executablePath,
+        version,
+        label: version ? `${version} (${name})` : executablePath,
+      };
+    });
+}
+
+function deduplicatePlatformCandidates(candidates: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const candidate of candidates) {
+    const version = extractVersion(candidate).join('.');
+    const key = version ? `version:${version}` : `path:${safeRealPath(candidate).toLowerCase()}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push(candidate);
+  }
+
+  return result;
 }
 
 function resolveExplicitV8Path(v8Path: string, platform: NodeJS.Platform): string {
@@ -227,6 +273,14 @@ function isExistingFile(filePath: string): boolean {
     return fs.statSync(filePath).isFile();
   } catch {
     return false;
+  }
+}
+
+function safeRealPath(filePath: string): string {
+  try {
+    return fs.realpathSync.native(filePath);
+  } catch {
+    return filePath;
   }
 }
 

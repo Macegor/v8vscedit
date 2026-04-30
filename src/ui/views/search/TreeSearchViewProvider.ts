@@ -263,6 +263,9 @@ export class TreeSearchViewProvider implements vscode.WebviewViewProvider {
     <button type="button" data-command="v8vscedit.runConfigurator" title="Запустить конфигуратор" aria-label="Запустить конфигуратор">
       ${toolsIcon()}
     </button>
+    <button type="button" data-command="v8vscedit.configureEnvironment" title="Настройки проекта" aria-label="Настройки проекта">
+      ${settingsIcon()}
+    </button>
     <button type="button" data-command="v8vscedit.installAiSkills" title="Установить ИИ-скилы 1С" aria-label="Установить ИИ-скилы 1С">
       ${skillsIcon()}
     </button>
@@ -347,6 +350,12 @@ function runIcon(): string {
 function toolsIcon(): string {
   return `<svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
     <path fill="currentColor" d="M14.1 4.1 12 6.2l-2.2-2.1L12 1.9A4 4 0 0 0 7.1 6.8L2 11.9A1.5 1.5 0 1 0 4.1 14l5.1-5.1a4 4 0 0 0 4.9-4.8ZM3.4 13.3a.5.5 0 1 1-.7-.7.5.5 0 0 1 .7.7Z"/>
+  </svg>`;
+}
+
+function settingsIcon(): string {
+  return `<svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+    <path fill="currentColor" d="M8.6 1.5H7.4l-.4 2a4.7 4.7 0 0 0-1.1.5L4.2 2.9l-.9.9 1.1 1.7c-.2.4-.4.7-.5 1.1l-2 .4v1.2l2 .4c.1.4.3.8.5 1.1l-1.1 1.7.9.9 1.7-1.1c.4.2.7.4 1.1.5l.4 2h1.2l.4-2c.4-.1.8-.3 1.1-.5l1.7 1.1.9-.9-1.1-1.7c.2-.4.4-.7.5-1.1l2-.4V7l-2-.4c-.1-.4-.3-.8-.5-1.1l1.1-1.7-.9-.9L10.1 4c-.4-.2-.7-.4-1.1-.5l-.4-2ZM8 5.5A2.5 2.5 0 1 1 8 10.5 2.5 2.5 0 0 1 8 5.5Z"/>
   </svg>`;
 }
 

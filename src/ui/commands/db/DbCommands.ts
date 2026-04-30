@@ -8,6 +8,10 @@ export function registerDbCommands(
   services: CommandServices
 ): void {
   context.subscriptions.push(
+    vscode.commands.registerCommand('v8vscedit.configureEnvironment', () => {
+      services.projectEnvironmentViewProvider.show();
+    }),
+
     vscode.commands.registerCommand('v8vscedit.runThinClient', async () => {
       const shouldContinue = await confirmUpdateBeforeThinClient(services);
       if (!shouldContinue) {

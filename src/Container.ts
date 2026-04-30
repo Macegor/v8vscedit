@@ -24,6 +24,8 @@ import { registerSupportWatcher } from './ui/support/SupportWatcher';
 import { RepositoryCommitViewProvider } from './ui/views/RepositoryCommitViewProvider';
 import { RepositoryConnectionViewProvider } from './ui/views/RepositoryConnectionViewProvider';
 import { updateMetadataCacheAfterRename } from './infra/cache/MetadataCache';
+import { BslAnalyzerConfigService, ProjectEnvironmentService } from './infra/environment';
+import { ProjectEnvironmentViewProvider } from './ui/views/environment/ProjectEnvironmentViewProvider';
 
 /**
  * Композиционный корень расширения. Собирает зависимости в одном месте,
@@ -47,6 +49,9 @@ export class Container {
   readonly gitMetadataDecorationProvider: GitMetadataDecorationProvider;
   readonly repositoryConnectionViewProvider: RepositoryConnectionViewProvider;
   readonly repositoryCommitViewProvider: RepositoryCommitViewProvider;
+  readonly bslAnalyzerConfigService: BslAnalyzerConfigService;
+  readonly projectEnvironmentService: ProjectEnvironmentService;
+  readonly projectEnvironmentViewProvider: ProjectEnvironmentViewProvider;
   readonly aiSkillsInstaller: AiSkillsInstaller;
   readonly metadataXmlCreator: MetadataXmlCreator;
   readonly metadataXmlRemover: MetadataXmlRemover;
@@ -72,6 +77,8 @@ export class Container {
 
     this.supportService = new SupportInfoService(this.outputChannel);
     this.repositoryService = new RepositoryService(workspaceFolder.uri.fsPath);
+    this.bslAnalyzerConfigService = new BslAnalyzerConfigService(workspaceFolder.uri.fsPath);
+    this.projectEnvironmentService = new ProjectEnvironmentService(workspaceFolder.uri.fsPath);
     this.gitMetadataStatusService = new GitMetadataStatusService(workspaceFolder.uri.fsPath);
     this.gitMetadataDecorationProvider = new GitMetadataDecorationProvider(this.gitMetadataStatusService);
 
@@ -116,10 +123,14 @@ export class Container {
     );
     this.repositoryConnectionViewProvider = new RepositoryConnectionViewProvider(context.extensionUri);
     this.repositoryCommitViewProvider = new RepositoryCommitViewProvider(context.extensionUri);
+    this.projectEnvironmentViewProvider = new ProjectEnvironmentViewProvider(
+      this.projectEnvironmentService,
+      this.outputChannel
+    );
     this.aiSkillsInstaller = new AiSkillsInstaller(this.outputChannel);
     this.metadataXmlCreator = new MetadataXmlCreator();
     this.metadataXmlRemover = new MetadataXmlRemover();
-    context.subscriptions.push(this.propertiesProvider);
+    context.subscriptions.push(this.propertiesProvider, this.projectEnvironmentViewProvider);
     this.treeSearchViewProvider = new TreeSearchViewProvider(context.extensionUri, {
       treeProvider: this.treeProvider,
       setTreeMessage: (message) => {
@@ -156,6 +167,9 @@ export class Container {
     const entries = await findConfigurations(rootPath);
     this.ensureHashCaches(entries);
     this.treeProvider.updateEntries(entries);
+    if (this.isProjectInitialized()) {
+      this.bslAnalyzerConfigService.ensureExists(getExtensionRootPaths(entries));
+    }
     this.refreshChangedConfigurationState();
     const hasCfe = entries.some((e) => e.kind === 'cfe');
     void vscode.commands.executeCommand('setContext', 'v8vscedit.hasCfeEntries', hasCfe);
@@ -205,6 +219,8 @@ export class Container {
       repositoryService: this.repositoryService,
       repositoryConnectionViewProvider: this.repositoryConnectionViewProvider,
       repositoryCommitViewProvider: this.repositoryCommitViewProvider,
+      bslAnalyzerConfigService: this.bslAnalyzerConfigService,
+      projectEnvironmentViewProvider: this.projectEnvironmentViewProvider,
       aiSkillsInstaller: this.aiSkillsInstaller,
       refreshChangedConfigurationState: () => this.refreshChangedConfigurationState(),
       markChangedConfigurationByFiles: (filePaths) => this.markChangedConfigurationByFiles(filePaths),
@@ -552,6 +568,12 @@ function isPathInside(filePath: string, rootPath: string): boolean {
   const normalizedRootPath = path.resolve(rootPath).toLowerCase();
   const relative = path.relative(normalizedRootPath, normalizedFilePath);
   return Boolean(relative) && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+function getExtensionRootPaths(entries: ConfigEntry[]): string[] {
+  return entries
+    .filter((entry) => entry.kind === 'cfe')
+    .map((entry) => entry.rootPath);
 }
 
 function isDirectory(directoryPath: string): boolean {

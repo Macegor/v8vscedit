@@ -56,6 +56,7 @@ export function registerInitializeProjectCommand(
         ensureProjectDirectoryIsEmpty(rootPath);
         createProjectDirectories(rootPath);
         createEnvJson(rootPath);
+        services.bslAnalyzerConfigService.ensureExists([]);
         ensureGitignore(rootPath);
         await services.reloadEntries();
         services.refreshActionsView();
