@@ -18,6 +18,7 @@ export * from './ConfigurationXmlEditor';
 export * from './MetadataXmlCreator';
 export * from './MetadataXmlRemover';
 export * from './PropertySchema';
+export * from './SubsystemXmlService';
 export * from './TypedFieldPropertyRules';
 export type { ConfigInfo } from '../../domain/Configuration';
 export type { MetaObject, MetaChild } from '../../domain/MetaObject';

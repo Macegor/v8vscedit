@@ -11,6 +11,7 @@ import { PropertiesViewProvider } from '../views/PropertiesViewProvider';
 import { RepositoryCommitViewProvider } from '../views/RepositoryCommitViewProvider';
 import { RepositoryConnectionViewProvider } from '../views/RepositoryConnectionViewProvider';
 import { ProjectEnvironmentViewProvider } from '../views/environment/ProjectEnvironmentViewProvider';
+import { SubsystemEditorViewProvider } from '../views/subsystem/SubsystemEditorViewProvider';
 import { OnecFileSystemProvider } from '../vfs/OnecFileSystemProvider';
 
 export type NodeArg = MetadataNode | { xmlPath?: string; nodeKind?: string; label?: string };
@@ -22,6 +23,7 @@ export interface CommandServices {
   metadataXmlRemover: MetadataXmlRemover;
   reloadEntries: () => void | Promise<void>;
   propertiesViewProvider: PropertiesViewProvider;
+  subsystemEditorViewProvider: SubsystemEditorViewProvider;
   vfs: OnecFileSystemProvider;
   outputChannel: vscode.OutputChannel;
   supportService?: SupportInfoService;

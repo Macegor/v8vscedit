@@ -8,10 +8,12 @@ import { MetadataTreeProvider } from './ui/tree/MetadataTreeProvider';
 import { MetadataNode } from './ui/tree/TreeNode';
 import { registerCommands } from './ui/commands/CommandRegistry';
 import { PropertiesViewProvider } from './ui/views/PropertiesViewProvider';
+import { SubsystemEditorViewProvider } from './ui/views/subsystem/SubsystemEditorViewProvider';
 import { TreeSearchViewProvider } from './ui/views/search/TreeSearchViewProvider';
 import { OnecFileSystemProvider, ONEC_SCHEME } from './ui/vfs/OnecFileSystemProvider';
 import { SupportInfoService } from './infra/support/SupportInfoService';
 import { MetadataXmlCreator, MetadataXmlRemover } from './infra/xml';
+import { SubsystemXmlService } from './infra/xml/SubsystemXmlService';
 import { RepositoryService } from './infra/repository/RepositoryService';
 import { GitMetadataStatusService } from './infra/git/GitMetadataStatusService';
 import { AiSkillsInstaller } from './infra/skills/AiSkillsInstaller';
@@ -44,6 +46,7 @@ export class Container {
   readonly vfs: OnecFileSystemProvider;
   readonly treeProvider: MetadataTreeProvider;
   readonly propertiesProvider: PropertiesViewProvider;
+  readonly subsystemEditorViewProvider: SubsystemEditorViewProvider;
   readonly repositoryService: RepositoryService;
   readonly gitMetadataStatusService: GitMetadataStatusService;
   readonly gitMetadataDecorationProvider: GitMetadataDecorationProvider;
@@ -55,6 +58,7 @@ export class Container {
   readonly aiSkillsInstaller: AiSkillsInstaller;
   readonly metadataXmlCreator: MetadataXmlCreator;
   readonly metadataXmlRemover: MetadataXmlRemover;
+  readonly subsystemXmlService: SubsystemXmlService;
   readonly treeSearchViewProvider: TreeSearchViewProvider;
   readonly lspManager: LspManager;
   readonly changeDetector: ConfigurationChangeDetector;
@@ -121,6 +125,14 @@ export class Container {
       this.repositoryService,
       (configRoot, oldXmlPath, newXmlPath) => this.handleAfterRename(configRoot, oldXmlPath, newXmlPath)
     );
+    this.subsystemXmlService = new SubsystemXmlService();
+    this.subsystemEditorViewProvider = new SubsystemEditorViewProvider(
+      context.extensionUri,
+      this.subsystemXmlService,
+      this.supportService,
+      this.repositoryService,
+      () => this.treeProvider.refresh()
+    );
     this.repositoryConnectionViewProvider = new RepositoryConnectionViewProvider(context.extensionUri);
     this.repositoryCommitViewProvider = new RepositoryCommitViewProvider(context.extensionUri);
     this.projectEnvironmentViewProvider = new ProjectEnvironmentViewProvider(
@@ -130,7 +142,11 @@ export class Container {
     this.aiSkillsInstaller = new AiSkillsInstaller(this.outputChannel);
     this.metadataXmlCreator = new MetadataXmlCreator();
     this.metadataXmlRemover = new MetadataXmlRemover();
-    context.subscriptions.push(this.propertiesProvider, this.projectEnvironmentViewProvider);
+    context.subscriptions.push(
+      this.propertiesProvider,
+      this.subsystemEditorViewProvider,
+      this.projectEnvironmentViewProvider
+    );
     this.treeSearchViewProvider = new TreeSearchViewProvider(context.extensionUri, {
       treeProvider: this.treeProvider,
       setTreeMessage: (message) => {
@@ -213,6 +229,7 @@ export class Container {
       metadataXmlRemover: this.metadataXmlRemover,
       reloadEntries: () => this.reloadEntries(),
       propertiesViewProvider: this.propertiesProvider,
+      subsystemEditorViewProvider: this.subsystemEditorViewProvider,
       vfs: this.vfs,
       outputChannel: this.outputChannel,
       supportService: this.supportService,

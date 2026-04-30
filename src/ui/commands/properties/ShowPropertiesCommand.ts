@@ -12,6 +12,10 @@ export function registerShowPropertiesCommand(
       if (!node) {
         return;
       }
+      if (node.nodeKind === 'Subsystem') {
+        services.subsystemEditorViewProvider.show(node);
+        return;
+      }
       services.propertiesViewProvider.show(node);
     })
   );

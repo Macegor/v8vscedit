@@ -6,12 +6,12 @@ import { Logger } from './Logger';
 /**
  * Режим поддержки объекта метаданных 1С.
  * Значения соответствуют числовым кодам в `ParentConfigurations.bin`:
- *   0 — снято с поддержки, 1 — запрещено, 2 — разрешено.
+ *   0 — снято с поддержки, 1 — разрешено, 2 — запрещено.
  */
 export const enum SupportMode {
   None = 0,
-  Locked = 1,
-  Editable = 2,
+  Editable = 1,
+  Locked = 2,
 }
 
 interface ConfigSupportData {
