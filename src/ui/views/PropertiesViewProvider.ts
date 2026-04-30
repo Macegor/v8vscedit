@@ -6,12 +6,14 @@ import {
   EnumPropertyValue,
   LocalizedStringValue,
   MetadataTypeValue,
+  MultiEnumPropertyValue,
   ObjectPropertyItem,
   ObjectPropertiesCollection,
 } from '../tree/nodeBuilders/_types';
 import { getHandlerForNode } from '../tree/nodeBuilders/index';
 import { TypeRegistryService } from './properties/TypeRegistryService';
 import { buildMetadataTypeInnerXml, ensureDefaultQualifiers } from './properties/MetadataTypeService';
+import { toCanonicalPropertyInput } from './properties/PropertyPresentationRegistry';
 import { ConfigurationXmlEditor } from '../../infra/xml';
 import { extractChildMetaElementXml, extractColumnXmlFromTabularSection } from '../../infra/xml';
 import { RepositoryService } from '../../infra/repository/RepositoryService';
@@ -296,6 +298,17 @@ export class PropertiesViewProvider implements vscode.Disposable {
           .join('');
         return `<select class="select" data-prop-key="${escapeHtml(property.key)}" data-prop-kind="string" ${disabledAttr}>${options}</select>`;
       }
+      case 'multiEnum': {
+        const multiValue = property.value as MultiEnumPropertyValue;
+        const selected = new Set(multiValue.selected);
+        const options = multiValue.allowedValues
+          .map((option) => {
+            return `<option value="${escapeHtml(option.value)}" ${selected.has(option.value) ? 'selected' : ''}>${escapeHtml(option.label)}</option>`;
+          })
+          .join('');
+        const size = Math.min(Math.max(multiValue.allowedValues.length, 2), 8);
+        return `<select class="select" data-prop-key="${escapeHtml(property.key)}" data-prop-kind="multiEnum" multiple size="${size}" ${disabledAttr}>${options}</select>`;
+      }
       case 'localizedString': {
         const localized = property.value as LocalizedStringValue;
         const renderValue = String(localized.presentation);
@@ -314,6 +327,9 @@ export class PropertiesViewProvider implements vscode.Disposable {
       default:
         if (property.kind === 'metadataType') {
           return this.renderMetadataTypeControl(property, isEditLocked || property.readonly === true);
+        }
+        if (String(property.value ?? '').includes('\n')) {
+          return `<textarea class="textarea" data-prop-key="${escapeHtml(property.key)}" data-prop-kind="string" ${readonlyAttr}>${escapeHtml(String(property.value ?? ''))}</textarea>`;
         }
         return `<input class="input" data-prop-key="${escapeHtml(property.key)}" data-prop-kind="string" type="text" value="${escapeHtml(String(property.value ?? ''))}" ${readonlyAttr} />`;
     }
@@ -442,7 +458,11 @@ export class PropertiesViewProvider implements vscode.Disposable {
         });
       }
       const postPropertyChange = (el, key, kind) => {
-        const value = el.type === 'checkbox' ? Boolean(el.checked) : String(el.value ?? '');
+        const value = el.multiple
+          ? Array.from(el.selectedOptions).map((option) => String(option.value ?? ''))
+          : el.type === 'checkbox'
+          ? Boolean(el.checked)
+          : String(el.value ?? '');
         vscode.postMessage({ type: 'propertyChanged', key, kind, value });
       };
       document.querySelectorAll('[data-prop-key]').forEach((el) => {
@@ -480,7 +500,14 @@ export class PropertiesViewProvider implements vscode.Disposable {
   }
 
   private async handleWebviewMessage(message: unknown): Promise<void> {
-    const msg = message as { type?: string; qualifiers?: Record<string, string>; presentation?: string; key?: string; value?: string | boolean; kind?: string };
+    const msg = message as {
+      type?: string;
+      qualifiers?: Record<string, string>;
+      presentation?: string;
+      key?: string;
+      value?: string | boolean | string[];
+      kind?: string;
+    };
     if (!this.activeNode || !this.panel) {
       return;
     }
@@ -646,7 +673,7 @@ export class PropertiesViewProvider implements vscode.Disposable {
     }
   }
 
-  private async applyPropertyChange(key?: string, value?: string | boolean): Promise<void> {
+  private async applyPropertyChange(key?: string, value?: string | boolean | string[]): Promise<void> {
     if (!this.activeNode || !key) {
       return;
     }
@@ -658,18 +685,34 @@ export class PropertiesViewProvider implements vscode.Disposable {
       this.showReadonlyPropertyWarning(currentProperty);
       return;
     }
-    if (currentProperty.kind !== 'string' && currentProperty.kind !== 'boolean' && currentProperty.kind !== 'localizedString') {
+    if (
+      currentProperty.kind !== 'string' &&
+      currentProperty.kind !== 'boolean' &&
+      currentProperty.kind !== 'enum' &&
+      currentProperty.kind !== 'multiEnum' &&
+      currentProperty.kind !== 'localizedString'
+    ) {
       return;
     }
     const nextValue = currentProperty.kind === 'boolean'
       ? value === true
+      : currentProperty.kind === 'multiEnum'
+      ? Array.isArray(value) ? value : []
       : String(value ?? '');
     const currentValue = currentProperty.kind === 'boolean'
       ? currentProperty.value === true
       : currentProperty.kind === 'localizedString'
       ? (currentProperty.value as LocalizedStringValue).presentation
+      : currentProperty.kind === 'enum'
+      ? (currentProperty.value as EnumPropertyValue).current
+      : currentProperty.kind === 'multiEnum'
+      ? (currentProperty.value as MultiEnumPropertyValue).selected
       : String(currentProperty.value ?? '');
-    if (nextValue === currentValue) {
+    if (arePropertyEditValuesEqual(nextValue, currentValue)) {
+      return;
+    }
+    if (this.isConfigurationRootNode(this.activeNode)) {
+      await this.applyConfigurationPropertyChange(key, currentProperty, nextValue);
       return;
     }
     const propertyTarget = resolvePropertyTarget(this.activeNode);
@@ -684,14 +727,25 @@ export class PropertiesViewProvider implements vscode.Disposable {
       await this.renameObject(nextValue);
       return;
     }
-    const valueKind: 'string' | 'boolean' | 'localizedString' = currentProperty.kind;
+    if (currentProperty.kind === 'multiEnum') {
+      void vscode.window.showWarningMessage('Изменение этого свойства поддержано только для корня конфигурации.');
+      return;
+    }
+    const valueKind: 'string' | 'boolean' | 'localizedString' = currentProperty.kind === 'enum'
+      ? 'string'
+      : currentProperty.kind;
+    const objectValue = Array.isArray(nextValue)
+      ? ''
+      : currentProperty.kind === 'string'
+      ? toCanonicalPropertyInput(String(nextValue ?? ''))
+      : nextValue;
     const saved = this.xmlEditor.modifyObjectProperty(propertyTarget.xmlPath, {
       targetKind: propertyTarget.targetKind,
       targetName: propertyTarget.targetName,
       tabularSectionName: propertyTarget.tabularSectionName,
       propertyKey: key,
       valueKind,
-      value: nextValue,
+      value: objectValue,
     });
     if (!saved.success) {
       void vscode.window.showErrorMessage(saved.errors[0] ?? `Не удалось изменить свойство "${key}".`);
@@ -700,6 +754,44 @@ export class PropertiesViewProvider implements vscode.Disposable {
     if (saved.changed && this.panel && this.activeNode) {
       this.panel.webview.html = this.renderHtml(this.activeNode);
     }
+  }
+
+  private async applyConfigurationPropertyChange(
+    key: string,
+    property: ObjectPropertyItem,
+    value: string | boolean | string[]
+  ): Promise<void> {
+    if (!this.activeNode?.xmlPath) {
+      return;
+    }
+
+    const kind = property.kind === 'localizedString'
+      ? 'localized'
+      : property.kind === 'boolean'
+      ? 'boolean'
+      : property.kind === 'multiEnum'
+      ? 'multiEnum'
+      : key === 'DefaultLanguage'
+      ? 'reference'
+      : 'scalar';
+
+    const scalarValue = typeof value === 'string' && (kind === 'scalar' || kind === 'reference')
+      ? toCanonicalPropertyInput(value)
+      : value;
+    const saved = key === 'DefaultRoles' && Array.isArray(value)
+      ? this.xmlEditor.setDefaultRoles(this.activeNode.xmlPath, value)
+      : this.xmlEditor.modifyConfigurationProperty(this.activeNode.xmlPath, key, scalarValue, kind);
+    if (!saved.success) {
+      void vscode.window.showErrorMessage(saved.errors[0] ?? `Не удалось изменить свойство "${key}".`);
+      return;
+    }
+    if (saved.changed && this.panel && this.activeNode) {
+      this.panel.webview.html = this.renderHtml(this.activeNode);
+    }
+  }
+
+  private isConfigurationRootNode(node: MetadataNode): boolean {
+    return node.nodeKind === 'configuration' || node.nodeKind === 'extension';
   }
 
   private getRenderTypeValue(property: ObjectPropertyItem): MetadataTypeValue {
@@ -866,6 +958,18 @@ function toNumberOrUndefined(value: string | undefined): number | undefined {
   }
   const num = Number(value);
   return Number.isFinite(num) ? num : undefined;
+}
+
+function arePropertyEditValuesEqual(left: string | boolean | string[], right: string | boolean | string[]): boolean {
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+      return false;
+    }
+    const sortedLeft = [...left].sort();
+    const sortedRight = [...right].sort();
+    return sortedLeft.every((value, index) => value === sortedRight[index]);
+  }
+  return left === right;
 }
 
 function resolveTypeTarget(node: MetadataNode): {

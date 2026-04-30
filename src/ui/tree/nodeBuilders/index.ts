@@ -12,6 +12,7 @@ import { chartOfCalculationTypesHandler } from './chartOfCalculationTypes';
 import { chartOfCharacteristicTypesHandler } from './chartOfCharacteristicTypes';
 import { commonAttributeHandler } from './commonAttribute';
 import { commonModuleHandler } from './commonModule';
+import { configurationHandler } from './configuration';
 import { constantHandler } from './constant';
 import { dataProcessorHandler } from './dataProcessor';
 import { documentHandler } from './document';
@@ -57,6 +58,8 @@ const xdtoPackageHandler = createLeafMetaObjectHandler('XDTOPackage');
  * Каждый тип из навигатора — отдельный модуль в этой папке.
  */
 const HANDLER_REGISTRY = new Map<string, ObjectHandler>([
+  ['configuration', configurationHandler],
+  ['extension', configurationHandler],
   ['Subsystem', subsystemHandler],
   ['DefinedType', definedTypeHandler],
   ['CommonForm', commonFormHandler],

@@ -55,7 +55,7 @@ export interface MetadataTypeValue {
 }
 
 /** Допустимые виды значений свойства объекта метаданных */
-export type PropertyValueKind = 'string' | 'boolean' | 'enum' | 'localizedString' | 'metadataType';
+export type PropertyValueKind = 'string' | 'boolean' | 'enum' | 'multiEnum' | 'localizedString' | 'metadataType';
 
 /** Значение перечислимого свойства */
 export interface EnumPropertyOption {
@@ -70,6 +70,12 @@ export interface EnumPropertyValue {
   allowedValues: EnumPropertyOption[];
 }
 
+/** Значение свойства с множественным выбором */
+export interface MultiEnumPropertyValue {
+  selected: string[];
+  allowedValues: EnumPropertyOption[];
+}
+
 /** Описание локализованной строки */
 export interface LocalizedStringValue {
   presentation: string;
@@ -80,7 +86,13 @@ export interface LocalizedStringValue {
 }
 
 /** Значение свойства объекта метаданных */
-export type PropertyValue = string | boolean | EnumPropertyValue | LocalizedStringValue | MetadataTypeValue;
+export type PropertyValue =
+  | string
+  | boolean
+  | EnumPropertyValue
+  | MultiEnumPropertyValue
+  | LocalizedStringValue
+  | MetadataTypeValue;
 
 /** Описание одного свойства объекта метаданных */
 export interface ObjectPropertyItem {

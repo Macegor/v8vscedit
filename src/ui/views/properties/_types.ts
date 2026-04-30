@@ -14,6 +14,7 @@ export type {
   MetadataDateQualifiers,
   EnumPropertyOption,
   EnumPropertyValue,
+  MultiEnumPropertyValue,
   LocalizedStringValue,
   PropertyValue,
   ObjectPropertyItem,

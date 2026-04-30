@@ -4,18 +4,32 @@ import {
   EnumPropertyValue,
   LocalizedStringValue,
   MetadataTypeValue,
+  MultiEnumPropertyValue,
   ObjectPropertyItem,
   ObjectPropertiesCollection,
 } from './_types';
 import { extractSimpleTag } from '../../../infra/xml';
 import { getTypedFieldPropertyKeys } from '../../../infra/xml/TypedFieldPropertyRules';
 import { parseMetadataType } from './MetadataTypeService';
-import { extractTopLevelPropertiesChildren } from './MetadataXmlPropertiesService';
+import { extractFirstBalancedBlock, extractTopLevelPropertiesChildren } from './MetadataXmlPropertiesService';
+import {
+  formatEnumDisplayValue,
+  formatPropertyDisplayValue,
+  formatXmlPropertyDisplay,
+  getPropertyTitle,
+} from './PropertyPresentationRegistry';
 
 /** Теги со строкой локализации (v8:item) */
 const LOCALIZED_PROPERTY_TAGS = new Set([
   'Synonym',
   'Comment',
+  'Caption',
+  'ShortCaption',
+  'BriefInformation',
+  'DetailedInformation',
+  'Copyright',
+  'VendorInformationAddress',
+  'ConfigurationInformationAddress',
   'ToolTip',
   'Explanation',
   'ExtendedExplanation',
@@ -49,6 +63,10 @@ const BOOLEAN_PROPERTY_TAGS = new Set([
   'SequentialDataExchange',
   'PostInPrivilegedMode',
   'UnpostInPrivilegedMode',
+  'KeepMappingToExtendedConfigurationObjectsByIDs',
+  'IncludeHelpInContents',
+  'UseManagedFormInOrdinaryApplication',
+  'UseOrdinaryFormInManagedApplication',
 ]);
 
 const FILL_CHECKING_OPTIONS: EnumPropertyOption[] = [
@@ -63,11 +81,313 @@ const INDEXING_OPTIONS: EnumPropertyOption[] = [
   { value: 'IndexWithAdditionalOrder', label: 'Индексировать с дополнительным упорядочиванием' },
 ];
 
+const COMPATIBILITY_MODE_OPTIONS: EnumPropertyOption[] = [
+  { value: 'DontUse', label: 'Не использовать' },
+  { value: 'Version8_1', label: 'Версия 8.1' },
+  { value: 'Version8_2_13', label: 'Версия 8.2.13' },
+  { value: 'Version8_2_16', label: 'Версия 8.2.16' },
+  { value: 'Version8_3_1', label: 'Версия 8.3.1' },
+  { value: 'Version8_3_2', label: 'Версия 8.3.2' },
+  { value: 'Version8_3_3', label: 'Версия 8.3.3' },
+  { value: 'Version8_3_4', label: 'Версия 8.3.4' },
+  { value: 'Version8_3_5', label: 'Версия 8.3.5' },
+  { value: 'Version8_3_6', label: 'Версия 8.3.6' },
+  { value: 'Version8_3_7', label: 'Версия 8.3.7' },
+  { value: 'Version8_3_8', label: 'Версия 8.3.8' },
+  { value: 'Version8_3_9', label: 'Версия 8.3.9' },
+  { value: 'Version8_3_10', label: 'Версия 8.3.10' },
+  { value: 'Version8_3_11', label: 'Версия 8.3.11' },
+  { value: 'Version8_3_12', label: 'Версия 8.3.12' },
+  { value: 'Version8_3_13', label: 'Версия 8.3.13' },
+  { value: 'Version8_3_14', label: 'Версия 8.3.14' },
+  { value: 'Version8_3_15', label: 'Версия 8.3.15' },
+  { value: 'Version8_3_16', label: 'Версия 8.3.16' },
+  { value: 'Version8_3_17', label: 'Версия 8.3.17' },
+  { value: 'Version8_3_18', label: 'Версия 8.3.18' },
+  { value: 'Version8_3_19', label: 'Версия 8.3.19' },
+  { value: 'Version8_3_20', label: 'Версия 8.3.20' },
+  { value: 'Version8_3_21', label: 'Версия 8.3.21' },
+  { value: 'Version8_3_22', label: 'Версия 8.3.22' },
+  { value: 'Version8_3_23', label: 'Версия 8.3.23' },
+  { value: 'Version8_3_24', label: 'Версия 8.3.24' },
+  { value: 'Version8_3_25', label: 'Версия 8.3.25' },
+  { value: 'Version8_3_26', label: 'Версия 8.3.26' },
+  { value: 'Version8_3_27', label: 'Версия 8.3.27' },
+  { value: 'Version8_3_28', label: 'Версия 8.3.28' },
+  { value: 'Version8_5_1', label: 'Версия 8.5.1' },
+];
+
+const ENUM_PROPERTY_OPTIONS: Readonly<Record<string, readonly EnumPropertyOption[]>> = {
+  FillChecking: FILL_CHECKING_OPTIONS,
+  Indexing: INDEXING_OPTIONS,
+  CodeAllowedLength: [
+    { value: 'Variable', label: 'Переменная' },
+    { value: 'Fixed', label: 'Фиксированная' },
+  ],
+  NumberAllowedLength: [
+    { value: 'Variable', label: 'Переменная' },
+    { value: 'Fixed', label: 'Фиксированная' },
+  ],
+  CodeType: [
+    { value: 'String', label: 'Строка' },
+    { value: 'Number', label: 'Число' },
+  ],
+  NumberType: [
+    { value: 'String', label: 'Строка' },
+    { value: 'Number', label: 'Число' },
+  ],
+  CodeSeries: [
+    { value: 'WholeCatalog', label: 'Во всём справочнике' },
+    { value: 'WithinSubordination', label: 'В пределах подчинения' },
+    { value: 'WithinOwnerSubordination', label: 'В пределах подчинения владельцу' },
+    { value: 'WholeCharacteristicKind', label: 'Во всём виде характеристик' },
+    { value: 'WholeChartOfAccounts', label: 'Во всём плане счетов' },
+  ],
+  NumberPeriodicity: [
+    { value: 'Nonperiodical', label: 'Непериодический' },
+    { value: 'Year', label: 'Год' },
+    { value: 'Quarter', label: 'Квартал' },
+    { value: 'Month', label: 'Месяц' },
+    { value: 'Day', label: 'День' },
+  ],
+  ChoiceFoldersAndItems: [
+    { value: 'Items', label: 'Элементы' },
+    { value: 'Folders', label: 'Группы' },
+    { value: 'FoldersAndItems', label: 'Группы и элементы' },
+  ],
+  ChoiceHistoryOnInput: [
+    { value: 'Auto', label: 'Автоматически' },
+    { value: 'DontUse', label: 'Не использовать' },
+  ],
+  QuickChoice: [
+    { value: 'Auto', label: 'Автоматически' },
+    { value: 'DontUse', label: 'Не использовать' },
+    { value: 'Use', label: 'Использовать' },
+  ],
+  CreateOnInput: [
+    { value: 'Auto', label: 'Автоматически' },
+    { value: 'DontUse', label: 'Не использовать' },
+    { value: 'Use', label: 'Использовать' },
+  ],
+  FullTextSearch: [
+    { value: 'DontUse', label: 'Не использовать' },
+    { value: 'Use', label: 'Использовать' },
+  ],
+  FullTextSearchOnInputByString: [
+    { value: 'DontUse', label: 'Не использовать' },
+    { value: 'Use', label: 'Использовать' },
+  ],
+  DataHistory: [
+    { value: 'DontUse', label: 'Не использовать' },
+    { value: 'Use', label: 'Использовать' },
+  ],
+  SearchStringModeOnInputByString: [
+    { value: 'Begin', label: 'С начала строки' },
+    { value: 'AnyPart', label: 'Любая часть строки' },
+  ],
+  ChoiceDataGetModeOnInputByString: [
+    { value: 'Directly', label: 'Непосредственно' },
+  ],
+  DefaultPresentation: [
+    { value: 'AsCode', label: 'В виде кода' },
+    { value: 'AsDescription', label: 'В виде наименования' },
+  ],
+  EditType: [
+    { value: 'InList', label: 'В списке' },
+    { value: 'InDialog', label: 'В диалоге' },
+    { value: 'BothWays', label: 'Обоими способами' },
+  ],
+  Posting: [
+    { value: 'Allow', label: 'Разрешить' },
+    { value: 'Deny', label: 'Запретить' },
+  ],
+  RealTimePosting: [
+    { value: 'Allow', label: 'Разрешить' },
+    { value: 'Deny', label: 'Запретить' },
+  ],
+  RegisterRecordsDeletion: [
+    { value: 'AutoDelete', label: 'Удалять автоматически' },
+    { value: 'AutoDeleteOnUnpost', label: 'Удалять автоматически при отмене проведения' },
+    { value: 'AutoDeleteOff', label: 'Не удалять автоматически' },
+  ],
+  RegisterRecordsWritingOnPost: [
+    { value: 'WriteSelected', label: 'Записывать выбранные' },
+    { value: 'WriteModified', label: 'Записывать изменённые' },
+  ],
+  SequenceFilling: [
+    { value: 'AutoFill', label: 'Заполнять автоматически' },
+    { value: 'AutoFillOff', label: 'Не заполнять автоматически' },
+  ],
+  ChoiceMode: [
+    { value: 'FromForm', label: 'Из формы' },
+    { value: 'QuickChoice', label: 'Быстрый выбор' },
+    { value: 'BothWays', label: 'Обоими способами' },
+  ],
+  FormType: [
+    { value: 'Managed', label: 'Управляемая' },
+  ],
+  Representation: [
+    { value: 'Auto', label: 'Автоматически' },
+    { value: 'Text', label: 'Текст' },
+    { value: 'Picture', label: 'Картинка' },
+    { value: 'PictureAndText', label: 'Картинка и текст' },
+  ],
+  TemplateType: [
+    { value: 'SpreadsheetDocument', label: 'Табличный документ' },
+    { value: 'TextDocument', label: 'Текстовый документ' },
+    { value: 'HTMLDocument', label: 'HTML-документ' },
+    { value: 'BinaryData', label: 'Двоичные данные' },
+    { value: 'DataCompositionSchema', label: 'Схема компоновки данных' },
+    { value: 'DataCompositionAppearanceTemplate', label: 'Шаблон оформления компоновки данных' },
+    { value: 'GraphicalSchema', label: 'Графическая схема' },
+    { value: 'AddIn', label: 'Внешняя компонента' },
+  ],
+  UseInInterfaceCompatibilityMode: [
+    { value: 'Any', label: 'Любой' },
+    { value: 'Version85', label: 'Версия 8.5' },
+  ],
+  RegisterType: [
+    { value: 'Balance', label: 'Остатки' },
+    { value: 'Turnovers', label: 'Обороты' },
+  ],
+  InformationRegisterPeriodicity: [
+    { value: 'Nonperiodical', label: 'Непериодический' },
+    { value: 'Second', label: 'Секунда' },
+    { value: 'Day', label: 'День' },
+    { value: 'Month', label: 'Месяц' },
+    { value: 'Quarter', label: 'Квартал' },
+    { value: 'Year', label: 'Год' },
+    { value: 'RecorderPosition', label: 'Позиция регистратора' },
+  ],
+  WriteMode: [
+    { value: 'Independent', label: 'Независимый' },
+    { value: 'RecorderSubordinate', label: 'Подчинение регистратору' },
+  ],
+  ReturnValuesReuse: [
+    { value: 'DontUse', label: 'Не использовать' },
+    { value: 'DuringRequest', label: 'На время вызова' },
+    { value: 'DuringSession', label: 'На время сеанса' },
+  ],
+  ReuseSessions: [
+    { value: 'AutoUse', label: 'Использовать автоматически' },
+    { value: 'DontUse', label: 'Не использовать' },
+    { value: 'Use', label: 'Использовать' },
+  ],
+  ParameterUseMode: [
+    { value: 'Single', label: 'Одиночный' },
+    { value: 'Multiple', label: 'Множественный' },
+  ],
+  HierarchyType: [
+    { value: 'HierarchyFoldersAndItems', label: 'Иерархия групп и элементов' },
+    { value: 'HierarchyOfItems', label: 'Иерархия элементов' },
+  ],
+  SubordinationUse: [
+    { value: 'ToItems', label: 'Элементам' },
+  ],
+  AutoUse: [
+    { value: 'DontUse', label: 'Не использовать' },
+    { value: 'Use', label: 'Использовать' },
+  ],
+  PredefinedDataUpdate: [
+    { value: 'Auto', label: 'Автоматически' },
+    { value: 'AutoUpdate', label: 'Автообновление' },
+    { value: 'DontAutoUpdate', label: 'Не обновлять автоматически' },
+  ],
+  HTTPMethod: [
+    { value: 'GET', label: 'Получение' },
+    { value: 'POST', label: 'Отправка' },
+    { value: 'PUT', label: 'Замена' },
+    { value: 'DELETE', label: 'Удаление' },
+  ],
+  CompatibilityMode: COMPATIBILITY_MODE_OPTIONS,
+  ConfigurationExtensionCompatibilityMode: COMPATIBILITY_MODE_OPTIONS,
+  ConfigurationExtensionPurpose: [
+    { value: 'Patch', label: 'Исправление' },
+    { value: 'Customization', label: 'Адаптация' },
+    { value: 'AddOn', label: 'Дополнение' },
+  ],
+  DefaultRunMode: [
+    { value: 'ManagedApplication', label: 'Управляемое приложение' },
+    { value: 'OrdinaryApplication', label: 'Обычное приложение' },
+    { value: 'Auto', label: 'Автоматически' },
+  ],
+  ScriptVariant: [
+    { value: 'Russian', label: 'Русский' },
+    { value: 'English', label: 'Английский' },
+  ],
+  DataLockControlMode: [
+    { value: 'Automatic', label: 'Автоматический' },
+    { value: 'Managed', label: 'Управляемый' },
+    { value: 'AutomaticAndManaged', label: 'Автоматический и управляемый' },
+  ],
+  ObjectAutonumerationMode: [
+    { value: 'NotAutoFree', label: 'Не освобождать автоматически' },
+    { value: 'AutoFree', label: 'Освобождать автоматически' },
+  ],
+  ModalityUseMode: [
+    { value: 'DontUse', label: 'Не использовать' },
+    { value: 'Use', label: 'Использовать' },
+    { value: 'UseWithWarnings', label: 'Использовать с предупреждениями' },
+  ],
+  SynchronousPlatformExtensionAndAddInCallUseMode: [
+    { value: 'DontUse', label: 'Не использовать' },
+    { value: 'Use', label: 'Использовать' },
+    { value: 'UseWithWarnings', label: 'Использовать с предупреждениями' },
+  ],
+  InterfaceCompatibilityMode: [
+    { value: 'Version8_2', label: 'Версия 8.2' },
+    { value: 'Version8_2EnableTaxi', label: 'Версия 8.2 с возможностью Такси' },
+    { value: 'Taxi', label: 'Такси' },
+    { value: 'TaxiEnableVersion8_2', label: 'Такси с возможностью версии 8.2' },
+    { value: 'TaxiEnableVersion8_5', label: 'Такси с возможностью версии 8.5' },
+    { value: 'Version8_5EnableTaxi', label: 'Версия 8.5 с возможностью Такси' },
+    { value: 'Version8_5', label: 'Версия 8.5' },
+  ],
+  Version85InterfaceMigrationMode: [
+    { value: 'DontUse', label: 'Не использовать' },
+    { value: 'Use', label: 'Использовать' },
+  ],
+  DatabaseTablespacesUseMode: [
+    { value: 'DontUse', label: 'Не использовать' },
+    { value: 'Use', label: 'Использовать' },
+  ],
+  MainClientApplicationWindowMode: [
+    { value: 'Normal', label: 'Обычный' },
+    { value: 'Fullscreen', label: 'Полноэкранный' },
+    { value: 'Kiosk', label: 'Киоск' },
+  ],
+  MainClientApplicationWindowInterfaceVariant: [
+    { value: 'NavigationLeft', label: 'Панель разделов слева' },
+    { value: 'NavigationTop', label: 'Панель разделов сверху' },
+  ],
+  ClientApplicationTheme: [
+    { value: 'Auto', label: 'Автоматически' },
+    { value: 'Light', label: 'Светлая' },
+    { value: 'Dark', label: 'Тёмная' },
+  ],
+  ClientApplicationWindowsOpenVariant: [
+    { value: 'OpenDataInTabs', label: 'Открывать в закладках' },
+    { value: 'OpenDataInSeparateWindows', label: 'Открывать в отдельных окнах' },
+  ],
+};
+
+const USE_PURPOSE_OPTIONS: EnumPropertyOption[] = [
+  { value: 'PlatformApplication', label: 'Приложение платформы' },
+  { value: 'MobilePlatformApplication', label: 'Мобильное приложение' },
+];
+
 /** Русские подписи известных тегов свойств */
 const PROPERTY_TITLE_RU: Record<string, string> = {
   Name: 'Имя',
   Synonym: 'Синоним',
   Comment: 'Комментарий',
+  Caption: 'Заголовок приложения',
+  ShortCaption: 'Краткий заголовок приложения',
+  BriefInformation: 'Краткая информация',
+  DetailedInformation: 'Подробная информация',
+  Copyright: 'Авторские права',
+  VendorInformationAddress: 'Адрес информации о поставщике',
+  ConfigurationInformationAddress: 'Адрес информации о конфигурации',
   Type: 'Тип',
   PasswordMode: 'Режим пароля',
   Format: 'Формат',
@@ -99,6 +419,65 @@ const PROPERTY_TITLE_RU: Record<string, string> = {
   StandardAttributes: 'Стандартные реквизиты',
   ObjectBelonging: 'Владение объектом',
   ExtendedConfigurationObject: 'Расширенный объект конфигурации',
+  ConfigurationExtensionPurpose: 'Назначение расширения',
+  KeepMappingToExtendedConfigurationObjectsByIDs: 'Сохранять соответствие объектам по идентификаторам',
+  NamePrefix: 'Префикс имён',
+  ConfigurationExtensionCompatibilityMode: 'Режим совместимости расширений конфигурации',
+  CompatibilityMode: 'Режим совместимости',
+  DefaultRunMode: 'Основной режим запуска',
+  UsePurposes: 'Назначение использования',
+  ScriptVariant: 'Вариант встроенного языка',
+  DefaultRoles: 'Основные роли',
+  Vendor: 'Поставщик',
+  Version: 'Версия',
+  UpdateCatalogAddress: 'Адрес каталога обновлений',
+  UseManagedFormInOrdinaryApplication: 'Использовать управляемые формы в обычном приложении',
+  UseOrdinaryFormInManagedApplication: 'Использовать обычные формы в управляемом приложении',
+  AdditionalFullTextSearchDictionaries: 'Дополнительные словари полнотекстового поиска',
+  CommonSettingsStorage: 'Общее хранилище настроек',
+  ReportsUserSettingsStorage: 'Хранилище пользовательских настроек отчётов',
+  ReportsVariantsStorage: 'Хранилище вариантов отчётов',
+  FormDataSettingsStorage: 'Хранилище настроек данных форм',
+  DynamicListsUserSettingsStorage: 'Хранилище пользовательских настроек динамических списков',
+  URLExternalDataStorage: 'Адрес внешнего хранилища данных',
+  Content: 'Содержимое',
+  DefaultReportForm: 'Основная форма отчёта',
+  DefaultReportVariantForm: 'Основная форма варианта отчёта',
+  DefaultReportSettingsForm: 'Основная форма настроек отчёта',
+  DefaultReportAppearanceTemplate: 'Основной шаблон оформления отчёта',
+  DefaultDynamicListSettingsForm: 'Основная форма настроек динамического списка',
+  DefaultSearchForm: 'Основная форма поиска',
+  DefaultDataHistoryChangeHistoryForm: 'Основная форма истории изменений',
+  DefaultDataHistoryVersionDataForm: 'Основная форма данных версии',
+  DefaultDataHistoryVersionDifferencesForm: 'Основная форма различий версий',
+  DefaultCollaborationSystemUsersChoiceForm: 'Основная форма выбора пользователей системы взаимодействия',
+  AuxiliaryReportForm: 'Дополнительная форма отчёта',
+  AuxiliaryReportVariantForm: 'Дополнительная форма варианта отчёта',
+  AuxiliaryReportSettingsForm: 'Дополнительная форма настроек отчёта',
+  AuxiliaryDynamicListSettingsForm: 'Дополнительная форма настроек динамического списка',
+  AuxiliaryDataHistoryChangeHistoryForm: 'Дополнительная форма истории изменений',
+  AuxiliaryDataHistoryVersionDataForm: 'Дополнительная форма данных версии',
+  AuxiliaryDataHistoryVersionDifferencesForm: 'Дополнительная форма различий версий',
+  AuxiliaryCollaborationSystemUsersChoiceForm: 'Дополнительная форма выбора пользователей системы взаимодействия',
+  RequiredMobileApplicationPermissions: 'Требуемые разрешения мобильного приложения',
+  UsedMobileApplicationFunctionalities: 'Используемые возможности мобильного приложения',
+  StandaloneConfigurationRestrictionRoles: 'Роли ограничения автономной конфигурации',
+  MobileApplicationURLs: 'URL мобильного приложения',
+  AllowedIncomingShareRequestTypes: 'Разрешённые типы входящих запросов обмена',
+  MainClientApplicationWindowInterfaceVariant: 'Вариант интерфейса основного окна клиентского приложения',
+  ClientApplicationTheme: 'Тема клиентского приложения',
+  MainClientApplicationWindowMode: 'Режим основного окна клиентского приложения',
+  ClientApplicationWindowsOpenVariant: 'Вариант открытия окон клиентского приложения',
+  DefaultInterface: 'Основной интерфейс',
+  DefaultStyle: 'Основной стиль',
+  DefaultLanguage: 'Основной язык',
+  ObjectAutonumerationMode: 'Режим автоосвобождения номеров',
+  ModalityUseMode: 'Режим использования модальности',
+  SynchronousPlatformExtensionAndAddInCallUseMode: 'Режим синхронных вызовов расширений платформы и внешних компонент',
+  InterfaceCompatibilityMode: 'Режим совместимости интерфейса',
+  Version85InterfaceMigrationMode: 'Режим перехода интерфейса версии 8.5',
+  DatabaseTablespacesUseMode: 'Режим использования табличных пространств базы данных',
+  DefaultConstantsForm: 'Основная форма констант',
   CodeLength: 'Длина кода',
   CodeAllowedLength: 'Допустимая длина кода',
   CodeSeries: 'Серия кодов',
@@ -106,6 +485,7 @@ const PROPERTY_TITLE_RU: Record<string, string> = {
   Autonumbering: 'Автонумерация',
   DefaultPresentation: 'Основное представление',
   EditType: 'Тип кода',
+  CodeType: 'Тип кода',
   DefaultObjectForm: 'Основная форма объекта',
   DefaultRecordForm: 'Основная форма записи',
   DefaultListForm: 'Основная форма списка',
@@ -150,6 +530,49 @@ const PROPERTY_TITLE_RU: Record<string, string> = {
   ExtendedExplanation: 'Расширенное пояснение',
   DataLockControlMode: 'Режим управления блокировкой данных',
   TemplateType: 'Тип макета',
+  UseInInterfaceCompatibilityMode: 'Использовать в режиме совместимости интерфейса',
+  RegisterType: 'Вид регистра',
+  InformationRegisterPeriodicity: 'Периодичность регистра сведений',
+  WriteMode: 'Режим записи',
+  UseInTotals: 'Использовать в итогах',
+  EnableTotalsSplitting: 'Разрешить разделение итогов',
+  EnableTotalsSliceFirst: 'Разрешить итоги среза первых',
+  EnableTotalsSliceLast: 'Разрешить итоги среза последних',
+  ReturnValuesReuse: 'Повторное использование возвращаемых значений',
+  ReuseSessions: 'Повторное использование сеансов',
+  Server: 'Сервер',
+  ExternalConnection: 'Внешнее соединение',
+  ClientManagedApplication: 'Клиент управляемого приложения',
+  ClientOrdinaryApplication: 'Клиент обычного приложения',
+  Privileged: 'Привилегированный',
+  Global: 'Глобальный',
+  FunctionalOption: 'Функциональная опция',
+  ParameterUseMode: 'Режим использования параметра',
+  Hierarchical: 'Иерархический',
+  HierarchyType: 'Вид иерархии',
+  FoldersOnTop: 'Группы сверху',
+  SubordinationUse: 'Использование подчинения',
+  Owners: 'Владельцы',
+  ExtDimensionAccountingFlag: 'Признак учёта субконто',
+  Balance: 'Баланс',
+  AccountingFlag: 'Признак учёта',
+  AutoUse: 'Автоиспользование',
+  DataSeparation: 'Разделение данных',
+  UsersSeparation: 'Разделение пользователей',
+  AuthenticationSeparation: 'Разделение аутентификации',
+  ConfigurationExtensionsSeparation: 'Разделение расширений конфигурации',
+  SeparatedDataUse: 'Использование разделённых данных',
+  IncludeConfigurationExtensions: 'Включать расширения конфигурации',
+  PredefinedDataUpdate: 'Обновление предопределённых данных',
+  Predefined: 'Предопределённый',
+  ModifiesData: 'Изменяет данные',
+  Transactioned: 'Транзакционный',
+  HTTPMethod: 'Метод HTTP',
+  RootURL: 'Корневой URL',
+  Template: 'Шаблон',
+  Handler: 'Обработчик',
+  Event: 'Событие',
+  ProcedureName: 'Имя процедуры',
 };
 
 /** Общие поля корневого объекта (справочник, документ, план обмена, …) */
@@ -311,6 +734,82 @@ const COMMAND_PROPERTY_KEYS: string[] = [
 /** Поля значения перечисления (в т.ч. оформление в списке) */
 const ENUM_VALUE_PROPERTY_KEYS: string[] = ['Name', 'Synonym', 'Comment', 'Color'];
 
+/** Канонический порядок свойств корня Configuration.xml */
+const CONFIGURATION_PROPERTY_KEYS: string[] = [
+  'ObjectBelonging',
+  'Name',
+  'Synonym',
+  'Comment',
+  'ConfigurationExtensionPurpose',
+  'KeepMappingToExtendedConfigurationObjectsByIDs',
+  'NamePrefix',
+  'ConfigurationExtensionCompatibilityMode',
+  'DefaultRunMode',
+  'UsePurposes',
+  'ScriptVariant',
+  'DefaultRoles',
+  'Vendor',
+  'Version',
+  'UpdateCatalogAddress',
+  'IncludeHelpInContents',
+  'UseManagedFormInOrdinaryApplication',
+  'UseOrdinaryFormInManagedApplication',
+  'AdditionalFullTextSearchDictionaries',
+  'CommonSettingsStorage',
+  'ReportsUserSettingsStorage',
+  'ReportsVariantsStorage',
+  'FormDataSettingsStorage',
+  'DynamicListsUserSettingsStorage',
+  'URLExternalDataStorage',
+  'Content',
+  'DefaultReportForm',
+  'DefaultReportVariantForm',
+  'DefaultReportSettingsForm',
+  'DefaultReportAppearanceTemplate',
+  'DefaultDynamicListSettingsForm',
+  'DefaultSearchForm',
+  'DefaultDataHistoryChangeHistoryForm',
+  'DefaultDataHistoryVersionDataForm',
+  'DefaultDataHistoryVersionDifferencesForm',
+  'DefaultCollaborationSystemUsersChoiceForm',
+  'AuxiliaryReportForm',
+  'AuxiliaryReportVariantForm',
+  'AuxiliaryReportSettingsForm',
+  'AuxiliaryDynamicListSettingsForm',
+  'AuxiliaryDataHistoryChangeHistoryForm',
+  'AuxiliaryDataHistoryVersionDataForm',
+  'AuxiliaryDataHistoryVersionDifferencesForm',
+  'AuxiliaryCollaborationSystemUsersChoiceForm',
+  'RequiredMobileApplicationPermissions',
+  'UsedMobileApplicationFunctionalities',
+  'StandaloneConfigurationRestrictionRoles',
+  'MobileApplicationURLs',
+  'AllowedIncomingShareRequestTypes',
+  'MainClientApplicationWindowInterfaceVariant',
+  'ClientApplicationTheme',
+  'MainClientApplicationWindowMode',
+  'ClientApplicationWindowsOpenVariant',
+  'DefaultInterface',
+  'Caption',
+  'ShortCaption',
+  'DefaultStyle',
+  'DefaultLanguage',
+  'BriefInformation',
+  'DetailedInformation',
+  'Copyright',
+  'VendorInformationAddress',
+  'ConfigurationInformationAddress',
+  'DataLockControlMode',
+  'ObjectAutonumerationMode',
+  'ModalityUseMode',
+  'SynchronousPlatformExtensionAndAddInCallUseMode',
+  'InterfaceCompatibilityMode',
+  'Version85InterfaceMigrationMode',
+  'DatabaseTablespacesUseMode',
+  'CompatibilityMode',
+  'DefaultConstantsForm',
+];
+
 /** Порядок ключей корня по типу объекта */
 export function getRootPropertyKeyOrder(rootMetaKind: NodeKind): string[] {
   if (rootMetaKind === 'ExchangePlan') {
@@ -361,8 +860,9 @@ export function extractLocalizedStringValue(xml: string, tagName: string): Local
   };
 }
 
-function isBooleanTrue(xml: string, tag: string): boolean {
-  return (extractSimpleTag(xml, tag) ?? '').trim().toLowerCase() === 'true';
+function isBooleanScalar(value: string | undefined): value is string {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === 'true' || normalized === 'false';
 }
 
 function summarizeTypeBlock(propertiesSource: string): string {
@@ -374,16 +874,35 @@ function summarizeTypeBlock(propertiesSource: string): string {
 }
 
 function propertyTitle(key: string): string {
-  return PROPERTY_TITLE_RU[key] ?? key;
+  return getPropertyTitle(key, PROPERTY_TITLE_RU);
 }
 
 function buildEnumValue(current: string, options: EnumPropertyOption[]): EnumPropertyValue {
-  const opt = options.find((o) => o.value === current);
+  const completeOptions = ensureCurrentOption(options, current);
+  const opt = completeOptions.find((o) => o.value === current);
   return {
     current,
     currentLabel: opt?.label ?? current,
-    allowedValues: options,
+    allowedValues: completeOptions,
   };
+}
+
+function ensureCurrentOption(options: readonly EnumPropertyOption[], current: string): EnumPropertyOption[] {
+  const result = [...options];
+  if (current && !result.some((option) => option.value === current)) {
+    result.push({ value: current, label: formatEnumDisplayValue(current) });
+  }
+  return result;
+}
+
+function ensureSelectedOptions(options: readonly EnumPropertyOption[], selected: readonly string[]): EnumPropertyOption[] {
+  const result = [...options];
+  for (const value of selected) {
+    if (value && !result.some((option) => option.value === value)) {
+      result.push({ value, label: formatPropertyDisplayValue(value) });
+    }
+  }
+  return result;
 }
 
 /**
@@ -396,6 +915,9 @@ export function buildPropertyItemsForKeys(
 ): ObjectPropertiesCollection {
   const propsInner = extractPropertiesInnerFromElement(xmlOrPropertiesInner) ?? xmlOrPropertiesInner;
   const typeSource = options?.elementXmlForType ?? xmlOrPropertiesInner;
+  const childrenByTag = new Map(
+    extractTopLevelPropertiesChildren(`<Properties>${propsInner}</Properties>`).map((child) => [child.tag, child.inner])
+  );
   const items: ObjectPropertyItem[] = [];
 
   for (const key of orderedKeys) {
@@ -409,6 +931,19 @@ export function buildPropertyItemsForKeys(
         title: propertyTitle('Type'),
         kind: 'metadataType',
         value: parseMetadataType(typeInner),
+      });
+      continue;
+    }
+
+    if (key === 'UsePurposes') {
+      items.push({
+        key,
+        title: propertyTitle(key),
+        kind: 'multiEnum',
+        value: {
+          selected: extractUsePurposeValues(childrenByTag.get(key) ?? ''),
+          allowedValues: USE_PURPOSE_OPTIONS,
+        },
       });
       continue;
     }
@@ -427,7 +962,9 @@ export function buildPropertyItemsForKeys(
       continue;
     }
 
-    if (BOOLEAN_PROPERTY_TAGS.has(key)) {
+    const rawSimpleValue = extractSimpleTag(propsInner, key);
+
+    if ((BOOLEAN_PROPERTY_TAGS.has(key) || isBooleanScalar(rawSimpleValue)) && isBooleanScalar(rawSimpleValue)) {
       if (!propsInner.includes(`<${key}>`)) {
         continue;
       }
@@ -435,48 +972,39 @@ export function buildPropertyItemsForKeys(
         key,
         title: propertyTitle(key),
         kind: 'boolean',
-        value: isBooleanTrue(propsInner, key),
+        value: rawSimpleValue.trim().toLowerCase() === 'true',
       });
       continue;
     }
 
-    if (key === 'FillChecking') {
-      const current = extractSimpleTag(propsInner, key) ?? 'DontCheck';
-      if (!propsInner.includes('<FillChecking>')) {
+    const enumOptions = ENUM_PROPERTY_OPTIONS[key];
+    if (enumOptions) {
+      const current = rawSimpleValue ?? '';
+      if (!propsInner.includes(`<${key}>`)) {
         continue;
       }
       items.push({
         key,
         title: propertyTitle(key),
         kind: 'enum',
-        value: buildEnumValue(current, FILL_CHECKING_OPTIONS),
+        value: buildEnumValue(current, [...enumOptions]),
       });
       continue;
     }
 
-    if (key === 'Indexing') {
-      const current = extractSimpleTag(propsInner, key) ?? 'DontIndex';
-      if (!propsInner.includes('<Indexing>')) {
-        continue;
-      }
-      items.push({
-        key,
-        title: propertyTitle(key),
-        kind: 'enum',
-        value: buildEnumValue(current, INDEXING_OPTIONS),
-      });
-      continue;
-    }
-
-    const raw = extractSimpleTag(propsInner, key);
-    if (raw === undefined && !hasSelfClosingProperty(propsInner, key)) {
+    const raw = rawSimpleValue;
+    const complexInner = childrenByTag.get(key);
+    if (raw === undefined && complexInner === undefined && !hasSelfClosingProperty(propsInner, key)) {
       continue;
     }
     items.push({
       key,
       title: propertyTitle(key),
       kind: 'string',
-      value: raw ?? '',
+      value: raw === undefined
+        ? complexInner === undefined ? '' : formatReadonlyXmlProperty(key, complexInner)
+        : formatPropertyDisplayValue(raw),
+      readonly: raw === undefined && complexInner !== undefined && complexInner.trim().includes('<'),
     });
   }
 
@@ -497,8 +1025,12 @@ export function buildEffectivePropertyItemsForKeys(
     includeExtraKeys?: boolean;
   }
 ): ObjectPropertiesCollection {
+  const localEffectiveKeys = options?.includeExtraKeys
+    ? extendKeysWithTopLevelProperties(orderedKeys, [localXmlOrPropertiesInner])
+    : orderedKeys;
+
   if (!inheritedXmlOrPropertiesInner) {
-    return buildPropertyItemsForKeys(localXmlOrPropertiesInner, orderedKeys, {
+    return buildPropertyItemsForKeys(localXmlOrPropertiesInner, localEffectiveKeys, {
       elementXmlForType: options?.elementXmlForType,
     }).map(markLocal);
   }
@@ -551,8 +1083,100 @@ export function buildRootMetaObjectProperties(
     ? extractRootObjectPropertiesInnerXml(inheritedFullObjectXml)
     : null;
   return buildEffectivePropertyItemsForKeys(inner, inheritedInner, getRootPropertyKeyOrder(rootMetaKind), {
-    includeExtraKeys: Boolean(inheritedInner),
+    includeExtraKeys: true,
   });
+}
+
+/** Свойства самой конфигурации или расширения из корневого Configuration.xml */
+export function buildConfigurationProperties(fullConfigXml: string): ObjectPropertiesCollection {
+  const propertiesInner = extractFirstBalancedBlock(fullConfigXml, 'Properties');
+  if (propertiesInner === null) {
+    return [];
+  }
+
+  const children = extractTopLevelPropertiesChildren(`<Properties>${propertiesInner}</Properties>`);
+  const byTag = new Map(children.map((child) => [child.tag, child.inner]));
+  const orderedKeys = extendKeysWithTopLevelProperties(CONFIGURATION_PROPERTY_KEYS, [propertiesInner]);
+  const roleOptions = buildRoleOptions(fullConfigXml);
+  const result: ObjectPropertyItem[] = [];
+
+  for (const key of orderedKeys) {
+    if (!byTag.has(key)) {
+      continue;
+    }
+
+    if (key === 'UsePurposes') {
+      result.push({
+        key,
+        title: propertyTitle(key),
+        kind: 'multiEnum',
+        value: {
+          selected: extractUsePurposeValues(byTag.get(key) ?? ''),
+          allowedValues: USE_PURPOSE_OPTIONS,
+        },
+      });
+      continue;
+    }
+
+    if (key === 'DefaultRoles') {
+      const selected = extractDefaultRoleValues(byTag.get(key) ?? '');
+      result.push({
+        key,
+        title: propertyTitle(key),
+        kind: 'multiEnum',
+        value: {
+          selected,
+          allowedValues: ensureSelectedOptions(roleOptions, selected),
+        },
+      });
+      continue;
+    }
+
+    if (LOCALIZED_PROPERTY_TAGS.has(key)) {
+      result.push({
+        key,
+        title: propertyTitle(key),
+        kind: 'localizedString',
+        value: extractLocalizedStringValue(propertiesInner, key),
+      });
+      continue;
+    }
+
+    const rawSimpleValue = extractSimpleTag(propertiesInner, key);
+
+    if ((BOOLEAN_PROPERTY_TAGS.has(key) || isBooleanScalar(rawSimpleValue)) && isBooleanScalar(rawSimpleValue)) {
+      result.push({
+        key,
+        title: propertyTitle(key),
+        kind: 'boolean',
+        value: rawSimpleValue.trim().toLowerCase() === 'true',
+      });
+      continue;
+    }
+
+    const enumOptions = ENUM_PROPERTY_OPTIONS[key];
+    if (enumOptions) {
+      result.push({
+        key,
+        title: propertyTitle(key),
+        kind: 'enum',
+        value: buildEnumValue((rawSimpleValue ?? '').trim(), [...enumOptions]),
+      });
+      continue;
+    }
+
+    const inner = byTag.get(key) ?? '';
+    const raw = rawSimpleValue;
+    result.push({
+      key,
+      title: propertyTitle(key),
+      kind: 'string',
+      value: raw === undefined ? formatReadonlyXmlProperty(key, inner) : formatPropertyDisplayValue(raw),
+      readonly: raw === undefined && inner.trim().includes('<'),
+    });
+  }
+
+  return result;
 }
 
 /** Свойства типового реквизита / измерения / ресурса / колонки */
@@ -564,11 +1188,39 @@ export function buildTypedFieldProperties(
   return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, getTypedFieldPropertyKeyOrder(keySource), {
     elementXmlForType: elementFullXml,
     inheritedElementXmlForType: inheritedElementFullXml ?? undefined,
+    includeExtraKeys: true,
   });
 }
 
 function hasSelfClosingProperty(xml: string, key: string): boolean {
   return new RegExp(`<${key}(?:\\s[^>]*)?\\/>`).test(xml);
+}
+
+function extractUsePurposeValues(innerXml: string): string[] {
+  return Array.from(innerXml.matchAll(/<v8:Value\b[^>]*>([^<]+)<\/v8:Value>/g))
+    .map((match) => match[1].trim())
+    .filter((value) => value.length > 0);
+}
+
+function extractDefaultRoleValues(innerXml: string): string[] {
+  return Array.from(innerXml.matchAll(/<xr:Item\b[^>]*>([^<]+)<\/xr:Item>/g))
+    .map((match) => match[1].trim())
+    .filter((value) => value.length > 0);
+}
+
+function buildRoleOptions(fullConfigXml: string): EnumPropertyOption[] {
+  const childObjectsInner = extractFirstBalancedBlock(fullConfigXml, 'ChildObjects') ?? '';
+  const roles = Array.from(childObjectsInner.matchAll(/<Role>([^<]+)<\/Role>/g))
+    .map((match) => match[1].trim())
+    .filter((value) => value.length > 0);
+  return roles.map((role) => ({
+    value: role.includes('.') ? role : `Role.${role}`,
+    label: formatPropertyDisplayValue(role.includes('.') ? role : `Role.${role}`),
+  }));
+}
+
+function formatReadonlyXmlProperty(key: string, innerXml: string): string {
+  return formatXmlPropertyDisplay(key, innerXml);
 }
 
 function getTypedFieldPropertyKeyOrder(elementFullXml: string): string[] {
@@ -587,26 +1239,36 @@ export function buildTabularSectionProperties(
   elementFullXml: string,
   inheritedElementFullXml?: string | null
 ): ObjectPropertiesCollection {
-  return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, TABULAR_SECTION_PROPERTY_KEYS);
+  return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, TABULAR_SECTION_PROPERTY_KEYS, {
+    includeExtraKeys: true,
+  });
 }
 
 export function buildFormLikeProperties(elementFullXml: string, inheritedElementFullXml?: string | null): ObjectPropertiesCollection {
-  return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, FORM_PROPERTY_KEYS);
+  return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, FORM_PROPERTY_KEYS, {
+    includeExtraKeys: true,
+  });
 }
 
 export function buildCommandProperties(elementFullXml: string, inheritedElementFullXml?: string | null): ObjectPropertiesCollection {
-  return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, COMMAND_PROPERTY_KEYS);
+  return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, COMMAND_PROPERTY_KEYS, {
+    includeExtraKeys: true,
+  });
 }
 
 export function buildEnumValueProperties(elementFullXml: string, inheritedElementFullXml?: string | null): ObjectPropertiesCollection {
-  return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, ENUM_VALUE_PROPERTY_KEYS);
+  return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, ENUM_VALUE_PROPERTY_KEYS, {
+    includeExtraKeys: true,
+  });
 }
 
 const TEMPLATE_META_PROPERTY_KEYS: string[] = ['Name', 'Synonym', 'Comment', 'TemplateType'];
 
 /** Свойства макета по файлу описания в каталоге Templates */
 export function buildTemplateMetaProperties(elementFullXml: string, inheritedElementFullXml?: string | null): ObjectPropertiesCollection {
-  return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, TEMPLATE_META_PROPERTY_KEYS);
+  return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, TEMPLATE_META_PROPERTY_KEYS, {
+    includeExtraKeys: true,
+  });
 }
 
 const READONLY_SYSTEM_PROPERTY_KEYS = new Set(['ObjectBelonging', 'ExtendedConfigurationObject']);
@@ -678,6 +1340,11 @@ function arePropertyItemsEquivalent(left: ObjectPropertyItem, right: ObjectPrope
       return left.value === right.value;
     case 'enum':
       return (left.value as EnumPropertyValue).current === (right.value as EnumPropertyValue).current;
+    case 'multiEnum':
+      return areStringArraysEquivalent(
+        (left.value as MultiEnumPropertyValue).selected,
+        (right.value as MultiEnumPropertyValue).selected
+      );
     case 'localizedString':
       return areLocalizedValuesEquivalent(left.value as LocalizedStringValue, right.value as LocalizedStringValue);
     case 'metadataType':
@@ -686,6 +1353,15 @@ function arePropertyItemsEquivalent(left: ObjectPropertyItem, right: ObjectPrope
     default:
       return normalizeScalarValue(String(left.value ?? '')) === normalizeScalarValue(String(right.value ?? ''));
   }
+}
+
+function areStringArraysEquivalent(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  const sortedLeft = [...left].sort();
+  const sortedRight = [...right].sort();
+  return sortedLeft.every((value, index) => value === sortedRight[index]);
 }
 
 function areLocalizedValuesEquivalent(left: LocalizedStringValue, right: LocalizedStringValue): boolean {

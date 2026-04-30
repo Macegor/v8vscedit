@@ -5,7 +5,7 @@ import { getObjectLocationFromXml } from '../fs/ObjectLocation';
 import { ObjectXmlReader } from './ObjectXmlReader';
 
 type PropertyValueKind = 'string' | 'boolean' | 'localizedString';
-type RootPropertyKind = 'scalar' | 'localized' | 'reference';
+type RootPropertyKind = 'scalar' | 'localized' | 'reference' | 'boolean' | 'multiEnum';
 
 export interface EditResult {
   success: boolean;
@@ -51,7 +51,7 @@ export class ConfigurationXmlEditor {
   modifyConfigurationProperty(
     configXmlPath: string,
     propertyName: string,
-    value: string,
+    value: string | boolean | string[],
     kind: RootPropertyKind
   ): EditResult {
     if (!fs.existsSync(configXmlPath)) {
@@ -62,7 +62,7 @@ export class ConfigurationXmlEditor {
     if (!properties) {
       return this.fail('В Configuration.xml отсутствует блок <Properties>.');
     }
-    const propRe = new RegExp(`<${propertyName}>[\\s\\S]*?<\\/${propertyName}>`);
+    const propRe = new RegExp(`<${propertyName}>[\\s\\S]*?<\\/${propertyName}>|<${propertyName}\\s*\\/>`);
     if (!propRe.test(properties)) {
       return this.fail(`Свойство "${propertyName}" не найдено.`);
     }
@@ -299,21 +299,37 @@ export class ConfigurationXmlEditor {
     return this.ok([configXmlPath]);
   }
 
-  private buildRootPropertyBlock(propertyName: string, value: string, kind: RootPropertyKind): string {
+  private buildRootPropertyBlock(propertyName: string, value: string | boolean | string[], kind: RootPropertyKind): string {
+    if (kind === 'boolean') {
+      return `<${propertyName}>${value === true ? 'true' : 'false'}</${propertyName}>`;
+    }
+    if (kind === 'multiEnum' && propertyName === 'UsePurposes') {
+      const values = Array.isArray(value) ? value : [String(value ?? '')].filter((item) => item.length > 0);
+      if (values.length === 0) {
+        return '<UsePurposes/>';
+      }
+      return [
+        '<UsePurposes>',
+        ...values.map((item) => `\t\t\t\t<v8:Value xsi:type="app:ApplicationUsePurpose">${escapeXmlText(item)}</v8:Value>`),
+        '</UsePurposes>',
+      ].join('\n');
+    }
     if (kind === 'localized') {
-      if (!value) {
+      const localizedValue = String(value ?? '');
+      if (!localizedValue) {
         return `<${propertyName}></${propertyName}>`;
       }
       return [
         `<${propertyName}>`,
         '\t\t\t\t<v8:item>',
         '\t\t\t\t\t<v8:lang>ru</v8:lang>',
-        `\t\t\t\t\t<v8:content>${escapeXmlText(value)}</v8:content>`,
+        `\t\t\t\t\t<v8:content>${escapeXmlText(localizedValue)}</v8:content>`,
         '\t\t\t\t</v8:item>',
         `</${propertyName}>`,
       ].join('\n');
     }
-    const normalized = kind === 'reference' && value && !value.includes('.') ? `Language.${value}` : value;
+    const stringValue = String(value ?? '');
+    const normalized = kind === 'reference' && stringValue && !stringValue.includes('.') ? `Language.${stringValue}` : stringValue;
     return `<${propertyName}>${escapeXmlText(normalized)}</${propertyName}>`;
   }
 

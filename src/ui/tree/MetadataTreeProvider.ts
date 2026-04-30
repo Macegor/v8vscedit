@@ -503,9 +503,9 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
       decorationPath: cached.decorationPath,
       gitDecorationTarget: cached.gitDecorationTarget,
       ownershipTag: cached.ownershipTag,
-      hidePropertiesCommand: cached.hidePropertiesCommand ||
-        cached.type === 'configuration' ||
-        cached.type === 'extension',
+      hidePropertiesCommand: cached.hidePropertiesCommand &&
+        cached.type !== 'configuration' &&
+        cached.type !== 'extension',
       metaContext: cached.metaContext,
       addMetadataTarget: cached.addMetadataTarget,
       canRemoveMetadata: cached.canRemoveMetadata,

@@ -46,7 +46,7 @@ export type MetadataCacheAddTarget =
   };
 
 export interface MetadataCacheSnapshot {
-  schemaVersion: 8;
+  schemaVersion: 9;
   scopeKey: string;
   generatedAt: string;
   rootPath: string;
@@ -60,7 +60,7 @@ export interface MetadataCacheUpdateResult {
 }
 
 const METADATA_CACHE_DIR = path.join('.v8vscedit', 'meta');
-const CACHE_SCHEMA_VERSION = 8;
+const CACHE_SCHEMA_VERSION = 9;
 
 /**
  * Строит полный снимок дерева метаданных без ленивых загрузчиков, чтобы UI мог восстановить дерево из JSON.
@@ -259,7 +259,6 @@ function buildConfigNode(entry: ConfigEntry, info: ConfigInfo): MetadataCacheNod
     xmlPath: path.join(entry.rootPath, 'Configuration.xml'),
     decorationPath: entry.rootPath,
     tooltip: info.synonym || undefined,
-    hidePropertiesCommand: true,
     children: buildConfigChildren(entry, info),
   });
 }
