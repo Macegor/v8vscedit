@@ -120,12 +120,15 @@ export class Container {
       this.supportService,
       this.repositoryService
     );
+    this.subsystemXmlService = new SubsystemXmlService();
     this.propertiesProvider = new PropertiesViewProvider(
+      context.extensionUri,
+      this.subsystemXmlService,
       this.supportService,
       this.repositoryService,
-      (configRoot, oldXmlPath, newXmlPath) => this.handleAfterRename(configRoot, oldXmlPath, newXmlPath)
+      (configRoot, oldXmlPath, newXmlPath) => this.handleAfterRename(configRoot, oldXmlPath, newXmlPath),
+      () => this.treeProvider.refresh()
     );
-    this.subsystemXmlService = new SubsystemXmlService();
     this.subsystemEditorViewProvider = new SubsystemEditorViewProvider(
       context.extensionUri,
       this.subsystemXmlService,

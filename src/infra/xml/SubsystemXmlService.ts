@@ -63,6 +63,22 @@ export interface SubsystemEditorSnapshot {
   contentTree: MetadataRefTreeNode[];
 }
 
+export interface SubsystemMembershipTreeNode {
+  id: string;
+  name: string;
+  label: string;
+  xmlPath: string;
+  checked: boolean;
+  children: SubsystemMembershipTreeNode[];
+}
+
+export interface SubsystemMembershipSnapshot {
+  configRoot: string;
+  objectRef: string;
+  selectedXmlPaths: string[];
+  tree: SubsystemMembershipTreeNode[];
+}
+
 /**
  * Читает и меняет XML подсистемы. UI получает готовые снимки и не знает
  * о структуре тегов `Content`, `ChildObjects` и `Picture`.
@@ -76,6 +92,18 @@ export class SubsystemXmlService {
       subsystem,
       availableGroups: this.readAvailableContent(subsystem.configRoot),
       contentTree: this.readContentTree(subsystem.configRoot),
+    };
+  }
+
+  readMembershipSnapshot(configRoot: string, objectRef: string): SubsystemMembershipSnapshot {
+    const tree = this.readSubsystemMembershipTree(configRoot, objectRef);
+    return {
+      configRoot,
+      objectRef,
+      tree,
+      selectedXmlPaths: flattenSubsystemMembershipTree(tree)
+        .filter((item) => item.checked)
+        .map((item) => item.xmlPath),
     };
   }
 
@@ -149,6 +177,28 @@ export class SubsystemXmlService {
   removeContentRefs(xmlPath: string, refs: string[]): boolean {
     const remove = new Set(refs);
     return this.updateContentRefs(xmlPath, (current) => current.filter((ref) => !remove.has(ref)));
+  }
+
+  setObjectSubsystemMembership(configRoot: string, objectRef: string, selectedXmlPaths: string[]): boolean {
+    const selected = new Set(selectedXmlPaths);
+    let changed = false;
+
+    for (const node of flattenSubsystemMembershipTree(this.readSubsystemMembershipTree(configRoot, objectRef))) {
+      const shouldContain = selected.has(node.xmlPath);
+      const fileChanged = this.updateContentRefs(node.xmlPath, (current) => {
+        const hasRef = current.includes(objectRef);
+        if (shouldContain && !hasRef) {
+          return [...current, objectRef];
+        }
+        if (!shouldContain && hasRef) {
+          return current.filter((ref) => ref !== objectRef);
+        }
+        return current;
+      });
+      changed = changed || fileChanged;
+    }
+
+    return changed;
   }
 
   addChildSubsystem(xmlPath: string, name: string): boolean {
@@ -288,6 +338,65 @@ export class SubsystemXmlService {
     return result;
   }
 
+  private readSubsystemMembershipTree(configRoot: string, objectRef: string): SubsystemMembershipTreeNode[] {
+    const configPath = path.join(configRoot, 'Configuration.xml');
+    if (!fs.existsSync(configPath)) {
+      return [];
+    }
+
+    const info = this.configReader.read(configPath);
+    const subsystemsRoot = path.join(configRoot, getMetaFolder('Subsystem') ?? 'Subsystems');
+    const rootNames = info.childObjects.get('Subsystem') ?? [];
+    return rootNames
+      .map((name) => {
+        const xmlPath = resolveSubsystemXml(subsystemsRoot, name);
+        return xmlPath
+          ? this.buildSubsystemMembershipNode(xmlPath, objectRef, new Set())
+          : undefined;
+      })
+      .filter((item): item is SubsystemMembershipTreeNode => Boolean(item));
+  }
+
+  private buildSubsystemMembershipNode(
+    xmlPath: string,
+    objectRef: string,
+    visitedXmlPaths: Set<string>
+  ): SubsystemMembershipTreeNode {
+    const normalizedPath = path.resolve(xmlPath);
+    if (visitedXmlPaths.has(normalizedPath)) {
+      const duplicate = this.readSubsystem(xmlPath);
+      return {
+        id: normalizedPath,
+        name: duplicate.name,
+        label: duplicate.synonym || duplicate.name,
+        xmlPath,
+        checked: duplicate.contentRefs.includes(objectRef),
+        children: [],
+      };
+    }
+
+    const nextVisited = new Set(visitedXmlPaths);
+    nextVisited.add(normalizedPath);
+    const subsystem = this.readSubsystem(xmlPath);
+    const children = subsystem.childSubsystems
+      .map((childName) => {
+        const childXmlPath = resolveSubsystemXml(path.join(subsystem.homeDir, 'Subsystems'), childName);
+        return childXmlPath
+          ? this.buildSubsystemMembershipNode(childXmlPath, objectRef, nextVisited)
+          : undefined;
+      })
+      .filter((item): item is SubsystemMembershipTreeNode => Boolean(item));
+
+    return {
+      id: normalizedPath,
+      name: subsystem.name,
+      label: subsystem.synonym || subsystem.name,
+      xmlPath,
+      checked: subsystem.contentRefs.includes(objectRef),
+      children,
+    };
+  }
+
   private buildTypeGroups(group: 'common', info: ReturnType<ConfigXmlReader['read']>): MetadataRefTreeNode[] {
     const result: MetadataRefTreeNode[] = [];
     for (const def of Object.values(META_TYPES)
@@ -332,6 +441,27 @@ function findConfigRoot(startPath: string): string {
 function getSubsystemHomeDir(xmlPath: string, subsystemName: string): string {
   const dir = path.dirname(xmlPath);
   return path.basename(dir) === subsystemName ? dir : path.join(dir, subsystemName);
+}
+
+function resolveSubsystemXml(root: string, name: string): string | undefined {
+  const nested = path.join(root, name, `${name}.xml`);
+  if (fs.existsSync(nested)) {
+    return nested;
+  }
+  const flat = path.join(root, `${name}.xml`);
+  return fs.existsSync(flat) ? flat : undefined;
+}
+
+function flattenSubsystemMembershipTree(tree: SubsystemMembershipTreeNode[]): SubsystemMembershipTreeNode[] {
+  const result: SubsystemMembershipTreeNode[] = [];
+  const walk = (nodes: SubsystemMembershipTreeNode[]): void => {
+    for (const node of nodes) {
+      result.push(node);
+      walk(node.children);
+    }
+  };
+  walk(tree);
+  return result;
 }
 
 function extractBooleanTag(xml: string, tagName: string): boolean {
