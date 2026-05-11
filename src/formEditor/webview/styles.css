@@ -1,0 +1,789 @@
+/* Стили визуального редактора форм 1С */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+  overflow: hidden;
+  height: 100vh;
+}
+
+/* ── Layout: 2x2 grid with splitters (EDT-style) ─────────────────────────── */
+
+.form-editor {
+  display: grid;
+  /* columns: left-panel | v-splitter | right-panel */
+  grid-template-columns: var(--left-width, 280px) 4px 1fr;
+  /* rows: top-row | h-splitter | bottom-row */
+  grid-template-rows: var(--top-height, 50%) 4px 1fr;
+  height: 100vh;
+  width: 100%;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+}
+
+.panel-header {
+  padding: 6px 10px;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--vscode-panelTitle-activeForeground);
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-sideBar-background);
+  flex-shrink: 0;
+}
+
+.panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+/* Top-left: element tree */
+.element-tree-panel {
+  grid-column: 1;
+  grid-row: 1;
+  background: var(--vscode-sideBar-background);
+}
+
+/* Top-right: data panel (attributes/commands/parameters) */
+.data-panel {
+  grid-column: 3;
+  grid-row: 1;
+  background: var(--vscode-sideBar-background);
+}
+
+/* Bottom-left: form preview */
+.form-preview-panel {
+  grid-column: 1;
+  grid-row: 3;
+  background: var(--vscode-editor-background);
+}
+
+/* Bottom-right: property panel */
+.property-panel {
+  grid-column: 3;
+  grid-row: 3;
+  background: var(--vscode-sideBar-background);
+}
+
+/* ── Splitters ─────────────────────────────────────────────────────────────── */
+
+.splitter {
+  background: var(--vscode-panel-border);
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+.splitter:hover,
+.splitter.active {
+  background: var(--vscode-focusBorder);
+}
+
+/* Vertical splitter (left-right) */
+.splitter-v {
+  cursor: col-resize;
+  width: 4px;
+}
+
+#splitter-v-top {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+#splitter-v-bottom {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+/* Horizontal splitter (top-bottom) */
+.splitter-h {
+  cursor: row-resize;
+  height: 4px;
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+/* ── Tab bars ──────────────────────────────────────────────────────────────── */
+
+.tab-bar {
+  display: flex;
+  background: var(--vscode-editorGroupHeader-tabsBackground);
+  flex-shrink: 0;
+}
+
+.tab-bar-top {
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.tab-bar-bottom {
+  border-top: 1px solid var(--vscode-panel-border);
+}
+
+.tab {
+  padding: 4px 12px;
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--vscode-tab-inactiveForeground, var(--vscode-foreground));
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+
+.tab-bar-bottom .tab {
+  border-bottom: none;
+  border-top: 2px solid transparent;
+}
+
+.tab:hover {
+  color: var(--vscode-tab-activeForeground, var(--vscode-foreground));
+  background: var(--vscode-tab-hoverBackground, rgba(128, 128, 128, 0.1));
+}
+
+.tab.active {
+  color: var(--vscode-tab-activeForeground, var(--vscode-foreground));
+  border-bottom-color: var(--vscode-focusBorder);
+  font-weight: 600;
+}
+
+.tab-bar-bottom .tab.active {
+  border-bottom-color: transparent;
+  border-top-color: var(--vscode-focusBorder);
+}
+
+/* ── Дерево элементов ───────────────────────────────────────────────────── */
+
+.tree-node {
+  display: flex;
+  align-items: center;
+  padding: 2px 4px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  border-radius: 3px;
+}
+
+.tree-node:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.tree-node.selected {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+
+.tree-node .toggle {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--vscode-foreground);
+  opacity: 0.7;
+}
+
+.tree-node .toggle.empty {
+  visibility: hidden;
+}
+
+.tree-node .icon {
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.tree-node .label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-children {
+  padding-left: 16px;
+}
+
+.tree-children.collapsed {
+  display: none;
+}
+
+/* ── Placeholder для незаполненных табов ───────────────────────────────── */
+
+.tab-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  font-style: italic;
+  padding: 16px;
+  text-align: center;
+}
+
+/* ── Data panel: таблицы реквизитов/команд/событий ─────────────────────── */
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.data-table-header {
+  display: flex;
+  background: var(--vscode-editorGroupHeader-tabsBackground);
+  border-bottom: 1px solid var(--vscode-panel-border);
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.data-table-header .data-table-cell {
+  padding: 4px 8px;
+}
+
+.data-table-row {
+  display: flex;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  cursor: default;
+}
+
+.data-table-row:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.data-table-row.expandable {
+  cursor: pointer;
+}
+
+.data-table-row.child-row {
+  padding-left: 20px;
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 80%, var(--vscode-editor-background));
+}
+
+.data-table-cell {
+  padding: 3px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-table-cell.name {
+  flex: 1;
+  min-width: 120px;
+}
+
+.data-table-cell.used {
+  width: 50px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.data-table-cell.type {
+  flex: 1;
+  min-width: 100px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.data-table-cell.title {
+  flex: 1;
+  min-width: 100px;
+}
+
+.data-table-cell.action {
+  flex: 1;
+  min-width: 100px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.data-table-cell.handler {
+  flex: 1;
+  min-width: 100px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.data-table-cell .expand-icon {
+  display: inline-block;
+  width: 14px;
+  font-size: 10px;
+  color: var(--vscode-foreground);
+  opacity: 0.6;
+}
+
+.data-table-cell .attr-icon {
+  display: inline-block;
+  width: 14px;
+  margin-right: 2px;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.data-table-cell .used-checkbox {
+  width: 13px;
+  height: 13px;
+  pointer-events: none;
+  accent-color: var(--vscode-checkbox-background);
+}
+
+/* Drag handle for attribute columns */
+.data-table-cell .drag-handle {
+  cursor: grab;
+  opacity: 0.5;
+  font-size: 10px;
+}
+
+.data-table-row[draggable="true"] {
+  cursor: grab;
+}
+
+.data-table-row[draggable="true"]:active {
+  cursor: grabbing;
+  opacity: 0.6;
+}
+
+/* Handler link in events tab */
+.handler-link {
+  color: var(--vscode-textLink-foreground);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.handler-link:hover {
+  text-decoration: underline;
+  color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
+}
+
+/* ── Превью формы ───────────────────────────────────────────────────────── */
+
+.preview-container {
+  padding: 12px;
+}
+
+.preview-element {
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 2px;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.preview-element:hover {
+  border-color: var(--vscode-focusBorder);
+}
+
+.preview-element.selected {
+  border-color: var(--vscode-focusBorder);
+  background: color-mix(in srgb, var(--vscode-focusBorder) 10%, transparent);
+}
+
+/* Группа */
+.preview-group {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+}
+
+.preview-group.vertical {
+  flex-direction: column;
+}
+
+.preview-group.horizontal {
+  flex-direction: row;
+}
+
+.preview-group-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+  padding: 2px 4px;
+  margin-bottom: 2px;
+}
+
+/* Поле ввода */
+.preview-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+}
+
+.preview-field-label {
+  font-size: 12px;
+  color: var(--vscode-foreground);
+  white-space: nowrap;
+  min-width: 60px;
+}
+
+.preview-field-input {
+  flex: 1;
+  height: 22px;
+  min-width: 60px;
+  padding: 0 6px;
+  border: 1px solid var(--vscode-input-border);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border-radius: 2px;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+/* Кнопка */
+.preview-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 12px;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: none;
+  border-radius: 2px;
+  font-size: 12px;
+  cursor: default;
+}
+
+/* Таблица */
+.preview-table {
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.preview-table-header {
+  display: flex;
+  background: var(--vscode-editorGroupHeader-tabsBackground);
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.preview-table-cell {
+  padding: 4px 8px;
+  font-size: 12px;
+  border-right: 1px solid var(--vscode-panel-border);
+  min-width: 80px;
+}
+
+.preview-table-cell:last-child {
+  border-right: none;
+}
+
+.preview-table-body {
+  min-height: 60px;
+  background: var(--vscode-editor-background);
+}
+
+/* Вкладки (Pages) */
+.preview-pages {
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 3px;
+}
+
+.preview-pages-tabs {
+  display: flex;
+  background: var(--vscode-editorGroupHeader-tabsBackground);
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.preview-pages-tab {
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: default;
+  border-right: 1px solid var(--vscode-panel-border);
+}
+
+.preview-pages-tab.active {
+  background: var(--vscode-editor-background);
+  font-weight: 600;
+}
+
+.preview-pages-content {
+  padding: 4px;
+  min-height: 40px;
+}
+
+/* Checkbox */
+.preview-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+}
+
+.preview-checkbox-box {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--vscode-input-border);
+  background: var(--vscode-input-background);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+/* Декорация (надпись) */
+.preview-decoration {
+  padding: 3px 4px;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* Невидимые элементы */
+.preview-element.invisible {
+  opacity: 0.4;
+  border-style: dashed;
+}
+
+/* Stretch */
+.stretch-h {
+  flex: 1;
+}
+
+/* ── Панель свойств ─────────────────────────────────────────────────────── */
+
+.property-group {
+  margin-bottom: 8px;
+}
+
+.property-group-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--vscode-panelTitle-activeForeground);
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.property-row {
+  display: flex;
+  align-items: center;
+  padding: 3px 8px;
+  gap: 8px;
+}
+
+.property-name {
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  min-width: 80px;
+  white-space: nowrap;
+}
+
+.property-value {
+  flex: 1;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.no-selection {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  padding: 16px;
+  text-align: center;
+}
+
+/* ── Editable controls ──────────────────────────────────────────────────── */
+
+.property-input,
+.property-select {
+  flex: 1;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--vscode-input-border);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border-radius: 2px;
+  font-size: 12px;
+  font-family: var(--vscode-font-family);
+}
+
+.property-input:focus,
+.property-select:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  border-color: var(--vscode-focusBorder);
+}
+
+.property-checkbox {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: var(--vscode-checkbox-background);
+}
+
+/* Кнопка удаления */
+.delete-button {
+  width: calc(100% - 16px);
+  margin: 4px 8px;
+  padding: 5px 12px;
+  background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+  color: var(--vscode-errorForeground, #f48771);
+  border: 1px solid var(--vscode-inputValidation-errorBorder, #be1100);
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: var(--vscode-font-family);
+}
+
+.delete-button:hover {
+  opacity: 0.9;
+}
+
+/* ── Drag-and-drop indicators ───────────────────────────────────────────── */
+
+.tree-node.dragging {
+  opacity: 0.4;
+}
+
+.tree-node.drop-before {
+  border-top: 2px solid var(--vscode-focusBorder);
+}
+
+.tree-node.drop-after {
+  border-bottom: 2px solid var(--vscode-focusBorder);
+}
+
+.preview-element.drop-before {
+  border-top: 2px solid var(--vscode-focusBorder) !important;
+}
+
+.preview-element.drop-after {
+  border-bottom: 2px solid var(--vscode-focusBorder) !important;
+}
+
+/* Draggable cursor */
+.tree-node[draggable="true"] {
+  cursor: grab;
+}
+
+.tree-node[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+/* ── Context menu ──────────────────────────────────────────────────────────── */
+
+.context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 180px;
+  background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  border: 1px solid var(--vscode-menu-border, var(--vscode-panel-border));
+  border-radius: 4px;
+  padding: 4px 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  font-size: 12px;
+}
+
+.context-menu-item {
+  padding: 4px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.context-menu-item:hover {
+  background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground));
+  color: var(--vscode-menu-selectionForeground, var(--vscode-foreground));
+}
+
+.context-menu-item-danger {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+.context-menu-separator {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--vscode-menu-separatorBackground, var(--vscode-panel-border));
+}
+
+/* ── Element picker dialog ─────────────────────────────────────────────────── */
+
+.picker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.picker-dialog {
+  position: relative;
+  background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  padding: 12px;
+  min-width: 240px;
+  max-height: 400px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.picker-title {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 8px;
+  color: var(--vscode-foreground);
+}
+
+.picker-list {
+  overflow-y: auto;
+  max-height: 340px;
+}
+
+.picker-group-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--vscode-descriptionForeground);
+  padding: 6px 8px 2px;
+  font-weight: 600;
+}
+
+.picker-item {
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.picker-item:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.picker-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1;
+}
+
+.picker-close:hover {
+  color: var(--vscode-foreground);
+}

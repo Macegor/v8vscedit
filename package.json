@@ -532,6 +532,18 @@
         "configuration": "./language-configuration.json"
       }
     ],
+    "customEditors": [
+      {
+        "viewType": "v8vscedit.formEditor",
+        "displayName": "Визуальный редактор формы 1С",
+        "selector": [
+          {
+            "filenamePattern": "**/Ext/Form.xml"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
     "configurationDefaults": {
       "editor.semanticTokenColorCustomizations": {
         "rules": {

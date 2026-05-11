@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Form xmlns="http://v8.1c.ru/8.3/xcf/readable"
+      xmlns:v8="http://v8.1c.ru/8.1/data/core"
+      xmlns:xs="http://www.w3.org/2001/XMLSchema"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <AutoCommandBar name="АвтоКоманднаяПанель" id="1">
+    <ChildItems>
+      <CommandBarButton name="FormExecuteCheck" id="2">
+        <CommandName>FormExecuteCheck</CommandName>
+      </CommandBarButton>
+      <CommandBarButton name="FormWrite" id="3">
+        <CommandName>FormWrite</CommandName>
+      </CommandBarButton>
+    </ChildItems>
+  </AutoCommandBar>
+  <ChildItems>
+    <UsualGroup name="ОсновнаяГруппа" id="10">
+      <Title>
+        <v8:item>
+          <v8:lang>ru</v8:lang>
+          <v8:content>Основная группа</v8:content>
+        </v8:item>
+      </Title>
+      <Group>Vertical</Group>
+      <HorizontalStretch>true</HorizontalStretch>
+      <ChildItems>
+        <InputField name="Наименование" id="11">
+          <DataPath>Object.Description</DataPath>
+          <Title>
+            <v8:item>
+              <v8:lang>ru</v8:lang>
+              <v8:content>Наименование</v8:content>
+            </v8:item>
+          </Title>
+          <ShowTitle>true</ShowTitle>
+          <HorizontalStretch>true</HorizontalStretch>
+          <Width>40</Width>
+        </InputField>
+        <CheckBoxField name="Активен" id="12">
+          <DataPath>Object.Active</DataPath>
+          <Title>
+            <v8:item>
+              <v8:lang>ru</v8:lang>
+              <v8:content>Активен</v8:content>
+            </v8:item>
+          </Title>
+          <Visible>false</Visible>
+        </CheckBoxField>
+      </ChildItems>
+    </UsualGroup>
+    <Pages name="СтраницыПараметров" id="20">
+      <ChildItems>
+        <Page name="СтраницаОсновное" id="21">
+          <Title>
+            <v8:item>
+              <v8:lang>ru</v8:lang>
+              <v8:content>Основное</v8:content>
+            </v8:item>
+          </Title>
+          <Group>Vertical</Group>
+          <ChildItems>
+            <InputField name="ПутьОбработки" id="22">
+              <DataPath>Object.HandlerProcedurePath</DataPath>
+              <ReadOnly>true</ReadOnly>
+            </InputField>
+          </ChildItems>
+        </Page>
+        <Page name="СтраницаДополнительно" id="23">
+          <Title>
+            <v8:item>
+              <v8:lang>ru</v8:lang>
+              <v8:content>Дополнительно</v8:content>
+            </v8:item>
+          </Title>
+          <Group>Vertical</Group>
+        </Page>
+      </ChildItems>
+    </Pages>
+    <Table name="ТаблицаПараметров" id="30">
+      <DataPath>Object.Parameters</DataPath>
+      <Height>5</Height>
+      <VerticalStretch>true</VerticalStretch>
+    </Table>
+    <LabelDecoration name="КомментарийНадпись" id="40">
+      <Title>
+        <v8:item>
+          <v8:lang>ru</v8:lang>
+          <v8:content>Комментарий</v8:content>
+        </v8:item>
+      </Title>
+    </LabelDecoration>
+    <Separator name="Разделитель1" id="41"/>
+    <Button name="КнопкаЗапустить" id="42">
+      <Title>
+        <v8:item>
+          <v8:lang>ru</v8:lang>
+          <v8:content>Запустить</v8:content>
+        </v8:item>
+      </Title>
+      <CommandName>RunCheck</CommandName>
+    </Button>
+  </ChildItems>
+  <Attributes>
+    <Attribute name="Object" id="100">
+      <Type>
+        <v8:Type>CatalogObject.AccountingCheckRules</v8:Type>
+      </Type>
+      <MainAttribute>true</MainAttribute>
+      <SavedData>true</SavedData>
+      <Columns>
+        <Column name="HandlerProcedurePath" id="101">
+          <Type>
+            <v8:Type>xs:string</v8:Type>
+          </Type>
+        </Column>
+        <Column name="Active" id="102">
+          <Type>
+            <v8:Type>xs:boolean</v8:Type>
+          </Type>
+        </Column>
+      </Columns>
+    </Attribute>
+    <Attribute name="ScheduleSelector" id="103">
+      <Type>
+        <v8:Type>xs:decimal</v8:Type>
+      </Type>
+    </Attribute>
+    <Attribute name="RunsInBackgroundOnSchedule" id="104">
+      <Type>
+        <v8:Type>xs:boolean</v8:Type>
+      </Type>
+      <SavedData>true</SavedData>
+    </Attribute>
+  </Attributes>
+  <Commands>
+    <Command name="RunCheck" id="200">
+      <Title>
+        <v8:item>
+          <v8:lang>ru</v8:lang>
+          <v8:content>Выполнить проверку</v8:content>
+        </v8:item>
+      </Title>
+      <Action>RunCheck</Action>
+      <Representation>Button</Representation>
+    </Command>
+    <Command name="ClearResults" id="201">
+      <Title>
+        <v8:item>
+          <v8:lang>ru</v8:lang>
+          <v8:content>Очистить результаты</v8:content>
+        </v8:item>
+      </Title>
+      <Action>ClearResults</Action>
+    </Command>
+  </Commands>
+  <Events>
+    <Event name="OnCreateAtServer">OnCreateAtServer</Event>
+    <Event name="OnOpen">OnOpen</Event>
+  </Events>
+</Form>
