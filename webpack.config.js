@@ -1,7 +1,24 @@
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
-const CopyWebpackPlugin = require('copy-webpack-plugin');
+
+class CopyFilePlugin {
+  constructor(patterns) {
+    this.patterns = patterns;
+  }
+
+  apply(compiler) {
+    compiler.hooks.afterEmit.tap('CopyFilePlugin', () => {
+      for (const pattern of this.patterns) {
+        const source = path.resolve(__dirname, pattern.from);
+        const target = path.resolve(__dirname, 'dist', pattern.to);
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.copyFileSync(source, target);
+      }
+    });
+  }
+}
 
 /** @type {import('webpack').Configuration} */
 const nodeConfig = {
@@ -68,11 +85,9 @@ const webviewConfig = {
     ],
   },
   plugins: [
-    new CopyWebpackPlugin({
-      patterns: [
-        { from: 'src/formEditor/webview/styles.css', to: 'formEditor.css' },
-      ],
-    }),
+    new CopyFilePlugin([
+      { from: 'src/formEditor/webview/styles.css', to: 'formEditor.css' },
+    ]),
   ],
   devtool: 'nosources-source-map',
 };
