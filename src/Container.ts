@@ -8,6 +8,7 @@ import { MetadataTreeProvider } from './ui/tree/MetadataTreeProvider';
 import type { MetadataNode } from './ui/tree/TreeNode';
 import { registerCommands } from './ui/commands/CommandRegistry';
 import { PropertiesViewProvider } from './ui/views/PropertiesViewProvider';
+import { PropertiesViewController } from './ui/views/properties/PropertiesViewController';
 import { SubsystemEditorViewProvider } from './ui/views/subsystem/SubsystemEditorViewProvider';
 import { TreeSearchViewProvider } from './ui/views/search/TreeSearchViewProvider';
 import { SupportInfoService } from './infra/support/SupportInfoService';
@@ -118,31 +119,52 @@ export class Container {
     );
     this.subsystemXmlService = new SubsystemXmlService();
     this.exchangePlanContentService = new ExchangePlanContentService();
-    this.propertiesProvider = new PropertiesViewProvider(
+
+    // Mutable ref: PropertiesViewProvider зависит от контроллера,
+    // а колбэки контроллера — от провайдера.
+    const providerRef: { current: PropertiesViewProvider | undefined } = { current: undefined };
+
+    const propertiesController = new PropertiesViewController(
       this.subsystemXmlService,
       this.exchangePlanContentService,
+      {
+        refreshActiveView: () => {
+          providerRef.current?.refresh();
+        },
+        replaceActiveNode: (node) => {
+          providerRef.current?.replaceActiveNode(node);
+        },
+      },
       this.supportService,
       this.repositoryService,
       (configRoot, oldXmlPath, newXmlPath) => this.handleAfterRename(configRoot, oldXmlPath, newXmlPath),
       () => this.treeProvider.refresh()
     );
+
+    this.propertiesProvider = new PropertiesViewProvider(
+      propertiesController,
+      context.extensionUri
+    );
+    providerRef.current = this.propertiesProvider;
     this.subsystemEditorViewProvider = new SubsystemEditorViewProvider(
-      context.extensionUri,
       this.subsystemXmlService,
       this.supportService,
       this.repositoryService,
-      () => this.treeProvider.refresh()
+      context.extensionUri,
+      this.outputChannel
     );
     this.repositoryConnectionViewProvider = new RepositoryConnectionViewProvider(context.extensionUri);
     this.repositoryCommitViewProvider = new RepositoryCommitViewProvider(context.extensionUri);
     this.projectEnvironmentViewProvider = new ProjectEnvironmentViewProvider(
       this.projectEnvironmentService,
-      this.outputChannel
+      this.outputChannel,
+      context.extensionUri
     );
     this.standaloneServerViewProvider = new StandaloneServerViewProvider(
       this.standaloneServerService,
       this.outputChannel,
-      () => this.treeSearchViewProvider.refresh()
+      () => this.treeSearchViewProvider.refresh(),
+      context.extensionUri
     );
     this.aiSkillsInstaller = new AiSkillsInstaller(this.outputChannel);
     this.metadataXmlCreator = new MetadataXmlCreator();

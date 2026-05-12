@@ -1,0 +1,10 @@
+:root {
+  --vscode-kit-font-family: var(--vscode-font-family);
+  --vscode-kit-font-size: var(--vscode-font-size, 13px);
+  --vscode-kit-font-size-small: calc(var(--vscode-kit-font-size) - 1px);
+  --vscode-kit-font-size-large: calc(var(--vscode-kit-font-size) + 2px);
+  --vscode-kit-line-height: var(--vscode-line-height, 1.4);
+  --vscode-kit-font-weight-normal: 400;
+  --vscode-kit-font-weight-medium: 500;
+  --vscode-kit-font-weight-bold: 600;
+}

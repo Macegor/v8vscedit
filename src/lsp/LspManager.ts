@@ -28,11 +28,8 @@ export class LspManager implements vscode.Disposable {
     this.traceChannel = vscode.window.createOutputChannel('BSL LSP Trace');
 
     this.analyzerService.onBeforeSwap = async () => {
-      if (this.client) {
-        outputChannel.appendLine('[lsp] Остановка перед обновлением бинарника…');
-        await this.client.stop();
-        this.client = undefined;
-      }
+      outputChannel.appendLine('[lsp] Остановка перед обновлением бинарника…');
+      await this.stopClient();
     };
   }
 
@@ -73,9 +70,17 @@ export class LspManager implements vscode.Disposable {
   }
 
   private async stopClient(): Promise<void> {
-    if (this.client) {
-      await this.client.stop();
-      this.client = undefined;
+    const client = this.client;
+    this.client = undefined;
+    if (client?.needsStop()) {
+      try {
+        await client.stop();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.outputChannel.appendLine(`[lsp] Не удалось штатно остановить клиент: ${msg}`);
+      }
+    } else if (client) {
+      this.outputChannel.appendLine('[lsp] Клиент не был запущен, остановка не требуется');
     }
     this.statusBar.setState('stopped');
   }
@@ -101,7 +106,7 @@ export class LspManager implements vscode.Disposable {
       vscode.commands.registerCommand('v8vscedit.bslAnalyzer.showOutput', () => this.outputChannel.show()),
       vscode.commands.registerCommand('v8vscedit.bslAnalyzer.update', () => this.checkForUpdate()),
       vscode.commands.registerCommand('v8vscedit.bslAnalyzer.showMenu', () => this.showMenu()),
-      { dispose: () => { void this.client?.stop(); } },
+      { dispose: () => { void this.stopClient(); } },
     );
 
     context.subscriptions.push(
@@ -124,7 +129,7 @@ export class LspManager implements vscode.Disposable {
   }
 
   dispose(): void {
-    void this.client?.stop();
+    void this.stopClient();
   }
 
   // ── Приватные методы ────────────────────────────────────────────────────
@@ -200,6 +205,7 @@ export class LspManager implements vscode.Disposable {
       }
       this.outputChannel.appendLine(`[lsp] bsl-analyzer запущен (${version ?? 'custom'})`);
     } catch (err) {
+      this.client = undefined;
       const msg = err instanceof Error ? err.message : String(err);
       this.statusBar.setState('error', msg);
       this.outputChannel.appendLine(`[lsp] Ошибка запуска bsl-analyzer: ${msg}`);

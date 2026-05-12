@@ -52,16 +52,18 @@ export function registerRepositoryCommands(
       }
 
       const initialBinding = services.repositoryService.loadBinding(target);
-      await services.repositoryConnectionViewProvider.show('bind', target, initialBinding, async (formData) => {
-        const validation = validateBindingForm(formData);
-        if (!validation.ok) {
-          return {
-            success: false,
-            errorMessage: validation.errorMessage,
-          };
-        }
+      const formData = await services.repositoryConnectionViewProvider.show('connect', target.displayName, initialBinding ?? undefined);
+      if (!formData) {
+        return;
+      }
 
-        const ok = await runRepositoryCliCommand({
+      const validation = validateBindingForm(formData);
+      if (!validation.ok) {
+        void vscode.window.showErrorMessage(validation.errorMessage);
+        return;
+      }
+
+      const ok = await runRepositoryCliCommand({
         command: 'repository-bind',
         target,
         bindingOverride: validation.binding,
@@ -79,17 +81,11 @@ export function registerRepositoryCommands(
           services.repositoryService.setConnected(target, true);
           refreshRepositoryUi(services);
         },
-        }, toCliServices(services));
+      }, toCliServices(services));
 
-        if (ok) {
-          void runPostRepositorySync(target, services);
-        }
-
-        return {
-          success: ok,
-          errorMessage: ok ? undefined : 'Подключение не выполнено. Подробности уже выведены в уведомлении и журнале.',
-        };
-      });
+      if (ok) {
+        void runPostRepositorySync(target, services);
+      }
     }),
 
     vscode.commands.registerCommand('v8vscedit.repository.create', async (node: NodeArg) => {
@@ -99,16 +95,18 @@ export function registerRepositoryCommands(
       }
 
       const initialBinding = services.repositoryService.loadBinding(target);
-      await services.repositoryConnectionViewProvider.show('create', target, initialBinding, async (formData) => {
-        const validation = validateBindingForm(formData);
-        if (!validation.ok) {
-          return {
-            success: false,
-            errorMessage: validation.errorMessage,
-          };
-        }
+      const formData = await services.repositoryConnectionViewProvider.show('create', target.displayName, initialBinding ?? undefined);
+      if (!formData) {
+        return;
+      }
 
-        const ok = await runRepositoryCliCommand({
+      const validation = validateBindingForm(formData);
+      if (!validation.ok) {
+        void vscode.window.showErrorMessage(validation.errorMessage);
+        return;
+      }
+
+      const ok = await runRepositoryCliCommand({
         command: 'repository-create',
         target,
         bindingOverride: validation.binding,
@@ -128,17 +126,11 @@ export function registerRepositoryCommands(
           services.repositoryService.setConnected(target, !formData.noBind);
           refreshRepositoryUi(services);
         },
-        }, toCliServices(services));
+      }, toCliServices(services));
 
-        if (ok && !formData.noBind) {
-          void runPostRepositorySync(target, services);
-        }
-
-        return {
-          success: ok,
-          errorMessage: ok ? undefined : 'Создание не выполнено. Подробности уже выведены в уведомлении и журнале.',
-        };
-      });
+      if (ok && !formData.noBind) {
+        void runPostRepositorySync(target, services);
+      }
     }),
 
     vscode.commands.registerCommand('v8vscedit.repository.disconnect', async (node: NodeArg) => {

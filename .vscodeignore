@@ -11,8 +11,12 @@ grammars/**
 AGENTS.md
 **/*.log
 .gitignore
-webpack.config.js
 tsconfig.json
+tsconfig.*.json
+vite*.config.ts
+vite.shared.ts
+src-ui/**
+scripts/**
 **/*.map
 **/*.ts
 src/test/**

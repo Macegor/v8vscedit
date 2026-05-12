@@ -1,0 +1,5 @@
+:root {
+  --vscode-kit-border-radius: 2px;
+  --vscode-kit-border-radius-small: 1px;
+  --vscode-kit-border-color: var(--vscode-panel-border, var(--vscode-dropdown-border, transparent));
+}

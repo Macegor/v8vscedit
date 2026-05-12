@@ -7,6 +7,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { parseFormXml } from './FormXmlParser';
 import { FormXmlDocument } from './FormXmlSerializer';
+import { WebviewHtmlFactory } from '../ui/views/webview/WebviewHtmlFactory';
 
 interface WebviewMessage {
   type: string;
@@ -154,14 +155,17 @@ export class FormEditorProvider implements vscode.CustomEditorProvider<FormDocum
     webviewPanel.webview.options = {
       enableScripts: true,
       localResourceRoots: [
-        vscode.Uri.joinPath(this.extensionUri, 'dist'),
+        vscode.Uri.joinPath(this.extensionUri, 'dist', 'ui'),
       ],
     };
 
-    webviewPanel.webview.html = this.getHtml(webviewPanel.webview);
-
-    // Отправить начальную модель
-    this.sendModel(document, webviewPanel.webview);
+    webviewPanel.webview.html = new WebviewHtmlFactory(this.extensionUri).renderVueWebviewHtml({
+      webview: webviewPanel.webview,
+      title: 'Визуальный редактор формы',
+      entry: 'formEditor',
+      viewKind: 'formEditor',
+      csp: { allowStyles: true },
+    });
 
     // Обработка сообщений от webview
     webviewPanel.webview.onDidReceiveMessage(
@@ -247,6 +251,11 @@ export class FormEditorProvider implements vscode.CustomEditorProvider<FormDocum
     const msg = rawMessage;
 
     switch (msg.type) {
+      case 'ready': {
+        this.sendModel(document, webview);
+        break;
+      }
+
       case 'moveElement': {
         if (
           msg.elementId === undefined ||
@@ -422,67 +431,6 @@ export class FormEditorProvider implements vscode.CustomEditorProvider<FormDocum
     }
   }
 
-  // ── HTML ───────────────────────────────────────────────────────────────────
-
-  private getHtml(webview: vscode.Webview): string {
-    const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, 'dist', 'formEditor.js')
-    );
-    const styleUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, 'dist', 'formEditor.css')
-    );
-
-    const nonce = getNonce();
-
-    return `<!DOCTYPE html>
-<html lang="ru">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';" />
-  <link rel="stylesheet" href="${styleUri.toString()}" />
-  <title>Визуальный редактор формы</title>
-</head>
-<body>
-  <div class="form-editor" id="form-editor">
-    <!-- Top row -->
-    <div class="panel element-tree-panel" id="panel-tree">
-      <div class="panel-body" id="tree-body"></div>
-      <div class="tab-bar tab-bar-bottom">
-        <div class="tab active" data-tab="elements" data-panel="tree">Элементы</div>
-        <div class="tab" data-tab="command-interface" data-panel="tree">Командный интерфейс</div>
-      </div>
-    </div>
-    <div class="splitter splitter-v" id="splitter-v-top" title="Перетащите для изменения ширины"></div>
-    <div class="panel data-panel" id="panel-data">
-      <div class="tab-bar tab-bar-top">
-        <div class="tab active" data-tab="attributes" data-panel="data">Реквизиты</div>
-        <div class="tab" data-tab="commands" data-panel="data">Команды</div>
-        <div class="tab" data-tab="parameters" data-panel="data">Параметры</div>
-      </div>
-      <div class="panel-body" id="data-body"></div>
-    </div>
-    <!-- Horizontal splitter -->
-    <div class="splitter splitter-h" id="splitter-h" title="Перетащите для изменения высоты"></div>
-    <!-- Bottom row -->
-    <div class="panel form-preview-panel" id="panel-preview">
-      <div class="panel-body" id="preview-body"></div>
-      <div class="tab-bar tab-bar-bottom">
-        <div class="tab active" data-tab="form-preview" data-panel="preview">Форма</div>
-        <div class="tab" data-tab="module" data-panel="preview">Модуль</div>
-      </div>
-    </div>
-    <div class="splitter splitter-v" id="splitter-v-bottom" title="Перетащите для изменения ширины"></div>
-    <div class="panel property-panel" id="panel-props">
-      <div class="panel-header">Свойства</div>
-      <div class="panel-body" id="property-body"></div>
-    </div>
-  </div>
-  <script nonce="${nonce}" src="${scriptUri.toString()}"></script>
-</body>
-</html>`;
-  }
 }
 
 function isWebviewMessage(value: unknown): value is WebviewMessage {
@@ -495,14 +443,4 @@ function isWebviewMessage(value: unknown): value is WebviewMessage {
 
 function getErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-function getNonce(): string {
-  let text = '';
-  const possible =
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  for (let i = 0; i < 32; i++) {
-    text += possible.charAt(Math.floor(Math.random() * possible.length));
-  }
-  return text;
 }

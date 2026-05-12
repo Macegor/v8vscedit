@@ -31,6 +31,12 @@ import {
 import { extractChildMetaElementXml, extractColumnXmlFromTabularSection } from '../../../infra/xml';
 import type { RepositoryService } from '../../../infra/repository/RepositoryService';
 import { type SupportInfoService, SupportMode } from '../../../infra/support/SupportInfoService';
+import { getHandlerForNode } from '../../tree/nodeBuilders/index';
+import type {
+  PropertyControl,
+  PropertySection,
+  PropertiesViewState,
+} from './_types';
 import { getObjectLocationFromXml } from '../../../infra/fs';
 import { META_TYPES } from '../../../domain/MetaTypes';
 import { getDefaultStandardAttributeIndexing } from '../../../domain/StandardAttribute';
@@ -91,6 +97,56 @@ export class PropertiesViewController {
   clearActiveNode(): void {
     this.activeNode = undefined;
     this.activeProperties = [];
+  }
+
+  getActiveNode(): MetadataNode | undefined {
+    return this.activeNode;
+  }
+
+  /** Возвращает сериализуемое состояние для Vue-панели свойств. */
+  getViewState(): PropertiesViewState | null {
+    const node = this.activeNode;
+    if (!node) {
+      return null;
+    }
+
+    const handler = getHandlerForNode(node);
+    const canShow = handler?.canShowProperties?.(node) ?? false;
+    if (!handler?.getProperties || !canShow) {
+      return null;
+    }
+
+    const properties = handler.getProperties(node);
+    const context = this.buildRenderContext(node, properties);
+    if (context.properties.length === 0) {
+      return null;
+    }
+
+    const controls = context.properties.map((prop) => this.toControl(prop, context.isEditLocked));
+    const sections = this.groupIntoSections(controls, context.properties);
+
+    let readonlyReason: PropertiesViewState['readonlyReason'];
+    if (context.isEditLockedBySupport) {
+      readonlyReason = 'support';
+    } else if (context.isEditLockedByRepository) {
+      readonlyReason = 'repository';
+    }
+
+    return {
+      title: `${node.textLabel} — Свойства`,
+      readonly: context.isEditLocked,
+      readonlyReason,
+      sections,
+    };
+  }
+
+  /** Обрабатывает изменение простого свойства из Vue-приложения. */
+  handlePropertyChange(controlId: string, value: unknown): void {
+    void this.handleWebviewMessage({
+      type: 'propertyChanged' as const,
+      key: controlId,
+      value: value as string | boolean | string[] | undefined,
+    });
   }
 
   buildRenderContext(node: MetadataNode, properties: ObjectPropertiesCollection): PropertiesRenderContext {
@@ -1072,5 +1128,89 @@ export class PropertiesViewController {
       return SupportMode.None;
     }
     return this.supportService.getSupportMode(xmlPath);
+  }
+
+  /** Преобразует ObjectPropertyItem в PropertyControl для Vue. */
+  private toControl(property: ObjectPropertyItem, isEditLocked: boolean): PropertyControl {
+    const readonly = isEditLocked || property.readonly === true;
+    const base: PropertyControl = {
+      id: property.key,
+      label: property.title,
+      kind: property.kind,
+      value: typeof property.value === 'string' || typeof property.value === 'boolean' ? property.value : '',
+      readonly,
+      inherited: property.inherited ?? false,
+    };
+
+    switch (property.kind) {
+      case 'enum': {
+        const ev = property.value as EnumPropertyValue;
+        base.value = ev.current;
+        base.options = ev.allowedValues;
+        break;
+      }
+      case 'multiEnum': {
+        const mv = property.value as MultiEnumPropertyValue;
+        base.selected = mv.selected;
+        base.options = mv.allowedValues;
+        base.value = mv.selected;
+        break;
+      }
+      case 'localizedString': {
+        const lv = property.value as LocalizedStringValue;
+        base.value = lv.presentation;
+        break;
+      }
+      case 'metadataType': {
+        const tv = property.key === 'Type'
+          ? ensureDefaultQualifiers(property.value as MetadataTypeValue)
+          : property.value as MetadataTypeValue;
+        base.typePresentation = tv.presentation;
+        base.typeItems = tv.items;
+        base.stringQualifiers = tv.stringQualifiers ?? null;
+        base.numberQualifiers = tv.numberQualifiers ?? null;
+        base.dateQualifiers = tv.dateQualifiers ?? null;
+        base.value = tv;
+        break;
+      }
+      case 'metadataReferenceList': {
+        const rv = property.value as MetadataReferenceListValue;
+        base.referenceItems = rv.items;
+        base.value = rv;
+        break;
+      }
+    }
+
+    return base;
+  }
+
+  /** Группирует контролы в секции по section/sectionOrder исходных свойств. */
+  private groupIntoSections(
+    controls: PropertyControl[],
+    properties: ObjectPropertiesCollection
+  ): PropertySection[] {
+    const sectionMap = new Map<string, { order: number; controls: PropertyControl[] }>();
+
+    for (let i = 0; i < properties.length; i++) {
+      const prop = properties[i];
+      const sectionName = prop.section ?? 'Свойства';
+      const existing = sectionMap.get(sectionName);
+      if (existing) {
+        existing.controls.push(controls[i]);
+      } else {
+        sectionMap.set(sectionName, {
+          order: prop.sectionOrder ?? Number.MAX_SAFE_INTEGER,
+          controls: [controls[i]],
+        });
+      }
+    }
+
+    return Array.from(sectionMap.entries())
+      .sort((a, b) => a[1].order - b[1].order)
+      .map(([title, data]) => ({
+        title,
+        order: data.order,
+        controls: data.controls,
+      }));
   }
 }

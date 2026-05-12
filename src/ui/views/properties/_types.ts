@@ -5,6 +5,15 @@
  * технический долг: на длинной дистанции их следует окончательно отделить
  * от обработчиков дерева.
  */
+import type {
+  PropertyValueKind,
+  MetadataTypeItem,
+  MetadataReferenceListItem,
+  MetadataStringQualifiers,
+  MetadataNumberQualifiers,
+  MetadataDateQualifiers,
+} from '../../tree/nodeBuilders/_types';
+
 export type {
   PropertyValueKind,
   MetadataTypeValue,
@@ -22,3 +31,40 @@ export type {
   ObjectPropertyItem,
   ObjectPropertiesCollection,
 } from '../../tree/nodeBuilders/_types';
+
+/** Контрол свойства для передачи в Vue-приложение */
+export interface PropertyControl {
+  id: string;
+  label: string;
+  kind: PropertyValueKind;
+  value: unknown;
+  readonly: boolean;
+  inherited: boolean;
+  /** Варианты для enum и multiEnum */
+  options?: { value: string; label: string }[];
+  /** Выбранные значения для multiEnum */
+  selected?: string[];
+  /** Представление типа для metadataType */
+  typePresentation?: string;
+  typeItems?: MetadataTypeItem[];
+  stringQualifiers?: MetadataStringQualifiers | null;
+  numberQualifiers?: MetadataNumberQualifiers | null;
+  dateQualifiers?: MetadataDateQualifiers | null;
+  /** Элементы списка для metadataReferenceList */
+  referenceItems?: MetadataReferenceListItem[];
+}
+
+/** Секция панели свойств */
+export interface PropertySection {
+  title: string;
+  order: number;
+  controls: PropertyControl[];
+}
+
+/** Состояние панели свойств для отправки в Vue-приложение */
+export interface PropertiesViewState {
+  title: string;
+  readonly: boolean;
+  readonlyReason?: 'support' | 'repository';
+  sections: PropertySection[];
+}

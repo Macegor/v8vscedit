@@ -10,8 +10,9 @@
     "skipLibCheck": true,
     "sourceMap": true,
     "resolveJsonModule": true,
+    "noEmit": true,
     "types": ["node", "mocha"]
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "src/formEditor/webview"]
+  "exclude": ["node_modules", "dist", "out", "src-ui"]
 }
