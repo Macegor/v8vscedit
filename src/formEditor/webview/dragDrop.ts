@@ -50,31 +50,36 @@ export function makePreviewDropTarget(el: HTMLElement): void {
 // ── Обработчики ─────────────────────────────────────────────────────────────
 
 function onDragStart(e: DragEvent): void {
-  const target = (e.target as HTMLElement).closest('.tree-node') as HTMLElement | null;
-  if (!target) return;
+  const target = asHTMLElement(e.target)?.closest<HTMLElement>('.tree-node');
+  if (!target) {return;}
 
   const id = target.dataset.elementId;
-  if (!id) return;
+  if (!id) {return;}
 
   draggedElementId = parseInt(id, 10);
 
-  e.dataTransfer!.effectAllowed = 'move';
-  e.dataTransfer!.setData('text/plain', id);
+  if (!e.dataTransfer) {
+    return;
+  }
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', id);
 
   // Визуальная обратная связь
   target.classList.add('dragging');
 }
 
 function onDragOver(e: DragEvent): void {
-  if (draggedElementId === null) return;
+  if (draggedElementId === null) {return;}
   e.preventDefault();
-  e.dataTransfer!.dropEffect = 'move';
+  if (e.dataTransfer) {
+    e.dataTransfer.dropEffect = 'move';
+  }
 
   // Показать индикатор позиции вставки
   clearDropIndicators();
 
   const dropTarget = findDropTarget(e);
-  if (!dropTarget) return;
+  if (!dropTarget) {return;}
 
   const rect = dropTarget.el.getBoundingClientRect();
   const midY = rect.top + rect.height / 2;
@@ -87,7 +92,8 @@ function onDragOver(e: DragEvent): void {
 }
 
 function onDragLeave(e: DragEvent): void {
-  const target = e.target as HTMLElement;
+  const target = asHTMLElement(e.target);
+  if (!target) {return;}
   target.classList.remove('drop-before', 'drop-after');
 }
 
@@ -95,13 +101,13 @@ function onDrop(e: DragEvent): void {
   e.preventDefault();
   clearDropIndicators();
 
-  if (draggedElementId === null) return;
+  if (draggedElementId === null) {return;}
 
   const dropTarget = findDropTarget(e);
-  if (!dropTarget) return;
+  if (!dropTarget) {return;}
 
   const targetId = parseInt(dropTarget.el.dataset.elementId ?? '0', 10);
-  if (targetId === draggedElementId) return;
+  if (targetId === draggedElementId) {return;}
 
   const rect = dropTarget.el.getBoundingClientRect();
   const midY = rect.top + rect.height / 2;
@@ -128,17 +134,20 @@ function onDragEnd(): void {
 function findDropTarget(
   e: DragEvent
 ): { el: HTMLElement } | null {
-  const target = e.target as HTMLElement;
+  const target = asHTMLElement(e.target);
+  if (!target) {
+    return null;
+  }
 
   // В дереве — ищем .tree-node
-  const treeNode = target.closest('.tree-node') as HTMLElement | null;
-  if (treeNode && treeNode.dataset.elementId) {
+  const treeNode = target.closest<HTMLElement>('.tree-node');
+  if (treeNode?.dataset.elementId) {
     return { el: treeNode };
   }
 
   // В превью — ищем .preview-element
-  const previewEl = target.closest('.preview-element') as HTMLElement | null;
-  if (previewEl && previewEl.dataset.elementId) {
+  const previewEl = target.closest<HTMLElement>('.preview-element');
+  if (previewEl?.dataset.elementId) {
     return { el: previewEl };
   }
 
@@ -151,16 +160,16 @@ function getParentElementId(el: HTMLElement): number {
   if (treeChildren) {
     const parentWrapper = treeChildren.parentElement;
     if (parentWrapper) {
-      const parentNode = parentWrapper.querySelector(':scope > .tree-node') as HTMLElement | null;
-      if (parentNode && parentNode.dataset.elementId) {
+      const parentNode = parentWrapper.querySelector<HTMLElement>(':scope > .tree-node');
+      if (parentNode?.dataset.elementId) {
         return parseInt(parentNode.dataset.elementId, 10);
       }
     }
   }
 
   // Для preview-element: ищем ближайший родительский .preview-element
-  const previewParent = el.closest('.preview-element')?.parentElement?.closest('.preview-element') as HTMLElement | null;
-  if (previewParent && previewParent.dataset.elementId) {
+  const previewParent = el.closest('.preview-element')?.parentElement?.closest<HTMLElement>('.preview-element');
+  if (previewParent?.dataset.elementId) {
     return parseInt(previewParent.dataset.elementId, 10);
   }
 
@@ -175,8 +184,8 @@ function getNextSiblingId(el: HTMLElement): number | null {
     const wrapper = treeNode.parentElement;
     const nextWrapper = wrapper?.nextElementSibling;
     if (nextWrapper) {
-      const nextNode = nextWrapper.querySelector(':scope > .tree-node') as HTMLElement | null;
-      if (nextNode && nextNode.dataset.elementId) {
+      const nextNode = nextWrapper.querySelector<HTMLElement>(':scope > .tree-node');
+      if (nextNode?.dataset.elementId) {
         return parseInt(nextNode.dataset.elementId, 10);
       }
     }
@@ -185,8 +194,8 @@ function getNextSiblingId(el: HTMLElement): number | null {
   // Для preview-element
   const previewEl = el.closest('.preview-element');
   if (previewEl) {
-    const next = previewEl.nextElementSibling as HTMLElement | null;
-    if (next && next.dataset.elementId) {
+    const next = asHTMLElement(previewEl.nextElementSibling);
+    if (next?.dataset.elementId) {
       return parseInt(next.dataset.elementId, 10);
     }
   }
@@ -198,4 +207,8 @@ function clearDropIndicators(): void {
   document.querySelectorAll('.drop-before, .drop-after').forEach((el) => {
     el.classList.remove('drop-before', 'drop-after');
   });
+}
+
+function asHTMLElement(value: EventTarget | Element | null): HTMLElement | null {
+  return value instanceof HTMLElement ? value : null;
 }

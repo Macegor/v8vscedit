@@ -8,6 +8,20 @@ import * as fs from 'fs';
 import { parseFormXml } from './FormXmlParser';
 import { FormXmlDocument } from './FormXmlSerializer';
 
+interface WebviewMessage {
+  type: string;
+  elementId?: number;
+  targetParentId?: number;
+  insertBeforeId?: number | null;
+  propertyName?: string;
+  value?: string;
+  parentId?: number;
+  elementType?: string;
+  elementName?: string;
+  dataPath?: string;
+  handlerName?: string;
+}
+
 // ── CustomDocument ──────────────────────────────────────────────────────────
 
 class FormDocument implements vscode.CustomDocument {
@@ -50,7 +64,7 @@ class FormDocument implements vscode.CustomDocument {
   /** Отменить последнее изменение */
   undo(): boolean {
     const snapshot = this.undoStack.pop();
-    if (!snapshot) return false;
+    if (!snapshot) {return false;}
     this.redoStack.push(this._xmlDoc.serialize());
     this._xmlDoc = new FormXmlDocument(snapshot);
     this._isDirty = this.undoStack.length > 0;
@@ -61,7 +75,7 @@ class FormDocument implements vscode.CustomDocument {
   /** Повторить отменённое изменение */
   redo(): boolean {
     const snapshot = this.redoStack.pop();
-    if (!snapshot) return false;
+    if (!snapshot) {return false;}
     this.undoStack.push(this._xmlDoc.serialize());
     this._xmlDoc = new FormXmlDocument(snapshot);
     this._isDirty = true;
@@ -126,7 +140,7 @@ export class FormEditorProvider implements vscode.CustomEditorProvider<FormDocum
 
   // ── Lifecycle ───────────────────────────────────────────────────────────
 
-  async openCustomDocument(uri: vscode.Uri): Promise<FormDocument> {
+  openCustomDocument(uri: vscode.Uri): FormDocument {
     const content = fs.readFileSync(uri.fsPath, 'utf-8');
     return new FormDocument(uri, content);
   }
@@ -151,7 +165,7 @@ export class FormEditorProvider implements vscode.CustomEditorProvider<FormDocum
 
     // Обработка сообщений от webview
     webviewPanel.webview.onDidReceiveMessage(
-      (msg) => this.handleMessage(msg, document, webviewPanel.webview)
+      (msg: unknown) => this.handleMessage(msg, document, webviewPanel.webview)
     );
 
     // File watcher для внешних изменений
@@ -176,68 +190,74 @@ export class FormEditorProvider implements vscode.CustomEditorProvider<FormDocum
 
   // ── Save ────────────────────────────────────────────────────────────────
 
-  async saveCustomDocument(document: FormDocument): Promise<void> {
+  saveCustomDocument(document: FormDocument): Promise<void> {
     const xml = document.xmlDoc.serialize();
     fs.writeFileSync(document.uri.fsPath, xml, 'utf-8');
     document.markClean();
+    return Promise.resolve();
   }
 
-  async saveCustomDocumentAs(
+  saveCustomDocumentAs(
     document: FormDocument,
     destination: vscode.Uri
   ): Promise<void> {
     const xml = document.xmlDoc.serialize();
     fs.writeFileSync(destination.fsPath, xml, 'utf-8');
+    return Promise.resolve();
   }
 
-  async revertCustomDocument(document: FormDocument): Promise<void> {
+  revertCustomDocument(document: FormDocument): Promise<void> {
     const content = fs.readFileSync(document.uri.fsPath, 'utf-8');
     document.reload(content);
     const webview = this.webviews.get(document.uri.toString());
     if (webview) {
       this.sendModel(document, webview);
     }
+    return Promise.resolve();
   }
 
-  async backupCustomDocument(
+  backupCustomDocument(
     document: FormDocument,
     context: vscode.CustomDocumentBackupContext
   ): Promise<vscode.CustomDocumentBackup> {
     const xml = document.xmlDoc.serialize();
     fs.writeFileSync(context.destination.fsPath, xml, 'utf-8');
-    return {
+    return Promise.resolve({
       id: context.destination.toString(),
       delete: () => {
-        try { fs.unlinkSync(context.destination.fsPath); } catch {}
+        try {
+          fs.unlinkSync(context.destination.fsPath);
+        } catch {
+          // Файл мог быть уже удалён VS Code при закрытии backup-сессии.
+        }
       },
-    };
+    });
   }
 
   // ── Message handling ──────────────────────────────────────────────────────
 
   private handleMessage(
-    msg: {
-      type: string;
-      elementId?: number;
-      targetParentId?: number;
-      insertBeforeId?: number | null;
-      propertyName?: string;
-      value?: string;
-      parentId?: number;
-      elementType?: string;
-      elementName?: string;
-      dataPath?: string;
-      handlerName?: string;
-    },
+    rawMessage: unknown,
     document: FormDocument,
     webview: vscode.Webview
   ): void {
+    if (!isWebviewMessage(rawMessage)) {
+      return;
+    }
+    const msg = rawMessage;
+
     switch (msg.type) {
       case 'moveElement': {
+        if (
+          msg.elementId === undefined ||
+          msg.targetParentId === undefined
+        ) {
+          return;
+        }
         document.pushUndo();
         const ok = document.xmlDoc.moveElement(
-          msg.elementId!,
-          msg.targetParentId!,
+          msg.elementId,
+          msg.targetParentId,
           msg.insertBeforeId ?? null
         );
         if (ok) {
@@ -248,11 +268,18 @@ export class FormEditorProvider implements vscode.CustomEditorProvider<FormDocum
       }
 
       case 'updateProperty': {
+        if (
+          msg.elementId === undefined ||
+          msg.propertyName === undefined ||
+          msg.value === undefined
+        ) {
+          return;
+        }
         document.pushUndo();
         const ok = document.xmlDoc.updateElementProperty(
-          msg.elementId!,
-          msg.propertyName!,
-          msg.value!
+          msg.elementId,
+          msg.propertyName,
+          msg.value
         );
         if (ok) {
           this.markChanged(document);
@@ -262,8 +289,11 @@ export class FormEditorProvider implements vscode.CustomEditorProvider<FormDocum
       }
 
       case 'deleteElement': {
+        if (msg.elementId === undefined) {
+          return;
+        }
         document.pushUndo();
-        const ok = document.xmlDoc.deleteElement(msg.elementId!);
+        const ok = document.xmlDoc.deleteElement(msg.elementId);
         if (ok) {
           this.markChanged(document);
           this.sendModel(document, webview);
@@ -272,11 +302,18 @@ export class FormEditorProvider implements vscode.CustomEditorProvider<FormDocum
       }
 
       case 'createElement': {
+        if (
+          msg.parentId === undefined ||
+          msg.elementType === undefined ||
+          msg.elementName === undefined
+        ) {
+          return;
+        }
         document.pushUndo();
         const result = document.xmlDoc.createElement(
-          msg.parentId!,
-          msg.elementType!,
-          msg.elementName!,
+          msg.parentId,
+          msg.elementType,
+          msg.elementName,
           msg.insertBeforeId ?? null
         );
         if (result.success) {
@@ -287,11 +324,18 @@ export class FormEditorProvider implements vscode.CustomEditorProvider<FormDocum
       }
 
       case 'createElementWithDataPath': {
+        if (
+          msg.parentId === undefined ||
+          msg.elementType === undefined ||
+          msg.elementName === undefined
+        ) {
+          return;
+        }
         document.pushUndo();
         const result = document.xmlDoc.createElement(
-          msg.parentId!,
-          msg.elementType!,
-          msg.elementName!,
+          msg.parentId,
+          msg.elementType,
+          msg.elementName,
           null
         );
         if (result.success) {
@@ -318,9 +362,8 @@ export class FormEditorProvider implements vscode.CustomEditorProvider<FormDocum
         const moduleFile2 = formDir2.replace(/[/\\]Ext$/, '') + '/Ext/Form/Module.bsl';
         const handlerName = msg.handlerName ?? '';
         try {
-          const fs2 = require('fs');
-          if (fs2.existsSync(moduleFile2)) {
-            const content: string = fs2.readFileSync(moduleFile2, 'utf-8');
+          if (fs.existsSync(moduleFile2)) {
+            const content = fs.readFileSync(moduleFile2, 'utf-8');
             // Ищем процедуру/функцию по имени
             const regex = new RegExp(`^\\s*(Процедура|Функция|Procedure|Function)\\s+${handlerName}\\b`, 'mi');
             const match = regex.exec(content);
@@ -371,10 +414,10 @@ export class FormEditorProvider implements vscode.CustomEditorProvider<FormDocum
       const xml = document.xmlDoc.serialize();
       const model = parseFormXml(xml);
       webview.postMessage({ type: 'formLoaded', model });
-    } catch (err) {
+    } catch (err: unknown) {
       webview.postMessage({
         type: 'error',
-        message: `Ошибка при парсинге формы: ${err}`,
+        message: `Ошибка при парсинге формы: ${getErrorMessage(err)}`,
       });
     }
   }
@@ -398,7 +441,7 @@ export class FormEditorProvider implements vscode.CustomEditorProvider<FormDocum
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';" />
-  <link rel="stylesheet" href="${styleUri}" />
+  <link rel="stylesheet" href="${styleUri.toString()}" />
   <title>Визуальный редактор формы</title>
 </head>
 <body>
@@ -436,10 +479,22 @@ export class FormEditorProvider implements vscode.CustomEditorProvider<FormDocum
       <div class="panel-body" id="property-body"></div>
     </div>
   </div>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
+  <script nonce="${nonce}" src="${scriptUri.toString()}"></script>
 </body>
 </html>`;
   }
+}
+
+function isWebviewMessage(value: unknown): value is WebviewMessage {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const message = value as Record<string, unknown>;
+  return typeof message.type === 'string';
+}
+
+function getErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 function getNonce(): string {

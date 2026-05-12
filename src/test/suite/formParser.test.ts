@@ -18,7 +18,7 @@ suite('FormXmlParser — элементы формы', () => {
     assert.strictEqual(model.root.id, 0);
     assert.strictEqual(model.root.name, '__root__');
     // AutoCommandBar + 6 ChildItems top-level elements
-    assert.ok(model.root.children.length >= 7, `Ожидалось минимум 7 элементов, найдено ${model.root.children.length}`);
+    assert.ok(model.root.children.length >= 7, `Ожидалось минимум 7 элементов, найдено ${String(model.root.children.length)}`);
   });
 
   test('Парсит AutoCommandBar на верхнем уровне', () => {
@@ -120,14 +120,14 @@ suite('FormXmlParser — реквизиты', () => {
     assert.strictEqual(objAttr.isMain, true);
     assert.strictEqual(objAttr.savedData, true);
     assert.ok(objAttr.columns, 'Колонки не найдены');
-    assert.strictEqual(objAttr.columns!.length, 2);
+    assert.strictEqual(objAttr.columns.length, 2);
 
-    const col1 = objAttr.columns![0];
+    const col1 = objAttr.columns[0];
     assert.strictEqual(col1.name, 'HandlerProcedurePath');
     assert.strictEqual(col1.valueType, 'xs:string');
     assert.strictEqual(col1.id, 101);
 
-    const col2 = objAttr.columns![1];
+    const col2 = objAttr.columns[1];
     assert.strictEqual(col2.name, 'Active');
     assert.strictEqual(col2.valueType, 'xs:boolean');
   });

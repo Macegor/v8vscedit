@@ -50,7 +50,7 @@ export function getActiveDataTab(): DataTab {
 }
 
 function renderActiveTab(): void {
-  if (!containerRef || !currentModel) return;
+  if (!containerRef || !currentModel) {return;}
   containerRef.innerHTML = '';
 
   switch (activeTab) {
@@ -221,7 +221,7 @@ function renderParametersTab(container: HTMLElement, events: FormEvent[]): void 
       </div>
     `;
 
-    const link = row.querySelector('.handler-link') as HTMLElement;
+    const link = row.querySelector<HTMLElement>('.handler-link');
     if (link) {
       link.addEventListener('click', (e) => {
         e.preventDefault();

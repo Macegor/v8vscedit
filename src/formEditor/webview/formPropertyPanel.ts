@@ -246,7 +246,7 @@ function createEditableControl(prop: PropertyItem): HTMLElement {
       const option = document.createElement('option');
       option.value = opt;
       option.textContent = opt;
-      if (opt === prop.value) option.selected = true;
+      if (opt === prop.value) {option.selected = true;}
       select.appendChild(option);
     }
     select.addEventListener('change', () => {

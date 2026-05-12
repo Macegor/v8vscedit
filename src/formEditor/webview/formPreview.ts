@@ -93,23 +93,23 @@ function renderElement(element: FormElement): HTMLElement {
     el.classList.add('stretch-h');
   }
   if (element.width) {
-    el.style.width = `${element.width}px`;
+    el.style.width = `${String(element.width)}px`;
   }
 
   // Клик — выбор
   el.addEventListener('click', (e) => {
     e.stopPropagation();
     const prev = document.querySelector('.preview-element.selected');
-    if (prev) prev.classList.remove('selected');
+    if (prev) {prev.classList.remove('selected');}
     el.classList.add('selected');
 
     // Также обновить выделение в дереве
     const prevTree = document.querySelector('.tree-node.selected');
-    if (prevTree) prevTree.classList.remove('selected');
-    const treeNode = document.querySelector(
-      `.tree-node[data-element-id="${element.id}"]`
+    if (prevTree) {prevTree.classList.remove('selected');}
+  const treeNode = document.querySelector(
+      `.tree-node[data-element-id="${String(element.id)}"]`
     );
-    if (treeNode) treeNode.classList.add('selected');
+    if (treeNode) {treeNode.classList.add('selected');}
 
     onSelectCallback?.(element);
   });
@@ -237,7 +237,7 @@ function renderPages(element: FormElement): HTMLElement {
   pages.forEach((page, idx) => {
     const tab = document.createElement('div');
     tab.className = 'preview-pages-tab';
-    if (idx === 0) tab.classList.add('active');
+    if (idx === 0) {tab.classList.add('active');}
     tab.textContent = page.title ?? page.name;
     tabs.appendChild(tab);
   });

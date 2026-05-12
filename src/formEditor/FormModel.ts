@@ -49,7 +49,7 @@ export interface FormElement {
   /** Имя элемента */
   name: string;
   /** Тип элемента */
-  type: FormElementType | string;
+  type: string;
   /** Направление компоновки (для групп) */
   group?: GroupDirection;
   /** Путь к данным */

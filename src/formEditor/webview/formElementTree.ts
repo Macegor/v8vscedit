@@ -107,7 +107,7 @@ function renderTreeNode(element: FormElement, depth: number): HTMLElement {
       // Перерисовать поддерево
       const childrenDiv = wrapper.querySelector(
         ':scope > .tree-children'
-      ) as HTMLElement | null;
+      );
       if (childrenDiv) {
         childrenDiv.classList.toggle('collapsed');
       }
@@ -134,7 +134,7 @@ function renderTreeNode(element: FormElement, depth: number): HTMLElement {
   nodeDiv.addEventListener('click', () => {
     // Снять выделение со старого
     const prev = document.querySelector('.tree-node.selected');
-    if (prev) prev.classList.remove('selected');
+    if (prev) {prev.classList.remove('selected');}
 
     selectedElementId = element.id;
     nodeDiv.classList.add('selected');
@@ -232,8 +232,8 @@ function showContextMenu(x: number, y: number, element: FormElement): void {
 
   const menu = document.createElement('div');
   menu.className = 'context-menu';
-  menu.style.left = `${x}px`;
-  menu.style.top = `${y}px`;
+  menu.style.left = `${String(x)}px`;
+  menu.style.top = `${String(y)}px`;
 
   // Добавить дочерний элемент (для групп)
   const isContainer = element.type === 'UsualGroup' || element.type === 'ColumnGroup' ||
@@ -288,10 +288,10 @@ function showContextMenu(x: number, y: number, element: FormElement): void {
   document.body.appendChild(menu);
   const rect = menu.getBoundingClientRect();
   if (rect.right > window.innerWidth) {
-    menu.style.left = `${window.innerWidth - rect.width - 4}px`;
+    menu.style.left = `${String(window.innerWidth - rect.width - 4)}px`;
   }
   if (rect.bottom > window.innerHeight) {
-    menu.style.top = `${window.innerHeight - rect.height - 4}px`;
+    menu.style.top = `${String(window.innerHeight - rect.height - 4)}px`;
   }
 
   activeContextMenu = menu;
@@ -327,7 +327,7 @@ function showElementPicker(parentId: number, insertBeforeId: number | null): voi
       row.className = 'picker-item';
       row.textContent = `${TYPE_ICONS[item.type] ?? '◻️'} ${item.label}`;
       row.addEventListener('click', () => {
-        const name = `Новый${nameCounter++}`;
+        const name = `Новый${String(nameCounter++)}`;
         onCreateCallback?.(parentId, item.type, name, insertBeforeId);
 
         // Для группы с направлением — сразу задать свойство Group
@@ -353,7 +353,7 @@ function showElementPicker(parentId: number, insertBeforeId: number | null): voi
 
   overlay.appendChild(dialog);
   overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) overlay.remove();
+    if (e.target === overlay) {overlay.remove();}
   });
 
   document.body.appendChild(overlay);

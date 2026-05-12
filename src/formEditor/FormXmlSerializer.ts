@@ -13,8 +13,7 @@
 
 import { XMLParser, XMLBuilder } from 'fast-xml-parser';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type XmlNode = Record<string, any>;
+type XmlNode = Record<string, unknown>;
 
 const parserOptions = {
   preserveOrder: true,
@@ -63,7 +62,7 @@ export class FormXmlDocument {
 
   constructor(xmlContent: string) {
     this.originalXml = xmlContent;
-    this.orderedTree = parser.parse(xmlContent);
+    this.orderedTree = toXmlNodes(parser.parse(xmlContent) as unknown);
   }
 
   /** Переместить элемент формы (по id) в новую позицию */
@@ -73,11 +72,11 @@ export class FormXmlDocument {
     insertBeforeId: number | null
   ): boolean {
     const formNode = this.findTag(this.orderedTree, 'Form');
-    if (!formNode) return false;
+    if (!formNode) {return false;}
 
     // Найти и удалить элемент из текущего родителя
     const removed = this.removeElementById(formNode, elementId);
-    if (!removed) return false;
+    if (!removed) {return false;}
 
     // Найти целевого родителя и вставить
     if (targetParentId === 0) {
@@ -86,7 +85,7 @@ export class FormXmlDocument {
       this.insertElement(childItems, removed, insertBeforeId);
     } else {
       const targetParent = this.findElementById(formNode, targetParentId);
-      if (!targetParent) return false;
+      if (!targetParent) {return false;}
       const childItems = this.findOrCreateChildItems(targetParent);
       this.insertElement(childItems, removed, insertBeforeId);
     }
@@ -101,16 +100,16 @@ export class FormXmlDocument {
     value: string
   ): boolean {
     const formNode = this.findTag(this.orderedTree, 'Form');
-    if (!formNode) return false;
+    if (!formNode) {return false;}
 
     const element = this.findElementById(formNode, elementId);
-    if (!element) return false;
+    if (!element) {return false;}
 
     const tagName = this.getTagName(element);
-    if (!tagName) return false;
+    if (!tagName) {return false;}
 
-    const children: XmlNode[] = element[tagName];
-    if (!Array.isArray(children)) return false;
+    const children = getNodeChildren(element, tagName);
+    if (!Array.isArray(children)) {return false;}
 
     // Найти существующее свойство
     const existingIdx = children.findIndex(
@@ -139,7 +138,7 @@ export class FormXmlDocument {
   /** Удалить элемент формы по id */
   deleteElement(elementId: number): boolean {
     const formNode = this.findTag(this.orderedTree, 'Form');
-    if (!formNode) return false;
+    if (!formNode) {return false;}
     return this.removeElementById(formNode, elementId) !== null;
   }
 
@@ -151,7 +150,7 @@ export class FormXmlDocument {
     insertBeforeId: number | null
   ): { success: boolean; newId: number } {
     const formNode = this.findTag(this.orderedTree, 'Form');
-    if (!formNode) return { success: false, newId: -1 };
+    if (!formNode) {return { success: false, newId: -1 };}
 
     const newId = this.getMaxId(formNode) + 1;
 
@@ -180,7 +179,7 @@ export class FormXmlDocument {
       this.insertElement(childItems, newNode, insertBeforeId);
     } else {
       const targetParent = this.findElementById(formNode, parentId);
-      if (!targetParent) return { success: false, newId: -1 };
+      if (!targetParent) {return { success: false, newId: -1 };}
       const childItems = this.findOrCreateChildItems(targetParent);
       this.insertElement(childItems, newNode, insertBeforeId);
     }
@@ -192,25 +191,26 @@ export class FormXmlDocument {
   private getMaxId(contextNode: XmlNode): number {
     let maxId = 0;
     const tagName = this.getTagName(contextNode);
-    if (!tagName) return maxId;
+    if (!tagName) {return maxId;}
 
-    const children: XmlNode[] = contextNode[tagName];
-    if (!Array.isArray(children)) return maxId;
+    const children = getNodeChildren(contextNode, tagName);
+    if (!Array.isArray(children)) {return maxId;}
 
     for (const child of children) {
       const childTag = this.getTagName(child);
-      if (!childTag) continue;
+      if (!childTag) {continue;}
 
       const attrs = child[':@'];
-      if (attrs && attrs['@_id']) {
-        const id = parseInt(attrs['@_id'], 10);
-        if (id > maxId) maxId = id;
+      const rawId = getStringAttribute(attrs, '@_id');
+      if (rawId) {
+        const id = parseInt(rawId, 10);
+        if (id > maxId) {maxId = id;}
       }
 
       if (childTag === 'ChildItems' || ELEMENT_TAGS.has(childTag) ||
           childTag === 'Attributes' || childTag === 'Commands') {
         const childMax = this.getMaxId(child);
-        if (childMax > maxId) maxId = childMax;
+        if (childMax > maxId) {maxId = childMax;}
       }
     }
 
@@ -219,11 +219,11 @@ export class FormXmlDocument {
 
   /** Сериализовать текущее состояние в XML */
   serialize(): string {
-    let xml = builder.build(this.orderedTree) as string;
+    let xml = builder.build(this.orderedTree);
     // Убедимся что XML declaration на месте
     if (!xml.startsWith('<?xml')) {
       // Извлечь из оригинала
-      const declMatch = this.originalXml.match(/<\?xml[^?]*\?>\s*/);
+      const declMatch = /<\?xml[^?]*\?>\s*/.exec(this.originalXml);
       if (declMatch) {
         xml = declMatch[0] + xml;
       }
@@ -235,7 +235,7 @@ export class FormXmlDocument {
 
   private getTagName(node: XmlNode): string | undefined {
     for (const key of Object.keys(node)) {
-      if (key !== ':@' && key !== '#text' && key !== '#comment') return key;
+      if (key !== ':@' && key !== '#text' && key !== '#comment') {return key;}
     }
     return undefined;
   }
@@ -250,19 +250,20 @@ export class FormXmlDocument {
     id: number
   ): XmlNode | undefined {
     const tagName = this.getTagName(contextNode);
-    if (!tagName) return undefined;
+    if (!tagName) {return undefined;}
 
-    const children: XmlNode[] = contextNode[tagName];
-    if (!Array.isArray(children)) return undefined;
+    const children = getNodeChildren(contextNode, tagName);
+    if (!Array.isArray(children)) {return undefined;}
 
     for (const child of children) {
       const childTag = this.getTagName(child);
-      if (!childTag) continue;
+      if (!childTag) {continue;}
 
       // Проверить сам элемент
       if (ELEMENT_TAGS.has(childTag)) {
         const attrs = child[':@'];
-        if (attrs && parseInt(attrs['@_id'], 10) === id) {
+        const rawId = getStringAttribute(attrs, '@_id');
+        if (rawId && parseInt(rawId, 10) === id) {
           return child;
         }
       }
@@ -270,7 +271,7 @@ export class FormXmlDocument {
       // Рекурсия в ChildItems и сами элементы
       if (childTag === 'ChildItems' || ELEMENT_TAGS.has(childTag)) {
         const found = this.findElementById(child, id);
-        if (found) return found;
+        if (found) {return found;}
       }
     }
 
@@ -283,19 +284,20 @@ export class FormXmlDocument {
     id: number
   ): XmlNode | null {
     const tagName = this.getTagName(contextNode);
-    if (!tagName) return null;
+    if (!tagName) {return null;}
 
-    const children: XmlNode[] = contextNode[tagName];
-    if (!Array.isArray(children)) return null;
+    const children = getNodeChildren(contextNode, tagName);
+    if (!Array.isArray(children)) {return null;}
 
     for (let i = 0; i < children.length; i++) {
       const child = children[i];
       const childTag = this.getTagName(child);
-      if (!childTag) continue;
+      if (!childTag) {continue;}
 
       if (ELEMENT_TAGS.has(childTag)) {
         const attrs = child[':@'];
-        if (attrs && parseInt(attrs['@_id'], 10) === id) {
+        const rawId = getStringAttribute(attrs, '@_id');
+        if (rawId && parseInt(rawId, 10) === id) {
           children.splice(i, 1);
           return child;
         }
@@ -303,7 +305,7 @@ export class FormXmlDocument {
 
       if (childTag === 'ChildItems' || ELEMENT_TAGS.has(childTag)) {
         const removed = this.removeElementById(child, id);
-        if (removed) return removed;
+        if (removed) {return removed;}
       }
     }
 
@@ -313,9 +315,9 @@ export class FormXmlDocument {
   /** Найти или создать ChildItems внутри элемента */
   private findOrCreateChildItems(elementNode: XmlNode): XmlNode {
     const tagName = this.getTagName(elementNode);
-    if (!tagName) throw new Error('Invalid element node');
+    if (!tagName) {throw new Error('Invalid element node');}
 
-    const children: XmlNode[] = elementNode[tagName];
+    const children = getNodeChildren(elementNode, tagName);
     let childItems = children.find(
       (c) => this.getTagName(c) === 'ChildItems'
     );
@@ -334,7 +336,7 @@ export class FormXmlDocument {
     element: XmlNode,
     insertBeforeId: number | null
   ): void {
-    const items: XmlNode[] = childItemsNode['ChildItems'];
+    const items = getNodeChildren(childItemsNode, 'ChildItems');
 
     if (insertBeforeId === null) {
       items.push(element);
@@ -343,9 +345,10 @@ export class FormXmlDocument {
 
     for (let i = 0; i < items.length; i++) {
       const childTag = this.getTagName(items[i]);
-      if (!childTag) continue;
+      if (!childTag) {continue;}
       const attrs = items[i][':@'];
-      if (attrs && parseInt(attrs['@_id'], 10) === insertBeforeId) {
+      const rawId = getStringAttribute(attrs, '@_id');
+      if (rawId && parseInt(rawId, 10) === insertBeforeId) {
         items.splice(i, 0, element);
         return;
       }
@@ -354,4 +357,25 @@ export class FormXmlDocument {
     // Не нашли — добавляем в конец
     items.push(element);
   }
+}
+
+function toXmlNodes(value: unknown): XmlNode[] {
+  return Array.isArray(value) ? value.filter(isXmlNode) : [];
+}
+
+function isXmlNode(value: unknown): value is XmlNode {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getNodeChildren(node: XmlNode, tagName: string): XmlNode[] {
+  const children = node[tagName];
+  return Array.isArray(children) ? children.filter(isXmlNode) : [];
+}
+
+function getStringAttribute(value: unknown, name: string): string | undefined {
+  if (!isXmlNode(value)) {
+    return undefined;
+  }
+  const attrValue = value[name];
+  return typeof attrValue === 'string' ? attrValue : undefined;
 }

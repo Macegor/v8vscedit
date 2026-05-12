@@ -45,15 +45,15 @@ declare function acquireVsCodeApi(): {
 const vscode = acquireVsCodeApi();
 
 let currentModel: FormModel | null = null;
-let elementIndex: Map<number, FormElement> = new Map();
+let elementIndex = new Map<number, FormElement>();
 let selectedElementId: number | null = null;
 
 // ── DOM-элементы ─────────────────────────────────────────────────────────────
 
-const treeBody = document.getElementById('tree-body')!;
-const previewBody = document.getElementById('preview-body')!;
-const propertyBody = document.getElementById('property-body')!;
-const dataBody = document.getElementById('data-body')!;
+const treeBody = requireElement('tree-body');
+const previewBody = requireElement('preview-body');
+const propertyBody = requireElement('property-body');
+const dataBody = requireElement('data-body');
 
 // ── Drag-and-drop ────────────────────────────────────────────────────────────
 
@@ -133,22 +133,24 @@ setOnGoToHandler((handlerName) => {
 
 previewBody.addEventListener('drop', (e: DragEvent) => {
   try {
-    const data = JSON.parse(e.dataTransfer?.getData('text/plain') ?? '{}');
-    if (data.source === 'attribute') {
-      e.preventDefault();
-      e.stopPropagation();
-      // Определить target parent из drop position
-      const targetEl = (e.target as HTMLElement).closest('[data-element-id]') as HTMLElement | null;
-      const parentId = targetEl ? parseInt(targetEl.dataset.elementId ?? '0', 10) : 0;
-      vscode.postMessage({
-        type: 'createElementWithDataPath',
-        parentId,
-        elementType: 'InputField',
-        elementName: data.name,
-        dataPath: data.dataPath,
-      });
-    }
-  } catch {}
+    const data = parseAttributeDragData(
+      e.dataTransfer?.getData('text/plain') ?? '{}'
+    );
+    e.preventDefault();
+    e.stopPropagation();
+    // Определить target parent из drop position
+    const targetEl = asHTMLElement(e.target)?.closest<HTMLElement>('[data-element-id]');
+    const parentId = targetEl ? parseInt(targetEl.dataset.elementId ?? '0', 10) : 0;
+    vscode.postMessage({
+      type: 'createElementWithDataPath',
+      parentId,
+      elementType: 'InputField',
+      elementName: data.name,
+      dataPath: data.dataPath,
+    });
+  } catch {
+    return;
+  }
 });
 
 previewBody.addEventListener('dragover', (e: DragEvent) => {
@@ -167,18 +169,18 @@ function onSelectElement(element: FormElement): void {
     (el as HTMLElement).classList.remove('selected');
   });
   const previewEl = previewBody.querySelector(
-    `[data-element-id="${element.id}"]`
+    `[data-element-id="${String(element.id)}"]`
   );
-  if (previewEl) (previewEl as HTMLElement).classList.add('selected');
+  if (previewEl) {(previewEl as HTMLElement).classList.add('selected');}
 
   // Обновить выделение в дереве
   document.querySelectorAll('.tree-node.selected').forEach((el: Element) => {
     (el as HTMLElement).classList.remove('selected');
   });
   const treeEl = treeBody.querySelector(
-    `.tree-node[data-element-id="${element.id}"]`
+    `.tree-node[data-element-id="${String(element.id)}"]`
   );
-  if (treeEl) (treeEl as HTMLElement).classList.add('selected');
+  if (treeEl) {(treeEl as HTMLElement).classList.add('selected');}
 
   // Обновить свойства
   renderPropertyPanel(propertyBody, element);
@@ -201,12 +203,15 @@ function buildIndex(element: FormElement): void {
 
 // ── Обработка сообщений от extension host ────────────────────────────────────
 
-window.addEventListener('message', (event: MessageEvent) => {
-  const msg = event.data;
+window.addEventListener('message', (event: MessageEvent<unknown>) => {
+  const msg = parseHostMessage(event.data);
+  if (!msg) {
+    return;
+  }
 
   switch (msg.type) {
     case 'formLoaded': {
-      currentModel = msg.model as FormModel;
+      currentModel = msg.model;
       elementIndex = new Map();
       buildIndex(currentModel.root);
 
@@ -220,8 +225,10 @@ window.addEventListener('message', (event: MessageEvent) => {
 
       // Восстановить выбранный элемент если он ещё существует
       if (selectedElementId !== null && elementIndex.has(selectedElementId)) {
-        const el = elementIndex.get(selectedElementId)!;
-        onSelectElement(el);
+        const el = elementIndex.get(selectedElementId);
+        if (el) {
+          onSelectElement(el);
+        }
       } else {
         selectedElementId = null;
         renderPropertyPanel(propertyBody, null);
@@ -230,7 +237,12 @@ window.addEventListener('message', (event: MessageEvent) => {
     }
 
     case 'error': {
-      propertyBody.innerHTML = `<div class="no-selection" style="color: var(--vscode-errorForeground);">${msg.message}</div>`;
+      propertyBody.innerHTML = '';
+      const errorEl = document.createElement('div');
+      errorEl.className = 'no-selection';
+      errorEl.style.color = 'var(--vscode-errorForeground)';
+      errorEl.textContent = msg.message;
+      propertyBody.appendChild(errorEl);
       break;
     }
   }
@@ -263,16 +275,16 @@ document.addEventListener('keydown', (e: KeyboardEvent) => {
 // ── Переключение вкладок ────────────────────────────────────────────────────
 
 document.addEventListener('click', (e: MouseEvent) => {
-  const tab = (e.target as HTMLElement).closest('.tab') as HTMLElement | null;
-  if (!tab) return;
+  const tab = asHTMLElement(e.target)?.closest<HTMLElement>('.tab');
+  if (!tab) {return;}
 
   const panel = tab.dataset.panel;
   const tabName = tab.dataset.tab;
-  if (!panel || !tabName) return;
+  if (!panel || !tabName) {return;}
 
   // Найти tab-bar и переключить active
   const tabBar = tab.parentElement;
-  if (!tabBar) return;
+  if (!tabBar) {return;}
   tabBar.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
   tab.classList.add('active');
 
@@ -287,34 +299,24 @@ document.addEventListener('click', (e: MouseEvent) => {
     // Вернуть активную вкладку на "Форма"
     tabBar.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
     const formTab = tabBar.querySelector('[data-tab="form-preview"]');
-    if (formTab) formTab.classList.add('active');
+    if (formTab) {formTab.classList.add('active');}
   }
 });
 
 // ── Ресайз сплиттеров ───────────────────────────────────────────────────────
 
 function initSplitters(): void {
-  const editor = document.getElementById('form-editor')!;
-  const splitterH = document.getElementById('splitter-h')!;
-  const splitterVTop = document.getElementById('splitter-v-top')!;
-  const splitterVBottom = document.getElementById('splitter-v-bottom')!;
+  const editor = requireElement('form-editor');
+  const splitterH = requireElement('splitter-h');
+  const splitterVTop = requireElement('splitter-v-top');
+  const splitterVBottom = requireElement('splitter-v-bottom');
 
   let activeSplitter: HTMLElement | null = null;
-  let startPos = 0;
-  let startSize = 0;
 
   function onMouseDown(e: MouseEvent, splitter: HTMLElement): void {
     e.preventDefault();
     activeSplitter = splitter;
     splitter.classList.add('active');
-
-    if (splitter.classList.contains('splitter-h')) {
-      startPos = e.clientY;
-      startSize = editor.getBoundingClientRect().height;
-    } else {
-      startPos = e.clientX;
-      startSize = editor.getBoundingClientRect().width;
-    }
 
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
@@ -323,18 +325,18 @@ function initSplitters(): void {
   }
 
   function onMouseMove(e: MouseEvent): void {
-    if (!activeSplitter) return;
+    if (!activeSplitter) {return;}
 
     if (activeSplitter.classList.contains('splitter-h')) {
       // Horizontal: adjust top row height
       const editorRect = editor.getBoundingClientRect();
       const topHeight = Math.max(100, Math.min(e.clientY - editorRect.top, editorRect.height - 100));
-      editor.style.setProperty('--top-height', `${topHeight}px`);
+      editor.style.setProperty('--top-height', `${String(topHeight)}px`);
     } else {
       // Vertical: adjust left column width
       const editorRect = editor.getBoundingClientRect();
       const leftWidth = Math.max(150, Math.min(e.clientX - editorRect.left, editorRect.width - 200));
-      editor.style.setProperty('--left-width', `${leftWidth}px`);
+      editor.style.setProperty('--left-width', `${String(leftWidth)}px`);
     }
   }
 
@@ -358,3 +360,61 @@ initSplitters();
 
 // Начальное состояние
 renderPropertyPanel(propertyBody, null);
+
+interface AttributeDragData {
+  source: 'attribute';
+  name: string;
+  dataPath: string;
+}
+
+type HostMessage =
+  | { type: 'formLoaded'; model: FormModel }
+  | { type: 'error'; message: string };
+
+function requireElement(id: string): HTMLElement {
+  const element = document.getElementById(id);
+  if (!element) {
+    throw new Error(`DOM element not found: ${id}`);
+  }
+  return element;
+}
+
+function asHTMLElement(value: EventTarget | null): HTMLElement | null {
+  return value instanceof HTMLElement ? value : null;
+}
+
+function parseAttributeDragData(raw: string): AttributeDragData {
+  const value = JSON.parse(raw) as unknown;
+  if (!isRecord(value)) {
+    throw new Error('Некорректные данные перетаскивания');
+  }
+  const { source, name, dataPath } = value;
+  if (source !== 'attribute' || typeof name !== 'string' || typeof dataPath !== 'string') {
+    throw new Error('Некорректные данные реквизита');
+  }
+  return { source, name, dataPath };
+}
+
+function parseHostMessage(value: unknown): HostMessage | null {
+  if (!isRecord(value) || typeof value.type !== 'string') {
+    return null;
+  }
+  if (value.type === 'formLoaded' && isFormModel(value.model)) {
+    return { type: 'formLoaded', model: value.model };
+  }
+  if (value.type === 'error' && typeof value.message === 'string') {
+    return { type: 'error', message: value.message };
+  }
+  return null;
+}
+
+function isFormModel(value: unknown): value is FormModel {
+  return isRecord(value) && isRecord(value.root) &&
+    Array.isArray(value.attributes) &&
+    Array.isArray(value.commands) &&
+    Array.isArray(value.events);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}

@@ -11,15 +11,12 @@ import type {
   FormAttributeColumn,
   FormCommand,
   FormEvent,
-  FormElementType,
   GroupDirection,
 } from './FormModel';
 
 // ── Типы ordered-вывода fast-xml-parser ──────────────────────────────────────
 
-// fast-xml-parser ordered mode выдаёт объекты произвольной структуры
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type XmlNode = Record<string, any>;
+type XmlNode = Record<string, unknown>;
 
 // ── Парсер ───────────────────────────────────────────────────────────────────
 
@@ -33,7 +30,7 @@ const parser = new XMLParser({
 
 /** Распарсить содержимое Form.xml в FormModel */
 export function parseFormXml(xmlContent: string): FormModel {
-  const ordered: XmlNode[] = parser.parse(xmlContent);
+  const ordered = toXmlNodes(parser.parse(xmlContent) as unknown);
 
   // Корневой элемент — <Form> (с возможными namespace-обёртками)
   const formNode = findTag(ordered, 'Form');
@@ -129,11 +126,11 @@ function parseElements(nodes: XmlNode[]): FormElement[] {
   const result: FormElement[] = [];
   for (const node of nodes) {
     const tagName = getTagName(node);
-    if (!tagName) continue;
-    if (!ELEMENT_TAGS.has(tagName)) continue;
+    if (!tagName) {continue;}
+    if (!ELEMENT_TAGS.has(tagName)) {continue;}
 
     const el = parseSingleElement(tagName, node);
-    if (el) result.push(el);
+    if (el) {result.push(el);}
   }
   return result;
 }
@@ -142,9 +139,9 @@ function parseSingleElement(
   tagName: string,
   node: XmlNode
 ): FormElement | null {
-  const attrs = node[':@'] ?? {};
-  const name = attrs['@_name'] ?? '';
-  const id = parseInt(attrs['@_id'] ?? '0', 10);
+  const attrs = getAttributes(node);
+  const name = getStringAttribute(attrs, '@_name') ?? '';
+  const id = parseInt(getStringAttribute(attrs, '@_id') ?? '0', 10);
 
   const children = getChildren(node);
   const rawProperties: Record<string, string> = {};
@@ -170,7 +167,7 @@ function parseSingleElement(
   // Парсинг свойств
   for (const child of children) {
     const propName = getTagName(child);
-    if (!propName) continue;
+    if (!propName) {continue;}
 
     // Пропускаем вложенные структурные теги
     if (
@@ -229,7 +226,7 @@ function parseSingleElement(
   return {
     id,
     name,
-    type: tagName as FormElementType,
+    type: tagName,
     group,
     dataPath,
     title,
@@ -251,11 +248,11 @@ function parseAttributes(nodes: XmlNode[]): FormAttribute[] {
   const result: FormAttribute[] = [];
   for (const node of nodes) {
     const tagName = getTagName(node);
-    if (tagName !== 'Attribute') continue;
+    if (tagName !== 'Attribute') {continue;}
 
-    const attrs = node[':@'] ?? {};
-    const name = attrs['@_name'] ?? '';
-    const id = parseInt(attrs['@_id'] ?? '0', 10);
+    const attrs = getAttributes(node);
+    const name = getStringAttribute(attrs, '@_name') ?? '';
+    const id = parseInt(getStringAttribute(attrs, '@_id') ?? '0', 10);
     const children = getChildren(node);
 
     let valueType = '';
@@ -284,10 +281,10 @@ function parseAttributes(nodes: XmlNode[]): FormAttribute[] {
 function parseColumns(nodes: XmlNode[]): FormAttributeColumn[] {
   const result: FormAttributeColumn[] = [];
   for (const node of nodes) {
-    if (getTagName(node) !== 'Column') continue;
-    const attrs = node[':@'] ?? {};
-    const name = attrs['@_name'] ?? '';
-    const id = parseInt(attrs['@_id'] ?? '0', 10);
+    if (getTagName(node) !== 'Column') {continue;}
+    const attrs = getAttributes(node);
+    const name = getStringAttribute(attrs, '@_name') ?? '';
+    const id = parseInt(getStringAttribute(attrs, '@_id') ?? '0', 10);
     const children = getChildren(node);
     let valueType = '';
     for (const child of children) {
@@ -305,10 +302,10 @@ function parseColumns(nodes: XmlNode[]): FormAttributeColumn[] {
 function parseCommands(nodes: XmlNode[]): FormCommand[] {
   const result: FormCommand[] = [];
   for (const node of nodes) {
-    if (getTagName(node) !== 'Command') continue;
-    const attrs = node[':@'] ?? {};
-    const name = attrs['@_name'] ?? '';
-    const id = parseInt(attrs['@_id'] ?? '0', 10);
+    if (getTagName(node) !== 'Command') {continue;}
+    const attrs = getAttributes(node);
+    const name = getStringAttribute(attrs, '@_name') ?? '';
+    const id = parseInt(getStringAttribute(attrs, '@_id') ?? '0', 10);
     const children = getChildren(node);
 
     let title: string | undefined;
@@ -336,9 +333,9 @@ function parseCommands(nodes: XmlNode[]): FormCommand[] {
 function parseEvents(nodes: XmlNode[]): FormEvent[] {
   const result: FormEvent[] = [];
   for (const node of nodes) {
-    if (getTagName(node) !== 'Event') continue;
-    const attrs = node[':@'] ?? {};
-    const name = attrs['@_name'] ?? '';
+    if (getTagName(node) !== 'Event') {continue;}
+    const attrs = getAttributes(node);
+    const name = getStringAttribute(attrs, '@_name') ?? '';
     const handler = getTextContent(node) ?? '';
     if (name && handler) {
       result.push({ name, handler });
@@ -352,7 +349,7 @@ function parseEvents(nodes: XmlNode[]): FormEvent[] {
 /** Получить имя тега в ordered-mode node */
 function getTagName(node: XmlNode): string | undefined {
   for (const key of Object.keys(node)) {
-    if (key !== ':@' && key !== '#text') return key;
+    if (key !== ':@' && key !== '#text') {return key;}
   }
   return undefined;
 }
@@ -360,9 +357,9 @@ function getTagName(node: XmlNode): string | undefined {
 /** Получить дочерние элементы ordered-mode node */
 function getChildren(node: XmlNode): XmlNode[] {
   const tagName = getTagName(node);
-  if (!tagName) return [];
+  if (!tagName) {return [];}
   const val = node[tagName];
-  if (Array.isArray(val)) return val as XmlNode[];
+  if (Array.isArray(val)) {return val.filter(isXmlNode);}
   return [];
 }
 
@@ -377,11 +374,32 @@ function getTextContent(node: XmlNode): string | undefined {
   for (const child of children) {
     if ('#text' in child) {
       const val = child['#text'];
-      if (typeof val === 'string') return val;
-      if (Array.isArray(val) && val.length > 0) return String(val[0]);
+      if (typeof val === 'string') {return val;}
+      if (Array.isArray(val) && val.length > 0) {return String(val[0]);}
     }
   }
   return undefined;
+}
+
+function toXmlNodes(value: unknown): XmlNode[] {
+  return Array.isArray(value) ? value.filter(isXmlNode) : [];
+}
+
+function isXmlNode(value: unknown): value is XmlNode {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getAttributes(node: XmlNode): XmlNode {
+  const attrs = node[':@'];
+  return isXmlNode(attrs) ? attrs : {};
+}
+
+function getStringAttribute(
+  attrs: XmlNode,
+  name: string
+): string | undefined {
+  const value = attrs[name];
+  return typeof value === 'string' ? value : undefined;
 }
 
 /** Извлечь локализованную строку из <Title>/<Synonym> — ищет v8:item → v8:content */
@@ -389,10 +407,10 @@ function extractLocalizedString(node: XmlNode): string | undefined {
   const children = getChildren(node);
   // Ищем v8:item
   const item = findTag(children, 'v8:item');
-  if (!item) return getTextContent(node);
+  if (!item) {return getTextContent(node);}
   const itemChildren = getChildren(item);
   const content = findTag(itemChildren, 'v8:content');
-  if (!content) return undefined;
+  if (!content) {return undefined;}
   return getTextContent(content);
 }
 
@@ -400,7 +418,7 @@ function extractLocalizedString(node: XmlNode): string | undefined {
 function extractType(node: XmlNode): string {
   const children = getChildren(node);
   const typeNode = findTag(children, 'v8:Type');
-  if (!typeNode) return '';
+  if (!typeNode) {return '';}
   return getTextContent(typeNode) ?? '';
 }
 
