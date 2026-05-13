@@ -185,6 +185,12 @@ export function normalizeTypedFieldPropertiesAfterTypeChange(
       resultBlocks.push(existing.byKey.get(key) ?? buildDefaultPropertyBlock(key, indent));
       emitted.add(key);
     }
+    for (const block of existing.ordered) {
+      if (!emitted.has(block.key) && shouldPreserveEmptyFormattingProperty(block)) {
+        resultBlocks.push(block.xml);
+        emitted.add(block.key);
+      }
+    }
   }
 
   for (const key of allowed) {
@@ -200,6 +206,10 @@ export function normalizeTypedFieldPropertiesAfterTypeChange(
 
 function shouldPreserveUncontrolledProperties(kind: TypeAwarePropertyOwnerKind): boolean {
   return kind === 'Constant' || kind === 'CommonAttribute';
+}
+
+function shouldPreserveEmptyFormattingProperty(block: { key: string; xml: string }): boolean {
+  return (block.key === 'Format' || block.key === 'EditFormat') && /\/>\s*$/.test(block.xml);
 }
 
 function getAllowedPropertyKeys(kind: TypeAwarePropertyOwnerKind, categories: ReadonlySet<FieldTypeCategory>): string[] {

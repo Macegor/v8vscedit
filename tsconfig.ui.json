@@ -15,10 +15,8 @@
     "baseUrl": ".",
     "paths": {
       "@ui/*": ["src-ui/*"],
-      "@ui-shared/*": ["src-ui/shared/*"],
-      "@ui-kits/*": ["src-ui/kits/*"]
+      "@ui-shared/*": ["src-ui/shared/*"]
     }
   },
   "include": ["src-ui/**/*.ts", "src-ui/**/*.vue", "src-ui/env.d.ts"]
 }
-

@@ -15,6 +15,12 @@ export interface TreeNodeActionDto {
   readonly enabled?: boolean;
 }
 
+/** Служебная иконка состояния узла: поддержка, хранилище, ограничения */
+export interface TreeNodeStateIconDto {
+  readonly title: string;
+  readonly icon: IconDto;
+}
+
 /**
  * DTO узла дерева метаданных.
  * Передаётся от host к webview для отрисовки.
@@ -32,5 +38,8 @@ export interface TreeNodeDto {
   readonly loaded: boolean;
   readonly children?: TreeNodeDto[];
   readonly actions: TreeNodeActionDto[];
+  readonly inlineActions?: TreeNodeActionDto[];
+  readonly stateIcons?: TreeNodeStateIconDto[];
+  readonly gitStatus?: 'added' | 'modified' | 'deleted';
   readonly defaultCommand?: string;
 }

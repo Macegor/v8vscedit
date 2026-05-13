@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
-import type { PropertyControlDto } from '@ui-shared/types/property';
+import type { PropertyControl } from '@ui-shared/types/property';
 
 const props = defineProps<{
-  control: PropertyControlDto;
+  control: PropertyControl;
   readonly: boolean;
 }>();
 

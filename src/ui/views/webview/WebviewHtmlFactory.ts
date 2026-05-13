@@ -47,7 +47,10 @@ export class WebviewHtmlFactory {
     const styleSrc = options.csp?.allowStyles === false
       ? ''
       : ` style-src ${options.webview.cspSource};`;
-    return `default-src 'none';${imageSrc}${styleSrc} script-src ${options.webview.cspSource} 'nonce-${nonce}';`;
+    const fontSrc = options.csp?.allowStyles === false
+      ? ''
+      : ` font-src ${options.webview.cspSource};`;
+    return `default-src 'none';${imageSrc}${styleSrc}${fontSrc} script-src ${options.webview.cspSource} 'nonce-${nonce}';`;
   }
 }
 

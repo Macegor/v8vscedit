@@ -1,4 +1,5 @@
 import { createApp } from 'vue';
+import '@vscode/codicons/dist/codicon.css';
 import '@ui-shared/vscode-elements';
 import { loadInitialState } from '@ui-shared/api/loadInitialState';
 import { MessageBus } from '@ui-shared/api/messageBus';
@@ -10,6 +11,7 @@ export { TreeNodeDto, OwnershipKind, SupportMode };
 export type StandaloneServerState = 'unconfigured' | 'running' | 'unresponsive' | 'stopped' | 'stale' | 'busy';
 
 export interface StandaloneServerStatusDto {
+  readonly configured: boolean;
   readonly state: StandaloneServerState;
   readonly port?: number;
   readonly pid?: number;
@@ -21,6 +23,7 @@ export interface UniversalPanelState {
   readonly processing: boolean;
   readonly searchQuery: string;
   readonly openNodeIds: readonly string[];
+  readonly selectedNodeId?: string;
   readonly rootNodes: readonly TreeNodeDto[];
   readonly standaloneStatus: StandaloneServerStatusDto;
 }

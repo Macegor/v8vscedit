@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 
 const props = defineProps<{
   query: string;
@@ -12,6 +12,10 @@ const emit = defineEmits<{
 
 const localQuery = ref(props.query);
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+
+watch(() => props.query, (query) => {
+  localQuery.value = query;
+});
 
 function onInput(value: string): void {
   localQuery.value = value;
@@ -29,50 +33,76 @@ function clear(): void {
 </script>
 
 <template>
-  <div class="search-box">
-    <div class="search-input-wrapper">
-      <span class="search-icon codicon codicon-search" aria-hidden="true" />
-      <vscode-textfield
-        class="search-input"
-        :value="localQuery"
-        placeholder="Поиск..."
-        aria-label="Поиск по метаданным"
-        @input="onInput(($event.target as HTMLInputElement).value)"
-        @keydown.escape="clear"
-      />
-      <vscode-button
-        v-if="localQuery"
-        appearance="icon"
-        @click="clear"
-        aria-label="Очистить поиск"
-      >
-        <span class="codicon codicon-close" />
-      </vscode-button>
-    </div>
+  <div class="search">
+    <input
+      :value="localQuery"
+      type="text"
+      placeholder="Поиск по метаданным"
+      aria-label="Поиск по метаданным"
+      autocomplete="off"
+      spellcheck="false"
+      @input="onInput(($event.target as HTMLInputElement).value)"
+      @keydown.enter="emit('search', localQuery)"
+      @keydown.escape="clear"
+    />
+    <button
+      v-if="localQuery"
+      class="clear"
+      type="button"
+      title="Очистить поиск"
+      aria-label="Очистить поиск"
+      @click="clear"
+    >
+      <span class="codicon codicon-close" aria-hidden="true" />
+    </button>
   </div>
 </template>
 
 <style scoped>
-.search-box {
-  padding: 8px;
-  border-bottom: 1px solid var(--vscode-panel-border);
+.search {
+  position: relative;
+  margin-top: 8px;
+  min-height: 26px;
 }
-.search-input-wrapper {
-  display: flex;
-  align-items: center;
+input {
+  width: 100%;
+  height: 26px;
+  box-sizing: border-box;
+  padding: 0 30px 0 10px;
+  color: var(--vscode-input-foreground);
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, transparent);
-  border-radius: 2px;
-  padding: 0 4px;
+  border-radius: 5px;
+  font: inherit;
+  line-height: 24px;
+  outline: none;
 }
-.search-icon {
-  font-size: 14px;
+input:focus {
+  border-color: var(--vscode-focusBorder);
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+input::placeholder {
   color: var(--vscode-input-placeholderForeground);
-  margin-right: 4px;
+  opacity: 1;
 }
-.search-input {
-  flex: 1;
-  border: none !important;
-  background: transparent !important;
+button.clear {
+  position: absolute;
+  top: 1px;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  color: var(--vscode-icon-foreground);
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+button.clear:hover {
+  background: var(--vscode-toolbar-hoverBackground);
 }
 </style>

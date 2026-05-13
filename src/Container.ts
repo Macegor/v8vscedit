@@ -163,7 +163,7 @@ export class Container {
     this.standaloneServerViewProvider = new StandaloneServerViewProvider(
       this.standaloneServerService,
       this.outputChannel,
-      () => this.treeSearchViewProvider.refresh(),
+      () => this.refreshActionsView(),
       context.extensionUri
     );
     this.aiSkillsInstaller = new AiSkillsInstaller(this.outputChannel);
@@ -195,8 +195,10 @@ export class Container {
       },
       isProjectInitialized: () => this.isProjectInitialized(),
       getStandaloneServerStatus: () => this.standaloneServerService.getStatus(),
+      refreshStandaloneServerStatus: () => this.standaloneServerService.refreshHealth(),
       getProcessingState: () => this.treeProcessingState,
-      refreshActionsView: () => this.treeSearchViewProvider.refresh(),
+      gitMetadataStatusService: this.gitMetadataStatusService,
+      refreshActionsView: () => this.refreshActionsView(),
     });
     context.subscriptions.push(this.universalPanelViewProvider);
     this.changeDetector = new ConfigurationChangeDetector(workspaceFolder.uri.fsPath);
@@ -285,7 +287,7 @@ export class Container {
         }
       },
       setTreeProcessingState: (state) => this.setTreeProcessingState(state),
-      refreshActionsView: () => this.treeSearchViewProvider.refresh(),
+      refreshActionsView: () => this.refreshActionsView(),
     });
     registerSupportIndicatorCommands(this.context);
   }
@@ -317,6 +319,11 @@ export class Container {
 
   private setTreeProcessingState(state: UniversalPanelProcessingState): void {
     this.treeProcessingState = state;
+    this.universalPanelViewProvider.refresh();
+  }
+
+  private refreshActionsView(): void {
+    this.treeSearchViewProvider.refresh();
     this.universalPanelViewProvider.refresh();
   }
 

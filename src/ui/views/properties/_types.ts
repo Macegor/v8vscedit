@@ -6,12 +6,20 @@
  * от обработчиков дерева.
  */
 import type {
+  ExchangePlanContentSnapshot,
+} from '../../../infra/xml/ExchangePlanContentService';
+import type {
+  SubsystemMembershipSnapshot,
+} from '../../../infra/xml/SubsystemXmlService';
+import type { MetadataNode } from '../../tree/TreeNode';
+import type {
   PropertyValueKind,
   MetadataTypeItem,
   MetadataReferenceListItem,
   MetadataStringQualifiers,
   MetadataNumberQualifiers,
   MetadataDateQualifiers,
+  ObjectPropertiesCollection,
 } from '../../tree/nodeBuilders/_types';
 
 export type {
@@ -67,4 +75,17 @@ export interface PropertiesViewState {
   readonly: boolean;
   readonlyReason?: 'support' | 'repository';
   sections: PropertySection[];
+  subsystemSnapshot?: SubsystemMembershipSnapshot | null;
+  exchangePlanContentSnapshot?: ExchangePlanContentSnapshot | null;
+}
+
+/** Контекст построения состояния панели свойств. */
+export interface PropertiesRenderContext {
+  node: MetadataNode;
+  properties: ObjectPropertiesCollection;
+  isEditLocked: boolean;
+  isEditLockedBySupport: boolean;
+  isEditLockedByRepository: boolean;
+  subsystemSnapshot: SubsystemMembershipSnapshot | null;
+  exchangePlanContentSnapshot: ExchangePlanContentSnapshot | null;
 }

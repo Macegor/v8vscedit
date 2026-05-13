@@ -7,7 +7,7 @@ import type { PropertiesViewState } from './properties/_types';
 interface PropertiesCommandMessage {
   readonly type: 'command';
   readonly command: string;
-  readonly payload: Record<string, unknown>;
+  readonly payload?: Record<string, unknown>;
 }
 
 type PropertiesMessage = PropertiesCommandMessage;
@@ -47,7 +47,7 @@ export class PropertiesViewProvider implements vscode.Disposable {
         localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'ui')],
       };
       this.refreshHtml();
-      this.panel.webview.onDidReceiveMessage((message: PropertiesMessage) => {
+      this.panel.webview.onDidReceiveMessage((message: PropertiesMessage | { readonly type?: string }) => {
         this.handleMessage(message);
       });
       this.panel.onDidDispose(() => {
@@ -100,10 +100,18 @@ export class PropertiesViewProvider implements vscode.Disposable {
     });
   }
 
-  private handleMessage(message: PropertiesMessage): void {
-    if (message.command === 'propertyChanged') {
-      const payload = message.payload as { controlId: string; value: unknown };
-      this.controller.handlePropertyChange(payload.controlId, payload.value);
+  private handleMessage(message: PropertiesMessage | { readonly type?: string }): void {
+    if (!('command' in message)) {
+      return;
     }
+    if (message.command === 'propertyChanged') {
+      const payload = message.payload as { key?: string; controlId?: string; value: unknown };
+      this.controller.handlePropertyChange(payload.key ?? payload.controlId ?? '', payload.value);
+      return;
+    }
+    void this.controller.handleWebviewMessage({
+      type: message.command,
+      ...(message.payload ?? {}),
+    });
   }
 }

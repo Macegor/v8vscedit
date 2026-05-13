@@ -34,6 +34,7 @@ import { type SupportInfoService, SupportMode } from '../../../infra/support/Sup
 import { getHandlerForNode } from '../../tree/nodeBuilders/index';
 import type {
   PropertyControl,
+  PropertiesRenderContext,
   PropertySection,
   PropertiesViewState,
 } from './_types';
@@ -47,7 +48,6 @@ import type {
 } from '../../../infra/xml/SubsystemXmlService';
 import type { ExchangePlanContentSnapshot } from '../../../infra/xml/ExchangePlanContentService';
 import type { ExchangePlanContentService } from '../../../infra/xml/ExchangePlanContentService';
-import type { PropertiesRenderContext } from './rendering/_types';
 import {
   arePropertyEditValuesEqual,
   extractFormNameFromReference,
@@ -118,12 +118,17 @@ export class PropertiesViewController {
 
     const properties = handler.getProperties(node);
     const context = this.buildRenderContext(node, properties);
-    if (context.properties.length === 0) {
+    const visibleProperties = context.properties.filter((property) => property.key !== 'StandardAttributes');
+    if (
+      visibleProperties.length === 0 &&
+      !context.subsystemSnapshot &&
+      !context.exchangePlanContentSnapshot
+    ) {
       return null;
     }
 
-    const controls = context.properties.map((prop) => this.toControl(prop, context.isEditLocked));
-    const sections = this.groupIntoSections(controls, context.properties);
+    const controls = visibleProperties.map((prop) => this.toControl(prop, context.isEditLocked));
+    const sections = this.groupIntoSections(controls, visibleProperties);
 
     let readonlyReason: PropertiesViewState['readonlyReason'];
     if (context.isEditLockedBySupport) {
@@ -137,6 +142,8 @@ export class PropertiesViewController {
       readonly: context.isEditLocked,
       readonlyReason,
       sections,
+      subsystemSnapshot: context.subsystemSnapshot,
+      exchangePlanContentSnapshot: context.exchangePlanContentSnapshot,
     };
   }
 

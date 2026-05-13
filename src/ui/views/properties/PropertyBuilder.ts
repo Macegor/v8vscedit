@@ -1155,12 +1155,12 @@ function tryBuildScalarStringPropertyItem(params: {
     title: propertyTitle(key),
     kind: 'string',
     value:
-      simple === undefined
-        ? complexInner === undefined
-          ? ''
-          : formatReadonlyXmlProperty(key, complexInner)
+      complexInner?.trim().includes('<')
+        ? formatReadonlyXmlProperty(key, complexInner)
+        : simple === undefined
+        ? ''
         : formatPropertyDisplayValue(simple),
-    readonly: simple === undefined && Boolean(complexInner?.trim().includes('<')),
+    readonly: Boolean(complexInner?.trim().includes('<')),
   };
 }
 

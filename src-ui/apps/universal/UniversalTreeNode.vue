@@ -8,17 +8,20 @@ const props = defineProps<{
   depth: number;
   selectedId: string | null;
   openIds: Set<string>;
+  loadingIds: Set<string>;
 }>();
 
 const emit = defineEmits<{
   toggle: [nodeId: string];
   select: [nodeId: string | null];
+  default: [nodeId: string];
   action: [payload: { nodeId: string; actionId: string }];
   contextMenu: [payload: { nodeId: string; event: MouseEvent }];
 }>();
 
 const isOpen = computed(() => props.openIds.has(props.node.id));
 const isSelected = computed(() => props.node.id === props.selectedId);
+const isLoading = computed(() => props.loadingIds.has(props.node.id));
 const hasChildren = computed(() => props.node.hasChildren || (props.node.children?.length ?? 0) > 0);
 
 function onToggle(): void {
@@ -27,6 +30,10 @@ function onToggle(): void {
 
 function onSelect(): void {
   emit('select', props.node.id);
+}
+
+function onDefault(): void {
+  emit('default', props.node.id);
 }
 </script>
 
@@ -37,8 +44,10 @@ function onSelect(): void {
       :depth="depth"
       :is-open="isOpen"
       :is-selected="isSelected"
+      :is-loading="isLoading"
       @toggle="onToggle"
       @select="onSelect"
+      @default="onDefault"
       @action="(actionId: string) => emit('action', { nodeId: node.id, actionId })"
       @context-menu="(event: MouseEvent) => emit('contextMenu', { nodeId: node.id, event })"
     />
@@ -50,25 +59,15 @@ function onSelect(): void {
         :depth="depth + 1"
         :selected-id="selectedId"
         :open-ids="openIds"
+        :loading-ids="loadingIds"
         @toggle="emit('toggle', $event)"
         @select="emit('select', $event)"
+        @default="emit('default', $event)"
         @action="emit('action', $event)"
         @context-menu="emit('contextMenu', $event)"
       />
     </div>
-    <div v-if="isOpen && hasChildren && !node.children && !node.loaded" class="tree-loading">
-      <span class="codicon codicon-loading codicon-modifier-spin" />
-    </div>
   </div>
 </template>
 
-<style scoped>
-.tree-loading {
-  padding: 4px 0 4px 32px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  color: var(--vscode-descriptionForeground);
-}
-</style>
+<style scoped></style>

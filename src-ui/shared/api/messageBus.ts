@@ -10,6 +10,7 @@ export type MessageHandler<T> = (message: T) => void;
  * Обёртка над window.addEventListener('message') и vscodeApi.postMessage().
  */
 export class MessageBus {
+  // any: разные типы сообщений хранятся в одной карте по discriminant `type`.
   private handlers = new Map<string, Set<MessageHandler<any>>>();
   private listener: ((event: MessageEvent) => void) | null = null;
 

@@ -37,7 +37,7 @@ export function extractTopLevelPropertiesChildren(xml: string): { tag: string; i
       continue;
     }
 
-    const openMatch = /^<([^\s>/]+)(\s[^>]*)?>/.exec(s.slice(pos));
+    const openMatch = /^<([^\s>/]+)(?:\s[^>]*)?\/?>/.exec(s.slice(pos));
     if (!openMatch) {
       pos++;
       continue;

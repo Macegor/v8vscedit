@@ -6,11 +6,13 @@ defineProps<{
   nodes: readonly TreeNodeDto[];
   selectedId: string | null;
   openIds: Set<string>;
+  loadingIds: Set<string>;
 }>();
 
 const emit = defineEmits<{
   toggle: [nodeId: string, open: boolean];
   select: [nodeId: string | null];
+  default: [nodeId: string];
   action: [nodeId: string, actionId: string];
   contextMenu: [nodeId: string, event: MouseEvent];
 }>();
@@ -25,8 +27,10 @@ const emit = defineEmits<{
       :depth="0"
       :selected-id="selectedId"
       :open-ids="openIds"
+      :loading-ids="loadingIds"
       @toggle="emit('toggle', $event, !openIds.has($event))"
       @select="emit('select', $event)"
+      @default="emit('default', $event)"
       @action="($event) => emit('action', $event.nodeId, $event.actionId)"
       @context-menu="($event) => emit('contextMenu', $event.nodeId, $event.event)"
     />
@@ -37,8 +41,9 @@ const emit = defineEmits<{
 <style scoped>
 .universal-tree {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 4px 0;
+  padding: 2px 4px 12px;
 }
 .tree-empty {
   padding: 24px;

@@ -7,7 +7,6 @@ export const rootDir = path.dirname(fileURLToPath(import.meta.url));
 export const aliases = {
   '@ui': path.resolve(rootDir, 'src-ui'),
   '@ui-shared': path.resolve(rootDir, 'src-ui/shared'),
-  '@ui-kits': path.resolve(rootDir, 'src-ui/kits'),
 };
 
 export const nodeExternal = [
@@ -23,4 +22,3 @@ export interface WebviewManifestEntry {
 }
 
 export type WebviewManifest = Record<string, WebviewManifestEntry>;
-
