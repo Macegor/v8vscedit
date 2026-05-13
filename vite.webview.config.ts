@@ -7,7 +7,6 @@ import { aliases, type WebviewManifest } from './vite.shared';
 
 const entries = {
   environment: 'src-ui/apps/environment/main.ts',
-  formEditor: 'src-ui/apps/form-editor/main.ts',
   standalone: 'src-ui/apps/standalone/main.ts',
   'tree-search': 'src-ui/apps/tree-search/main.ts',
   'repository-connection': 'src-ui/apps/repository-connection/main.ts',

@@ -68,13 +68,37 @@ src/
 │   │   ├── ConfigXmlReader.ts        # парсер Configuration.xml → ConfigInfo
 │   │   ├── ObjectXmlReader.ts        # парсер XML объекта → MetaObject
 │   │   ├── PropertySchema.ts         # декларативные схемы свойств по MetaKind
-│   │   └── XmlUtils.ts               # extractSimpleTag, extractSynonym, extractNestingAwareBlock
+│   │   ├── XmlUtils.ts               # extractSimpleTag, extractSynonym, extractNestingAwareBlock
+│   │   ├── ConfigurationXmlEditor.ts # сервис редактирования Configuration.xml
+│   │   ├── SubsystemXmlService.ts    # работа с Subsystems.xml
+│   │   ├── ExchangePlanContentService.ts  # работа с ExchangePlanContent.xml
+│   │   ├── BasedOnXmlService.ts      # чтение/запись BasedOnConfigurationName
+│   │   ├── MetadataXmlCreator.ts     # создание новых XML-объектов метаданных
+│   │   └── MetadataXmlRemover.ts     # удаление XML-объектов метаданных
 │   ├── fs/
 │   │   ├── ConfigLocator.ts          # рекурсивный поиск Configuration.xml (bывш. ConfigFinder)
 │   │   └── MetaPathResolver.ts       # единый resolver: XML + все модули по ModuleSlot
-│   └── support/
-│       ├── SupportInfoReader.ts      # чтение ParentConfigurations.bin, parse UUID → SupportMode
-│       └── SupportInfoService.ts     # кэш по SHA-1 ParentConfigurations.bin
+│   ├── support/
+│   │   ├── SupportInfoReader.ts      # чтение ParentConfigurations.bin, parse UUID → SupportMode
+│   │   ├── SupportInfoService.ts     # кэш по SHA-1 ParentConfigurations.bin
+│   │   └── Logger.ts                 # канал OutputChannel логгера
+│   ├── cache/
+│   │   ├── MetadataCache.ts          # кэш метаданных
+│   │   └── hashCache.ts              # кэш хешей файлов (CLI)
+│   ├── repository/
+│   │   └── RepositoryService.ts      # работа с хранилищем 1С, локальные захваты
+│   ├── git/
+│   │   └── GitMetadataStatusService.ts  # статус Git для узлов метаданных
+│   ├── environment/
+│   │   ├── BslAnalyzerConfigService.ts  # генерация bsl-analyzer.toml
+│   │   ├── ProjectEnvironmentService.ts # управление окружением проекта
+│   │   └── InfoBaseRegistryService.ts   # парсинг списка баз из v8i
+│   ├── process/
+│   │   ├── OnecPlatform.ts           # поиск платформы 1С
+│   │   ├── ProcessRunner.ts          # spawn с кодировкой
+│   │   └── OutputDecoder.ts          # декодер OEM/Win1251 вывода
+│   └── skills/
+│       └── AiSkillsInstaller.ts      # установка AI-навыков
 │
 ├── ui/                               # Всё, что знает про vscode API
 │   ├── tree/
@@ -89,11 +113,21 @@ src/
 │   │   │   └── SubsystemBuilder.ts       # спец-builder для рекурсивной иерархии подсистем
 │   │   └── decorations/
 │   │       ├── SupportDecorator.ts       # добавляет -supportN суффикс к contextValue
-│   │       └── SupportDecorationProvider.ts  # FileDecorationProvider для цвета в Explorer
+│   │       ├── SupportDecorationProvider.ts  # FileDecorationProvider для цвета в Explorer
+│   │       └── GitMetadataDecorationProvider.ts # FileDecorationProvider для статуса Git
 │   ├── views/
 │   │   ├── PropertiesViewProvider.ts     # singleton WebviewPanel (как сейчас)
-│   │   └── properties/
-│   │       └── PropertyBuilder.ts        # один builder по PropertySchema
+│   │   ├── UniversalPanelViewProvider.ts # основной UI — универсальная панель с деревом
+│   │   ├── properties/
+│   │   │   ├── PropertyBuilder.ts        # один builder по PropertySchema
+│   │   │   └── _types.ts                 # типы значений свойств
+│   │   ├── subsystem/                    # редактор подсистем
+│   │   ├── search/                       # поиск по дереву
+│   │   ├── repository/                   # UI подключения и захвата хранилища
+│   │   ├── environment/                  # UI управления окружением проекта
+│   │   ├── standalone/                   # автономный сервер
+│   │   ├── webview/                      # общие утилиты webview (nonce)
+│   │   └── dto/                          # DTO для Vue-компонентов
 │   ├── commands/
 │   │   ├── CommandRegistry.ts            # registerAll(ctx, services) — диспатч по классам-командам
 │   │   ├── open/
@@ -195,20 +229,24 @@ container/ext   ←   всё
 
 ```typescript
 // extension.ts
-export function activate(ctx: vscode.ExtensionContext): void {
-  container = new Container(ctx);
-  container.activate();
+export function activate(context: vscode.ExtensionContext): void {
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders || folders.length === 0) {
+    return;
+  }
+  container = Container.bootstrap(context, folders[0]);
 }
 export function deactivate(): Promise<void> | undefined {
-  return container?.deactivate();
+  return container?.lspManager.stop();
 }
 ```
 
-`Container` — единственное место создания всех сервисов. Он:
+`Container` — единственное место создания всех сервисов. `Container.bootstrap()`:
 1. Создаёт `OutputChannel` и все сервисы домена/инфры.
 2. Регистрирует `TreeView`, `SupportDecorationProvider`, `FileSystemWatcher`.
 3. Вызывает `CommandRegistry.registerAll(ctx, services)`.
 4. Стартует `LspManager`.
+5. Вызывает `reloadEntries()`.
 
 ---
 
@@ -315,7 +353,7 @@ BSL-модули открываются только как реальные `fi
 ### Новый тест
 
 1. Файл в `src/test/suite/<имя>.test.ts`, Mocha (`suite` / `test`).
-2. Использовать `example/cf` и `example/cfe/EVOLC` как фикстуры. Не создавать временные XML — правила тестирования опираются на реальные файлы.
+2. Использовать `example/src/cf` и `example/src/cfe/EVOLC` как фикстуры. Не создавать временные XML — правила тестирования опираются на реальные файлы.
 3. Для тестов домена и `infra` — никаких mock-ов VS Code. Для UI — `@vscode/test-electron`.
 
 ---
@@ -399,7 +437,7 @@ npm test
 - `infra/fs/` — `ConfigLocator.ts` (+ `findConfigurations`), `MetaPathResolver.ts` (+ 9 функций-обёрток для path), `ObjectLocation.ts`.
 - `infra/cache/` — кэши метаданных и хешей; запрещено импортировать кэш из `cli/core`.
 - `infra/support/` — `Logger.ts`, `SupportInfoService.ts`.
-- `ui/tree/` — `TreeNode.ts` (бывший `MetadataNode.ts`), `MetadataTreeProvider.ts`, `MetadataGroups.ts`, `nodes/` (декларативные дескрипторы из `META_TYPES`), `presentation/`, `nodeBuilders/` (все builder-ы типов), `decorations/SupportDecorationProvider.ts`.
+- `ui/tree/` — `TreeNode.ts` (бывший `MetadataNode.ts`), `MetadataTreeProvider.ts`, `nodes/` (декларативные дескрипторы из `META_TYPES`), `presentation/`, `nodeBuilders/` (все builder-ы типов), `decorations/SupportDecorationProvider.ts`, `decorations/GitMetadataDecorationProvider.ts`.
 - `ui/views/` — `PropertiesViewProvider.ts`, `properties/` (`PropertyBuilder.ts`, `MetadataXmlPropertiesService.ts`, `PropertiesSelectionService.ts`, `_types.ts`).
 - `ui/commands/` — `CommandRegistry.ts`.
 - `ui/readonly/` — `BslReadonlyGuard.ts`.
@@ -407,18 +445,17 @@ npm test
 - `lsp/` — `LspManager.ts`, `analyzer/`; встроенный сервер удалён.
 - `cli/` — отдельный Node entry `dist/cli/onec-tools.js`; команды используют `domain/` и `infra/`, но нижние слои не зависят от CLI.
 - `Container.ts` — композиционный корень; `extension.ts` — тонкий активатор.
-- Legacy-папки `src/handlers/`, `src/nodes/`, `src/services/`, `src/views/`, `src/language-server/`, `src/language/` удалены.
+- Legacy-папки `src/handlers/`, `src/nodes/`, `src/services/`, `src/views/`, `src/language-server/`, `src/language/`, `src/formEditor/` удалены.
 - Дубликаты карты `typeToFolder` устранены — единственный источник `META_TYPES`.
 
 ### Известные технические долги
 
 1. **`CommandRegistry.ts` — один файл**, пока не разбит на `open/`, `properties/`, `support/`, `ext/` как предусмотрено архитектурой. Разделение — при следующем изменении команд.
 2. **`TreeNode.ts` не разделён на `TreeNodeModel` (POJO) + vscode-обёртку.** Сейчас один класс совмещает данные и отображение.
-3. **`MetadataGroups.ts`** — отдельный файл, хотя данные группировки должны полностью жить в `META_TYPES.group/groupOrder`.
-4. **Миграция XML-парсинга на `fast-xml-parser`.** Внутри `infra/xml/*` — регулярки. Замена должна пройти без изменения публичного API `ConfigXmlReader`/`ObjectXmlReader`.
-5. **Редактирование XML.** Пока реализовано только чтение. После миграции на настоящий XML-парсер — добавить `ObjectXmlWriter` для панели свойств.
-6. **Сильная типизация дерева.** `TreeNodeModel` → discriminated union по `kind` вместо общего интерфейса.
-7. **`ui/views/properties/_types.ts`** — пока re-export из `ui/tree/nodeBuilders/_types.ts`. Нужно окончательно отделить типы панели свойств от `ObjectHandler`.
+3. **Миграция XML-парсинга на `fast-xml-parser`.** Внутри `infra/xml/*` — регулярки. Замена должна пройти без изменения публичного API `ConfigXmlReader`/`ObjectXmlReader`.
+4. **Редактирование XML.** Пока реализовано только чтение. После миграции на настоящий XML-парсер — добавить `ObjectXmlWriter` для панели свойств.
+5. **Сильная типизация дерева.** `TreeNodeModel` → discriminated union по `kind` вместо общего интерфейса.
+6. **`ui/views/properties/_types.ts`** — пока re-export из `ui/tree/nodeBuilders/_types.ts`. Нужно окончательно отделить типы панели свойств от `ObjectHandler`.
 
 ---
 
@@ -448,5 +485,5 @@ npm test
 5. `rg "import .* from 'vscode'" src/domain src/infra` — 0 результатов.
 6. `rg "from ['\"].*cli|from ['\"].*/cli" src/domain src/infra` — 0 результатов.
 7. `rg "require\(|readFileSync" src/domain` — 0 результатов (`domain/` — чистый).
-8. `rg "FOLDER_MAP|ROOT_KIND_NAMES|CHILD_KIND_NAMES|FOLDER_RU" src` — 0 результатов, кроме явно утверждённого адаптера к внешнему API.
-9. `Get-ChildItem src -Directory` — в списке не должно быть ни одной из папок: `handlers`, `services`, `views`, `language`, `language-server`, `nodes`. Корректные подкаталоги первого уровня: `domain`, `infra`, `lsp`, `ui`, `cli`, `test` и файлы `Container.ts`, `extension.ts`.
+8. `rg "FOLDER_MAP|FOLDER_RU" src` — 0 результатов.
+9. `ls src -d */` — в списке не должно быть ни одной из папок: `handlers`, `services`, `views`, `language`, `language-server`, `nodes`, `formEditor`. Корректные подкаталоги первого уровня: `domain`, `infra`, `lsp`, `ui`, `cli`, `test` и файлы `Container.ts`, `extension.ts`.

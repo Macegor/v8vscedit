@@ -3,7 +3,7 @@ import * as path from 'path';
 import { findConfigurations } from '../../infra/fs/ConfigLocator';
 
 /** Путь к папке с примерами конфигурации */
-const EXAMPLE_PATH = path.resolve(__dirname, '../../../../example');
+const EXAMPLE_PATH = path.resolve(__dirname, '../../../example');
 
 suite('ConfigFinder', () => {
   test('Находит конфигурацию cf в example/cf', () => {

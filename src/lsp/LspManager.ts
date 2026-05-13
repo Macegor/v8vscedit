@@ -157,7 +157,10 @@ export class LspManager implements vscode.Disposable {
       args: ['lsp'],
       options: {
         env: {
-          ...process.env,
+          PATH: process.env.PATH,
+          HOME: process.env.HOME,
+          LANG: process.env.LANG,
+          LC_ALL: process.env.LC_ALL,
           RUST_LOG: 'info',
           RUST_BACKTRACE: '1',
           RUST_MIN_STACK: '16777216',

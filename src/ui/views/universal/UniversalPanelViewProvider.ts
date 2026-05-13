@@ -1,4 +1,3 @@
-import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import type {
@@ -9,8 +8,8 @@ import type {
 import type { StandaloneServerStatus } from '../../../infra/standalone';
 import { META_TYPES, type MetaKind } from '../../../domain/MetaTypes';
 import type { ModuleSlot } from '../../../domain/ModuleSlot';
-import { getObjectLocationFromXml } from '../../../infra/fs/MetaPathResolver';
 import { getIconUris } from '../../tree/presentation/icon';
+import { createWebviewNonce } from '../webview/WebviewNonce';
 import type { MetadataTreeProvider } from '../../tree/MetadataTreeProvider';
 import type { MetadataNode } from '../../tree/TreeNode';
 
@@ -64,7 +63,6 @@ const MODULE_SLOT_ACTIONS: Partial<Record<ModuleSlot, { command: string; title: 
 };
 
 const CHILDREN_RENDER_CHUNK_SIZE = 250;
-const FORM_EDITOR_VIEW_TYPE = 'v8vscedit.formEditor';
 
 /**
  * Универсальная панель объединяет быстрые операции и HTML-представление
@@ -170,11 +168,6 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
       return;
     }
 
-    if (this.isFormEditorNode(node)) {
-      await this.openFormEditor(node);
-      return;
-    }
-
     await vscode.commands.executeCommand('v8vscedit.showProperties', node);
   }
 
@@ -263,10 +256,6 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
   }
 
   private async executeTreeItemCommand(node: MetadataNode | undefined): Promise<void> {
-    if (node && this.isFormEditorNode(node)) {
-      return;
-    }
-
     const command = node?.command;
     if (!command) {
       return;
@@ -342,7 +331,7 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
   }
 
   private getHtml(webview: vscode.Webview): string {
-    const nonce = getNonce();
+    const nonce = createWebviewNonce();
     const initialized = this.services.isProjectInitialized();
     const searchQuery = escapeHtml(this.services.treeProvider.getSearchQuery());
     const serverStatus = this.services.getStandaloneServerStatus();
@@ -1507,38 +1496,6 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
     return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
   }
 
-  private isFormEditorNode(node: MetadataNode): boolean {
-    return node.nodeKind === 'Form' || node.nodeKind === 'CommonForm';
-  }
-
-  private async openFormEditor(node: MetadataNode): Promise<void> {
-    const formXmlPath = this.resolveFormEditorXmlPath(node);
-    if (!formXmlPath) {
-      await vscode.window.showWarningMessage(`Файл формы не найден: ${node.textLabel}`);
-      return;
-    }
-
-    await vscode.commands.executeCommand(
-      'vscode.openWith',
-      vscode.Uri.file(formXmlPath),
-      FORM_EDITOR_VIEW_TYPE
-    );
-  }
-
-  private resolveFormEditorXmlPath(node: MetadataNode): string | null {
-    const ownerXmlPath = node.metaContext?.ownerObjectXmlPath ?? node.xmlPath;
-    if (!ownerXmlPath) {
-      return null;
-    }
-
-    const location = getObjectLocationFromXml(ownerXmlPath);
-    const candidates = node.nodeKind === 'CommonForm'
-      ? [path.join(location.objectDir, 'Ext', 'Form.xml')]
-      : [path.join(location.objectDir, 'Forms', node.textLabel, 'Ext', 'Form.xml')];
-
-    return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
-  }
-
   private addRepositoryRootActions(contextValue: string, add: (action: TreeAction) => void): void {
     if (contextValue.includes('-repoDisconnected')) {
       add({ command: 'v8vscedit.repository.connect', title: 'Подключить к хранилищу', icon: plugIcon() });
@@ -1639,15 +1596,6 @@ function getStandaloneStateLabel(state: StandaloneServerStatus['state']): string
     default:
       return state;
   }
-}
-
-function getNonce(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let nonce = '';
-  for (let i = 0; i < 32; i += 1) {
-    nonce += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return nonce;
 }
 
 function escapeHtml(value: string): string {

@@ -11,8 +11,8 @@ import { buildCommandProperties } from '../../ui/views/properties/PropertyBuilde
 import { TypeRegistryService } from '../../ui/views/properties/TypeRegistryService';
 import type { EnumPropertyValue, MetadataTypeValue } from '../../ui/views/properties/_types';
 
-const EXAMPLE_CF = path.resolve(__dirname, '../../../../example/cf');
-const EXAMPLE_CFE = path.resolve(__dirname, '../../../../example/cfe/EVOLC');
+const EXAMPLE_CF = path.resolve(__dirname, '../../../example/src/cf');
+const EXAMPLE_CFE = path.resolve(__dirname, '../../../example/src/cfe/EVOLC');
 
 suite('Properties — команды', () => {
   test('Показывает свойства команды объекта из XML владельца', () => {

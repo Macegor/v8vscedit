@@ -65,7 +65,7 @@ suite('BslAnalyzerConfigService', () => {
       '[diagnostics]',
       'enabled = true',
       '',
-    ].join('\n'));
+    ].join('\n') + '\n');
   });
 
   test('Создаёт файл в корне проекта', () => {

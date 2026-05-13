@@ -4,8 +4,8 @@ import * as path from 'path';
 import { buildConfigurationProperties } from '../../ui/views/properties/PropertyBuilder';
 import type { EnumPropertyValue, MultiEnumPropertyValue } from '../../ui/views/properties/_types';
 
-const EXAMPLE_CFE = path.resolve(__dirname, '../../../../example/cfe/EVOLC');
-const EXAMPLE_CF = path.resolve(__dirname, '../../../../example/cf');
+const EXAMPLE_CFE = path.resolve(__dirname, '../../../example/src/cfe/EVOLC');
+const EXAMPLE_CF = path.resolve(__dirname, '../../../example/src/cf');
 
 suite('Properties — Configuration.xml', () => {
   test('Показывает свойства основной конфигурации с русскими подписями и enum-значениями', () => {
