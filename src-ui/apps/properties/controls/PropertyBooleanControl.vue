@@ -18,37 +18,19 @@ function toggle(): void {
 
 <template>
   <div class="control-row">
-    <label class="checkbox-wrapper" :for="'prop-' + control.id">
-      <input
-        :id="'prop-' + control.id"
-        type="checkbox"
-        :checked="!!control.value"
-        :disabled="readonly"
-        @change="toggle"
-      />
-      <span class="control-label">{{ control.label }}</span>
-    </label>
+    <vscode-checkbox
+      :id="'prop-' + control.id"
+      :checked="!!control.value"
+      :disabled="readonly"
+      @change="toggle"
+    >
+      {{ control.label }}
+    </vscode-checkbox>
   </div>
 </template>
 
 <style scoped>
 .control-row {
   padding: 2px 12px;
-}
-
-.checkbox-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.checkbox-wrapper input[type="checkbox"] {
-  margin: 0;
-}
-
-.control-label {
-  color: var(--vscode-foreground);
 }
 </style>

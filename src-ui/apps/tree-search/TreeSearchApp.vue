@@ -55,45 +55,44 @@ onUnmounted(() => {
     <div class="search-section">
       <div class="search-input-wrapper">
         <span class="search-icon codicon codicon-search" aria-hidden="true"></span>
-        <input
+        <vscode-textfield
           class="search-input"
-          type="search"
           :value="searchQuery"
-          @input="onSearchInput(($event.target as HTMLInputElement).value)"
-          @keydown.escape="clearSearch"
           placeholder="Поиск по метаданным..."
           aria-label="Поиск по метаданным"
+          @input="onSearchInput(($event.target as HTMLInputElement).value)"
+          @keydown.escape="clearSearch"
         />
-        <button
+        <vscode-button
           v-if="searchQuery"
-          class="search-clear"
+          appearance="icon"
           @click="clearSearch"
           aria-label="Очистить поиск"
           title="Очистить поиск"
         >
           <span class="codicon codicon-close"></span>
-        </button>
+        </vscode-button>
       </div>
     </div>
 
     <template v-if="initialized">
       <div class="actions-section">
-        <button class="action-button" @click="executeCommand('v8vscedit.decompileExtension')" title="Импорт конфигураций">
+        <vscode-button @click="executeCommand('v8vscedit.decompileExtension')" title="Импорт конфигураций">
           <span class="codicon codicon-cloud-download"></span>
           <span class="action-label">Импорт</span>
-        </button>
-        <button class="action-button" @click="executeCommand('v8vscedit.runThinClient')" title="Запустить тонкий клиент">
+        </vscode-button>
+        <vscode-button @click="executeCommand('v8vscedit.runThinClient')" title="Запустить тонкий клиент">
           <span class="codicon codicon-play"></span>
           <span class="action-label">Тонкий клиент</span>
-        </button>
-        <button class="action-button" @click="executeCommand('v8vscedit.runConfigurator')" title="Запустить конфигуратор">
+        </vscode-button>
+        <vscode-button @click="executeCommand('v8vscedit.runConfigurator')" title="Запустить конфигуратор">
           <span class="codicon codicon-tools"></span>
           <span class="action-label">Конфигуратор</span>
-        </button>
-        <button class="action-button" @click="executeCommand('v8vscedit.environmentSettings')" title="Настройки проекта">
+        </vscode-button>
+        <vscode-button @click="executeCommand('v8vscedit.environmentSettings')" title="Настройки проекта">
           <span class="codicon codicon-settings-gear"></span>
           <span class="action-label">Настройки</span>
-        </button>
+        </vscode-button>
       </div>
 
       <div class="server-section" v-if="serverStatus.state !== 'unconfigured'">
@@ -104,37 +103,37 @@ onUnmounted(() => {
           </span>
         </div>
         <div class="server-actions">
-          <button
+          <vscode-button
             v-if="serverStatus.state === 'stopped' || serverStatus.state === 'stale'"
-            class="server-button"
+            appearance="secondary"
             @click="executeCommand('v8vscedit.startStandaloneServer')"
             title="Запустить"
           >
             <span class="codicon codicon-play"></span>
-          </button>
-          <button
+          </vscode-button>
+          <vscode-button
             v-if="serverStatus.state === 'running'"
-            class="server-button"
+            appearance="secondary"
             @click="executeCommand('v8vscedit.stopStandaloneServer')"
             title="Остановить"
           >
             <span class="codicon codicon-stop"></span>
-          </button>
-          <button
-            class="server-button"
+          </vscode-button>
+          <vscode-button
+            appearance="secondary"
             @click="executeCommand('v8vscedit.openStandaloneServerLog')"
             title="Лог"
           >
             <span class="codicon codicon-output"></span>
-          </button>
-          <button
+          </vscode-button>
+          <vscode-button
             v-if="serverStatus.state === 'running'"
-            class="server-button"
+            appearance="secondary"
             @click="executeCommand('v8vscedit.openStandaloneServer')"
             title="Открыть в браузере"
           >
             <span class="codicon codicon-browser"></span>
-          </button>
+          </vscode-button>
         </div>
       </div>
     </template>
@@ -174,56 +173,14 @@ onUnmounted(() => {
 
 .search-input {
   flex: 1;
-  background: transparent;
-  border: none;
-  outline: none;
-  color: var(--vscode-input-foreground);
-  font-family: var(--vscode-font-family);
-  font-size: var(--vscode-font-size, 13px);
-  padding: 4px 0;
-}
-
-.search-input::placeholder {
-  color: var(--vscode-input-placeholderForeground);
-}
-
-.search-clear {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--vscode-input-foreground);
-  padding: 2px;
-  display: flex;
-  align-items: center;
-  opacity: 0.7;
-}
-
-.search-clear:hover {
-  opacity: 1;
+  border: none !important;
+  background: transparent !important;
 }
 
 .actions-section {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-}
-
-.action-button {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
-  border: none;
-  border-radius: 2px;
-  padding: 4px 8px;
-  cursor: pointer;
-  font-family: var(--vscode-font-family);
-  font-size: var(--vscode-font-size, 12px);
-}
-
-.action-button:hover {
-  background: var(--vscode-button-hoverBackground);
 }
 
 .action-label {
@@ -273,22 +230,6 @@ onUnmounted(() => {
 .server-actions {
   display: flex;
   gap: 4px;
-}
-
-.server-button {
-  background: var(--vscode-button-secondaryBackground);
-  color: var(--vscode-button-secondaryForeground);
-  border: none;
-  border-radius: 2px;
-  padding: 3px 6px;
-  cursor: pointer;
-  font-size: 14px;
-  display: flex;
-  align-items: center;
-}
-
-.server-button:hover {
-  background: var(--vscode-button-secondaryHoverBackground);
 }
 
 .uninitialized-message {

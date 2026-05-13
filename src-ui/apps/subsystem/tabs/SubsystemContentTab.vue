@@ -14,15 +14,13 @@ const emit = defineEmits<{
 <template>
   <div class="content-tab">
     <div v-for="item in items" :key="item.id" class="content-row">
-      <label class="content-checkbox-wrapper">
-        <input
-          type="checkbox"
-          :checked="item.included"
-          :disabled="locked"
-          @change="emit('toggle', item)"
-        />
-        <span class="content-label">{{ item.label }}</span>
-      </label>
+      <vscode-checkbox
+        :checked="item.included"
+        :disabled="locked"
+        @change="emit('toggle', item)"
+      >
+        {{ item.label }}
+      </vscode-checkbox>
       <span v-if="item.kind" class="content-kind">{{ item.kind }}</span>
     </div>
     <div v-if="!items.length" class="empty-state">
@@ -41,23 +39,6 @@ const emit = defineEmits<{
   align-items: center;
   gap: 8px;
   padding: 4px 0;
-}
-
-.content-checkbox-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  font-size: 12px;
-  flex: 1;
-}
-
-.content-checkbox-wrapper input[type="checkbox"] {
-  margin: 0;
-}
-
-.content-label {
-  color: var(--vscode-foreground);
 }
 
 .content-kind {

@@ -71,42 +71,39 @@ onUnmounted(() => {
 
     <div class="form-field">
       <label class="field-label" for="commitComment">Комментарий к изменению</label>
-      <textarea
+      <vscode-textarea
         id="commitComment"
-        class="field-textarea"
-        v-model="comment"
+        :value="comment"
         placeholder="Опишите изменение..."
-        rows="6"
         :disabled="loading"
-      ></textarea>
+        rows="6"
+        @input="(e: Event) => comment = (e.target as HTMLTextAreaElement).value"
+      ></vscode-textarea>
     </div>
 
-    <div class="form-divider"></div>
+    <vscode-divider></vscode-divider>
 
-    <label class="checkbox-row">
-      <input type="checkbox" v-model="recursive" :disabled="loading" />
-      <span>Захватывать подчинённые объекты</span>
-    </label>
+    <vscode-checkbox :checked="recursive" :disabled="loading" @change="(e: Event) => recursive = (e.target as HTMLInputElement).checked">
+      Захватывать подчинённые объекты
+    </vscode-checkbox>
 
-    <label class="checkbox-row">
-      <input type="checkbox" v-model="keepLocked" :disabled="loading" />
-      <span>Оставить захваченным</span>
-    </label>
+    <vscode-checkbox :checked="keepLocked" :disabled="loading" @change="(e: Event) => keepLocked = (e.target as HTMLInputElement).checked">
+      Оставить захваченным
+    </vscode-checkbox>
 
-    <label class="checkbox-row">
-      <input type="checkbox" v-model="force" :disabled="loading" />
-      <span>Принудительное помещение (с потерей изменений других пользователей)</span>
-    </label>
+    <vscode-checkbox :checked="force" :disabled="loading" @change="(e: Event) => force = (e.target as HTMLInputElement).checked">
+      Принудительное помещение (с потерей изменений других пользователей)
+    </vscode-checkbox>
 
     <div v-if="error" class="form-error">{{ error }}</div>
 
     <div class="form-actions">
-      <button class="action-button primary" @click="submit" :disabled="loading">
+      <vscode-button @click="submit" :disabled="loading">
         {{ loading ? 'Выполняется...' : 'Поместить' }}
-      </button>
-      <button class="action-button secondary" @click="cancel" :disabled="loading">
+      </vscode-button>
+      <vscode-button appearance="secondary" @click="cancel" :disabled="loading">
         Отмена
-      </button>
+      </vscode-button>
     </div>
   </div>
 </template>
@@ -145,40 +142,6 @@ onUnmounted(() => {
   color: var(--vscode-descriptionForeground);
 }
 
-.field-textarea {
-  background: var(--vscode-input-background);
-  color: var(--vscode-input-foreground);
-  border: 1px solid var(--vscode-input-border, transparent);
-  border-radius: 2px;
-  padding: 8px;
-  font-family: inherit;
-  font-size: inherit;
-  resize: vertical;
-  min-height: 80px;
-}
-
-.field-textarea:focus {
-  outline: 1px solid var(--vscode-focusBorder);
-}
-
-.form-divider {
-  height: 1px;
-  background: var(--vscode-panel-border);
-  margin: 4px 0;
-}
-
-.checkbox-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.checkbox-row input[type="checkbox"] {
-  margin: 0;
-}
-
 .form-error {
   background: var(--vscode-inputValidation-errorBackground);
   border: 1px solid var(--vscode-inputValidation-errorBorder);
@@ -192,37 +155,5 @@ onUnmounted(() => {
   display: flex;
   gap: 8px;
   margin-top: 8px;
-}
-
-.action-button {
-  padding: 6px 14px;
-  border: none;
-  border-radius: 2px;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: inherit;
-}
-
-.action-button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.action-button.primary {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
-}
-
-.action-button.primary:hover:not(:disabled) {
-  background: var(--vscode-button-hoverBackground);
-}
-
-.action-button.secondary {
-  background: var(--vscode-button-secondaryBackground);
-  color: var(--vscode-button-secondaryForeground);
-}
-
-.action-button.secondary:hover:not(:disabled) {
-  background: var(--vscode-button-secondaryHoverBackground);
 }
 </style>

@@ -6,16 +6,16 @@
       </div>
       <label>
         Платформа
-        <select id="platform" v-model="platformPath" :disabled="saving">
-          <option value="">Автоопределение из env.json</option>
-          <option v-for="item in state.platforms" :key="item.executablePath" :value="item.executablePath">
+        <vscode-single-select id="platform" :value="platformPath" :disabled="saving" @change="(e: Event) => platformPath = (e.target as HTMLSelectElement).value">
+          <vscode-option value="">Автоопределение из env.json</vscode-option>
+          <vscode-option v-for="item in state.platforms" :key="item.executablePath" :value="item.executablePath">
             {{ item.label }}
-          </option>
-        </select>
+          </vscode-option>
+        </vscode-single-select>
       </label>
       <label>
         Путь к ibsrv
-        <input id="ibsrvPath" v-model="ibsrvPath" type="text" autocomplete="off" spellcheck="false" placeholder="Авто: рядом с выбранной платформой" :disabled="saving">
+        <vscode-textfield id="ibsrvPath" :value="ibsrvPath" autocomplete="off" spellcheck="false" placeholder="Авто: рядом с выбранной платформой" :disabled="saving" @input="(e: Event) => ibsrvPath = (e.target as HTMLInputElement).value" />
       </label>
       <div id="dataPath" class="path">Данные сервера: {{ state.settings.dataPath }}</div>
     </section>
@@ -26,7 +26,7 @@
       </div>
       <label>
         Каталог базы
-        <input id="databasePath" v-model="databasePath" type="text" autocomplete="off" spellcheck="false" :disabled="saving">
+        <vscode-textfield id="databasePath" :value="databasePath" autocomplete="off" spellcheck="false" :disabled="saving" @input="(e: Event) => databasePath = (e.target as HTMLInputElement).value" />
       </label>
     </section>
 
@@ -37,7 +37,7 @@
       <div class="grid">
         <label>
           Адрес
-          <input id="httpAddress" v-model="httpAddress" type="text" autocomplete="off" spellcheck="false" :disabled="saving">
+          <vscode-textfield id="httpAddress" :value="httpAddress" autocomplete="off" spellcheck="false" :disabled="saving" @input="(e: Event) => httpAddress = (e.target as HTMLInputElement).value" />
         </label>
         <label>
           Порт
@@ -46,11 +46,11 @@
       </div>
       <label>
         Базовый путь
-        <input id="httpBase" v-model="httpBase" type="text" autocomplete="off" spellcheck="false" :disabled="saving">
+        <vscode-textfield id="httpBase" :value="httpBase" autocomplete="off" spellcheck="false" :disabled="saving" @input="(e: Event) => httpBase = (e.target as HTMLInputElement).value" />
       </label>
       <label>
         Имя базы
-        <input id="name" v-model="name" type="text" autocomplete="off" spellcheck="false" :disabled="saving">
+        <vscode-textfield id="name" :value="name" autocomplete="off" spellcheck="false" :disabled="saving" @input="(e: Event) => name = (e.target as HTMLInputElement).value" />
       </label>
     </section>
 
@@ -60,17 +60,17 @@
       </div>
       <label>
         Выдача клиентских лицензий
-        <select id="distributeLicenses" v-model="distributeLicenses" :disabled="saving">
-          <option value="allow">Разрешена</option>
-          <option value="deny">Запрещена</option>
-        </select>
+        <vscode-single-select id="distributeLicenses" :value="distributeLicenses" :disabled="saving" @change="(e: Event) => distributeLicenses = (e.target as HTMLSelectElement).value as StandaloneServerSwitch">
+          <vscode-option value="allow">Разрешена</vscode-option>
+          <vscode-option value="deny">Запрещена</vscode-option>
+        </vscode-single-select>
       </label>
       <label>
         Регламентные задания
-        <select id="scheduleJobs" v-model="scheduleJobs" :disabled="saving">
-          <option value="allow">Разрешены</option>
-          <option value="deny">Запрещены</option>
-        </select>
+        <vscode-single-select id="scheduleJobs" :value="scheduleJobs" :disabled="saving" @change="(e: Event) => scheduleJobs = (e.target as HTMLSelectElement).value as StandaloneServerSwitch">
+          <vscode-option value="allow">Разрешены</vscode-option>
+          <vscode-option value="deny">Запрещены</vscode-option>
+        </vscode-single-select>
       </label>
     </section>
 
@@ -79,8 +79,8 @@
     </div>
     <div id="status" class="status" :class="[statusVisible ? 'visible' : '', statusKind]" aria-live="polite">{{ statusMessage }}</div>
     <div class="buttons">
-      <button id="save" class="primary" type="button" :disabled="saving" @click="save">{{ saving ? 'Сохранение...' : 'Сохранить' }}</button>
-      <button id="refresh" class="secondary" type="button" :disabled="saving" @click="refresh">Обновить</button>
+      <vscode-button id="save" :disabled="saving" @click="save">{{ saving ? 'Сохранение...' : 'Сохранить' }}</vscode-button>
+      <vscode-button id="refresh" appearance="secondary" :disabled="saving" @click="refresh">Обновить</vscode-button>
     </div>
   </div>
 </template>
@@ -230,29 +230,24 @@ label {
   color: var(--vscode-descriptionForeground);
 }
 
-input,
-select {
+vscode-single-select,
+input {
   width: 100%;
   min-height: 28px;
   box-sizing: border-box;
+  font: inherit;
+}
+
+input {
   color: var(--vscode-input-foreground);
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, transparent);
   border-radius: 4px;
-  font: inherit;
+  padding: 3px 7px;
   outline: none;
 }
 
-input {
-  padding: 3px 7px;
-}
-
-select {
-  padding: 3px 6px;
-}
-
-input:focus,
-select:focus {
+input:focus {
   border-color: var(--vscode-focusBorder);
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: -1px;
@@ -300,38 +295,8 @@ select:focus {
   gap: 6px;
 }
 
-button {
-  min-height: 30px;
-  padding: 5px 10px;
-  border: 1px solid var(--vscode-button-border, transparent);
-  border-radius: 4px;
-  font: inherit;
-  cursor: pointer;
-}
-
-.primary {
-  color: var(--vscode-button-foreground);
-  background: var(--vscode-button-background);
-}
-
-.primary:hover {
-  background: var(--vscode-button-hoverBackground);
-}
-
-.secondary {
-  color: var(--vscode-button-secondaryForeground);
-  background: var(--vscode-button-secondaryBackground);
-}
-
-.secondary:hover {
-  background: var(--vscode-button-secondaryHoverBackground);
-}
-
-button:disabled,
-input:disabled,
-select:disabled {
+input:disabled {
   cursor: default;
   opacity: 0.65;
 }
 </style>
-

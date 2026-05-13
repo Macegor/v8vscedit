@@ -9,7 +9,6 @@ const props = defineProps<{
   messageBus: MessageBus;
 }>();
 
-// Состояние формы
 const mode = ref<ConnectionMode>(props.initialState?.mode ?? 'connect');
 const target = ref(props.initialState?.target ?? '');
 const repoPath = ref(props.initialState?.initialBinding?.repoPath ?? '');
@@ -18,7 +17,6 @@ const repoPassword = ref(props.initialState?.initialBinding?.repoPassword ?? '')
 const loading = ref(false);
 const error = ref('');
 
-// Флаги для mode=connect
 const forceBindAlreadyBindedUser = ref(false);
 const forceReplaceCfg = ref(false);
 const allowConfigurationChanges = ref(false);
@@ -98,38 +96,33 @@ onUnmounted(() => {
     </h2>
     <p class="form-subtitle">{{ target }}</p>
 
-    <!-- Поле пути к хранилищу -->
     <div class="form-field">
       <label class="field-label" for="repoPath">Путь к хранилищу</label>
       <div class="field-row">
-        <input
+        <vscode-textfield
           id="repoPath"
-          class="field-input"
-          type="text"
-          v-model="repoPath"
+          :value="repoPath"
           placeholder="tcp://server:1542/repo или /путь/к/хранилищу"
           :disabled="loading"
+          @input="(e: Event) => repoPath = (e.target as HTMLInputElement).value"
         />
-        <button class="browse-button" @click="browseRepoPath" :disabled="loading" title="Обзор...">
+        <vscode-button appearance="icon" @click="browseRepoPath" :disabled="loading" aria-label="Обзор...">
           <span class="codicon codicon-folder-opened"></span>
-        </button>
+        </vscode-button>
       </div>
     </div>
 
-    <!-- Пользователь -->
     <div class="form-field">
       <label class="field-label" for="repoUser">Пользователь</label>
-      <input
+      <vscode-textfield
         id="repoUser"
-        class="field-input"
-        type="text"
-        v-model="repoUser"
+        :value="repoUser"
         placeholder="Имя пользователя хранилища"
         :disabled="loading"
+        @input="(e: Event) => repoUser = (e.target as HTMLInputElement).value"
       />
     </div>
 
-    <!-- Пароль -->
     <div class="form-field">
       <label class="field-label" for="repoPassword">Пароль</label>
       <input
@@ -142,61 +135,53 @@ onUnmounted(() => {
       />
     </div>
 
-    <!-- Дополнительные опции для connect -->
     <template v-if="mode === 'connect'">
-      <div class="form-divider"></div>
+      <vscode-divider></vscode-divider>
 
-      <label class="checkbox-row">
-        <input type="checkbox" v-model="forceBindAlreadyBindedUser" :disabled="loading" />
-        <span>Принудительно перепривязать пользователя хранилища</span>
-      </label>
+      <vscode-checkbox :checked="forceBindAlreadyBindedUser" :disabled="loading" @change="(e: Event) => forceBindAlreadyBindedUser = (e.target as HTMLInputElement).checked">
+        Принудительно перепривязать пользователя хранилища
+      </vscode-checkbox>
 
-      <label class="checkbox-row">
-        <input type="checkbox" v-model="forceReplaceCfg" :disabled="loading" />
-        <span>Принудительно заменить конфигурацию</span>
-      </label>
+      <vscode-checkbox :checked="forceReplaceCfg" :disabled="loading" @change="(e: Event) => forceReplaceCfg = (e.target as HTMLInputElement).checked">
+        Принудительно заменить конфигурацию
+      </vscode-checkbox>
 
-      <label class="checkbox-row">
-        <input type="checkbox" v-model="allowConfigurationChanges" :disabled="loading" />
-        <span>Разрешить изменения конфигурации</span>
-      </label>
+      <vscode-checkbox :checked="allowConfigurationChanges" :disabled="loading" @change="(e: Event) => allowConfigurationChanges = (e.target as HTMLInputElement).checked">
+        Разрешить изменения конфигурации
+      </vscode-checkbox>
 
-      <label class="checkbox-row">
-        <input type="checkbox" v-model="noBind" :disabled="loading" />
-        <span>Не привязывать проект к хранилищу</span>
-      </label>
+      <vscode-checkbox :checked="noBind" :disabled="loading" @change="(e: Event) => noBind = (e.target as HTMLInputElement).checked">
+        Не привязывать проект к хранилищу
+      </vscode-checkbox>
 
-      <!-- Правила изменений -->
       <div class="form-field" v-if="allowConfigurationChanges">
         <label class="field-label">Правило для разрешённых изменений</label>
-        <select class="field-select" v-model="changesAllowedRule" :disabled="loading">
-          <option value="allow">Разрешить</option>
-          <option value="dontAllow">Не разрешать</option>
-          <option value="withWarning">С предупреждением</option>
-        </select>
+        <vscode-single-select :value="changesAllowedRule" :disabled="loading" @change="(e: Event) => changesAllowedRule = (e.target as HTMLSelectElement).value">
+          <vscode-option value="allow">Разрешить</vscode-option>
+          <vscode-option value="dontAllow">Не разрешать</vscode-option>
+          <vscode-option value="withWarning">С предупреждением</vscode-option>
+        </vscode-single-select>
       </div>
 
       <div class="form-field">
         <label class="field-label">Правило для нерекомендуемых изменений</label>
-        <select class="field-select" v-model="changesNotRecommendedRule" :disabled="loading">
-          <option value="dontAllow">Не разрешать</option>
-          <option value="allow">Разрешить</option>
-          <option value="withWarning">С предупреждением</option>
-        </select>
+        <vscode-single-select :value="changesNotRecommendedRule" :disabled="loading" @change="(e: Event) => changesNotRecommendedRule = (e.target as HTMLSelectElement).value">
+          <vscode-option value="dontAllow">Не разрешать</vscode-option>
+          <vscode-option value="allow">Разрешить</vscode-option>
+          <vscode-option value="withWarning">С предупреждением</vscode-option>
+        </vscode-single-select>
       </div>
     </template>
 
-    <!-- Ошибка -->
     <div v-if="error" class="form-error">{{ error }}</div>
 
-    <!-- Кнопки -->
     <div class="form-actions">
-      <button class="action-button primary" @click="submit" :disabled="loading">
+      <vscode-button @click="submit" :disabled="loading">
         {{ loading ? 'Подключение...' : mode === 'connect' ? 'Подключиться' : 'Создать' }}
-      </button>
-      <button class="action-button secondary" @click="cancel" :disabled="loading">
+      </vscode-button>
+      <vscode-button appearance="secondary" @click="cancel" :disabled="loading">
         Отмена
-      </button>
+      </vscode-button>
     </div>
   </div>
 </template>
@@ -240,8 +225,11 @@ onUnmounted(() => {
   gap: 4px;
 }
 
-.field-input {
+.field-row vscode-textfield {
   flex: 1;
+}
+
+.field-input {
   background: var(--vscode-input-background);
   color: var(--vscode-input-foreground);
   border: 1px solid var(--vscode-input-border, transparent);
@@ -253,49 +241,6 @@ onUnmounted(() => {
 
 .field-input:focus {
   outline: 1px solid var(--vscode-focusBorder);
-}
-
-.field-select {
-  background: var(--vscode-dropdown-background);
-  color: var(--vscode-dropdown-foreground);
-  border: 1px solid var(--vscode-dropdown-border, transparent);
-  border-radius: 2px;
-  padding: 4px 8px;
-  font-family: inherit;
-  font-size: inherit;
-}
-
-.browse-button {
-  background: var(--vscode-button-secondaryBackground);
-  color: var(--vscode-button-secondaryForeground);
-  border: none;
-  border-radius: 2px;
-  padding: 4px 8px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-}
-
-.browse-button:hover {
-  background: var(--vscode-button-secondaryHoverBackground);
-}
-
-.form-divider {
-  height: 1px;
-  background: var(--vscode-panel-border);
-  margin: 4px 0;
-}
-
-.checkbox-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.checkbox-row input[type="checkbox"] {
-  margin: 0;
 }
 
 .form-error {
@@ -311,37 +256,5 @@ onUnmounted(() => {
   display: flex;
   gap: 8px;
   margin-top: 8px;
-}
-
-.action-button {
-  padding: 6px 14px;
-  border: none;
-  border-radius: 2px;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: inherit;
-}
-
-.action-button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.action-button.primary {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
-}
-
-.action-button.primary:hover:not(:disabled) {
-  background: var(--vscode-button-hoverBackground);
-}
-
-.action-button.secondary {
-  background: var(--vscode-button-secondaryBackground);
-  color: var(--vscode-button-secondaryForeground);
-}
-
-.action-button.secondary:hover:not(:disabled) {
-  background: var(--vscode-button-secondaryHoverBackground);
 }
 </style>

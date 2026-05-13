@@ -3,16 +3,16 @@
     <section>
       <div class="title">
         <span>Платформа 1С</span>
-        <span id="platformCount" class="count">{{ platformCount }}</span>
+        <vscode-badge id="platformCount">{{ platformCount }}</vscode-badge>
       </div>
       <label>
         Версия
-        <select id="platform" v-model="platformPath" :disabled="isDisabled" @change="updateDetails">
-          <option value="">Автоопределение</option>
-          <option v-for="item in state.platforms" :key="item.executablePath" :value="item.executablePath">
+        <vscode-single-select id="platform" :value="platformPath" :disabled="isDisabled" @change="(e: Event) => platformPath = (e.target as HTMLSelectElement).value">
+          <vscode-option value="">Автоопределение</vscode-option>
+          <vscode-option v-for="item in state.platforms" :key="item.executablePath" :value="item.executablePath">
             {{ item.label }}
-          </option>
-        </select>
+          </vscode-option>
+        </vscode-single-select>
       </label>
       <div id="platformPath" class="path">{{ platformDetails }}</div>
     </section>
@@ -20,15 +20,15 @@
     <section>
       <div class="title">
         <span>Информационная база</span>
-        <span id="baseCount" class="count">{{ baseCount }}</span>
+        <vscode-badge id="baseCount">{{ baseCount }}</vscode-badge>
       </div>
       <label>
         База
-        <select id="base" v-model="baseId" :disabled="isDisabled || state.bases.length === 0" @change="updateDetails">
-          <option v-for="item in state.bases" :key="item.id" :value="item.id">
+        <vscode-single-select id="base" :value="baseId" :disabled="isDisabled || state.bases.length === 0" @change="(e: Event) => baseId = (e.target as HTMLSelectElement).value">
+          <vscode-option v-for="item in state.bases" :key="item.id" :value="item.id">
             {{ item.name }}
-          </option>
-        </select>
+          </vscode-option>
+        </vscode-single-select>
       </label>
       <div id="baseDetails" class="details">
         <template v-if="selectedBase?.kind === 'file'">
@@ -44,7 +44,7 @@
     <section>
       <label>
         Пользователь
-        <input id="dbUser" v-model="dbUser" type="text" autocomplete="off" spellcheck="false" :disabled="isDisabled">
+        <vscode-textfield id="dbUser" :value="dbUser" autocomplete="off" spellcheck="false" :disabled="isDisabled" @input="(e: Event) => dbUser = (e.target as HTMLInputElement).value" />
       </label>
       <label>
         Пароль
@@ -56,12 +56,12 @@
       <div v-for="warning in state.warnings" :key="warning" class="warning">{{ warning }}</div>
     </div>
     <div id="status" class="status" :class="[statusVisible ? 'visible' : '', status.kind]" aria-live="polite">
-      <span id="spinner" class="spinner" :class="{ hidden: status.kind !== 'loading' }" aria-hidden="true"></span>
+      <vscode-progress-ring v-if="status.kind === 'loading'" id="spinner" />
       <span id="statusText">{{ statusText }}</span>
     </div>
     <div class="buttons">
-      <button id="save" class="primary" type="button" :disabled="isDisabled" @click="save">{{ saving ? 'Сохранение...' : 'Сохранить' }}</button>
-      <button id="refresh" class="secondary" type="button" :disabled="isDisabled" @click="refresh">Обновить</button>
+      <vscode-button id="save" :disabled="isDisabled" @click="save">{{ saving ? 'Сохранение...' : 'Сохранить' }}</vscode-button>
+      <vscode-button id="refresh" appearance="secondary" :disabled="isDisabled" @click="refresh">Обновить</vscode-button>
     </div>
   </div>
 </template>
@@ -207,12 +207,6 @@ section:last-of-type {
   color: var(--vscode-sideBarTitle-foreground, var(--vscode-foreground));
 }
 
-.count {
-  color: var(--vscode-descriptionForeground);
-  font-weight: 400;
-  white-space: nowrap;
-}
-
 label {
   display: flex;
   flex-direction: column;
@@ -220,28 +214,23 @@ label {
   color: var(--vscode-descriptionForeground);
 }
 
-select,
+vscode-single-select,
 input {
   width: 100%;
   min-height: 28px;
   box-sizing: border-box;
+  font: inherit;
+}
+
+input {
   color: var(--vscode-input-foreground);
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, transparent);
   border-radius: 4px;
-  font: inherit;
+  padding: 3px 7px;
   outline: none;
 }
 
-select {
-  padding: 3px 6px;
-}
-
-input {
-  padding: 3px 7px;
-}
-
-select:focus,
 input:focus {
   border-color: var(--vscode-focusBorder);
   outline: 1px solid var(--vscode-focusBorder);
@@ -287,64 +276,14 @@ input:focus {
   color: var(--vscode-inputValidation-errorForeground, var(--vscode-errorForeground));
 }
 
-.spinner {
-  width: 14px;
-  height: 14px;
-  box-sizing: border-box;
-  border: 2px solid var(--vscode-progressBar-background);
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  flex: 0 0 auto;
-}
-
-.spinner.hidden {
-  display: none;
-}
-
 .buttons {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 6px;
 }
 
-button {
-  min-height: 30px;
-  padding: 5px 10px;
-  border: 1px solid var(--vscode-button-border, transparent);
-  border-radius: 4px;
-  font: inherit;
-  cursor: pointer;
-}
-
-.primary {
-  color: var(--vscode-button-foreground);
-  background: var(--vscode-button-background);
-}
-
-.primary:hover {
-  background: var(--vscode-button-hoverBackground);
-}
-
-.secondary {
-  color: var(--vscode-button-secondaryForeground);
-  background: var(--vscode-button-secondaryBackground);
-}
-
-.secondary:hover {
-  background: var(--vscode-button-secondaryHoverBackground);
-}
-
-button:disabled,
-select:disabled,
 input:disabled {
   cursor: default;
   opacity: 0.65;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 </style>

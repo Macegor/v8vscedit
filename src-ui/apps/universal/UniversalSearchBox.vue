@@ -32,23 +32,22 @@ function clear(): void {
   <div class="search-box">
     <div class="search-input-wrapper">
       <span class="search-icon codicon codicon-search" aria-hidden="true" />
-      <input
+      <vscode-textfield
         class="search-input"
-        type="search"
         :value="localQuery"
-        @input="onInput(($event.target as HTMLInputElement).value)"
-        @keydown.escape="clear"
         placeholder="Поиск..."
         aria-label="Поиск по метаданным"
+        @input="onInput(($event.target as HTMLInputElement).value)"
+        @keydown.escape="clear"
       />
-      <button
+      <vscode-button
         v-if="localQuery"
-        class="search-clear"
+        appearance="icon"
         @click="clear"
         aria-label="Очистить поиск"
       >
         <span class="codicon codicon-close" />
-      </button>
+      </vscode-button>
     </div>
   </div>
 </template>
@@ -73,28 +72,7 @@ function clear(): void {
 }
 .search-input {
   flex: 1;
-  background: transparent;
-  border: none;
-  outline: none;
-  color: var(--vscode-input-foreground);
-  font-family: var(--vscode-font-family);
-  font-size: var(--vscode-font-size, 13px);
-  padding: 4px 0;
-}
-.search-input::placeholder {
-  color: var(--vscode-input-placeholderForeground);
-}
-.search-clear {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--vscode-input-foreground);
-  padding: 2px;
-  display: flex;
-  align-items: center;
-  opacity: 0.7;
-}
-.search-clear:hover {
-  opacity: 1;
+  border: none !important;
+  background: transparent !important;
 }
 </style>

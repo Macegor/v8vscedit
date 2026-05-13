@@ -27,21 +27,20 @@ function onChange(): void {
     <label class="control-label" :for="'prop-' + control.id">
       {{ control.label }}
     </label>
-    <select
+    <vscode-single-select
       :id="'prop-' + control.id"
-      class="control-select"
-      v-model="localValue"
+      :value="localValue"
       :disabled="readonly"
-      @change="onChange"
+      @change="(e: Event) => { localValue = (e.target as HTMLSelectElement).value; onChange(); }"
     >
-      <option
+      <vscode-option
         v-for="opt in control.enumOptions"
         :key="opt.value"
         :value="opt.value"
       >
         {{ opt.label }}
-      </option>
-    </select>
+      </vscode-option>
+    </vscode-single-select>
   </div>
 </template>
 
@@ -61,23 +60,8 @@ function onChange(): void {
   flex-shrink: 0;
 }
 
-.control-select {
+vscode-single-select {
   flex: 1;
-  background: var(--vscode-dropdown-background);
-  color: var(--vscode-dropdown-foreground);
-  border: 1px solid var(--vscode-dropdown-border, transparent);
-  border-radius: 2px;
-  padding: 2px 6px;
-  font-family: inherit;
-  font-size: 12px;
   max-width: 200px;
-}
-
-.control-select:focus {
-  outline: 1px solid var(--vscode-focusBorder);
-}
-
-.control-select:disabled {
-  opacity: 0.5;
 }
 </style>

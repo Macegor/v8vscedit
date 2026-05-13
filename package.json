@@ -662,6 +662,7 @@
     "vue-tsc": "^3.2.8"
   },
   "dependencies": {
+    "@vscode-elements/elements": "^2.5.1",
     "fast-xml-parser": "^4.5.6",
     "iconv-lite": "^0.7.2",
     "vscode-languageclient": "^9.0.1",

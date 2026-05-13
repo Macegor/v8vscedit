@@ -22,14 +22,14 @@ function openChild(child: SubsystemChildDto): void {
     <div v-for="child in children" :key="child.id" class="child-row">
       <span class="child-icon codicon codicon-symbol-folder" aria-hidden="true"></span>
       <span class="child-name">{{ child.label }}</span>
-      <button
+      <vscode-button
         v-if="!locked"
-        class="child-open-button"
+        appearance="icon"
         @click="openChild(child)"
         title="Открыть подсистему"
       >
         <span class="codicon codicon-arrow-right"></span>
-      </button>
+      </vscode-button>
     </div>
     <div v-if="!children.length" class="empty-state">
       Нет дочерних подсистем
@@ -59,17 +59,10 @@ function openChild(child: SubsystemChildDto): void {
   color: var(--vscode-foreground);
 }
 
-.child-open-button {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--vscode-textLink-foreground);
-  padding: 2px;
-  display: flex;
-  align-items: center;
-}
-
-.child-open-button:hover {
-  color: var(--vscode-textLink-activeForeground);
+.empty-state {
+  padding: 24px;
+  text-align: center;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
 }
 </style>

@@ -1,4 +1,5 @@
 import { createApp } from 'vue';
+import '@ui-shared/vscode-elements';
 import { loadInitialState } from '@ui-shared/api/loadInitialState';
 import { MessageBus } from '@ui-shared/api/messageBus';
 import SubsystemApp from './SubsystemApp.vue';

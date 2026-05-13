@@ -17,37 +17,37 @@ defineProps<{
       </span>
     </div>
     <div class="standalone-buttons">
-      <button
+      <vscode-button
         v-if="status.state === 'stopped' || status.state === 'stale'"
-        class="ss-button"
+        appearance="secondary"
         @click="messageBus.send({ type: 'command', command: 'v8vscedit.startStandaloneServer' })"
         title="Запустить"
       >
         <span class="codicon codicon-play" />
-      </button>
-      <button
+      </vscode-button>
+      <vscode-button
         v-if="status.state === 'running'"
-        class="ss-button"
+        appearance="secondary"
         @click="messageBus.send({ type: 'command', command: 'v8vscedit.stopStandaloneServer' })"
         title="Остановить"
       >
         <span class="codicon codicon-stop" />
-      </button>
-      <button
-        class="ss-button"
+      </vscode-button>
+      <vscode-button
+        appearance="secondary"
         @click="messageBus.send({ type: 'command', command: 'v8vscedit.openStandaloneServerLog' })"
         title="Лог"
       >
         <span class="codicon codicon-output" />
-      </button>
-      <button
+      </vscode-button>
+      <vscode-button
         v-if="status.state === 'running'"
-        class="ss-button"
+        appearance="secondary"
         @click="messageBus.send({ type: 'command', command: 'v8vscedit.openStandaloneServer' })"
         title="Открыть"
       >
         <span class="codicon codicon-browser" />
-      </button>
+      </vscode-button>
     </div>
   </div>
 </template>
@@ -91,19 +91,5 @@ defineProps<{
 .standalone-buttons {
   display: flex;
   gap: 4px;
-}
-.ss-button {
-  background: var(--vscode-button-secondaryBackground);
-  color: var(--vscode-button-secondaryForeground);
-  border: none;
-  border-radius: 2px;
-  padding: 3px 6px;
-  cursor: pointer;
-  font-size: 14px;
-  display: flex;
-  align-items: center;
-}
-.ss-button:hover {
-  background: var(--vscode-button-secondaryHoverBackground);
 }
 </style>

@@ -77,16 +77,16 @@ function iconClass(icon?: { kind: string; name?: string }): string {
     </span>
 
     <div v-if="node.actions?.length" class="tree-actions" @click.stop>
-      <button
+      <vscode-button
         v-for="action in node.actions"
         :key="action.id"
-        class="tree-action-button"
+        appearance="icon"
         :title="action.label"
         @click.stop="emit('action', action.id)"
       >
         <span v-if="action.icon?.kind === 'codicon'" class="codicon" :class="'codicon-' + action.icon.name" />
         <span v-else>{{ action.label[0] }}</span>
-      </button>
+      </vscode-button>
     </div>
   </div>
 </template>
@@ -172,21 +172,5 @@ function iconClass(icon?: { kind: string; name?: string }): string {
 }
 .tree-row:hover .tree-actions {
   display: flex;
-}
-.tree-action-button {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--vscode-foreground);
-  padding: 2px;
-  font-size: 12px;
-  display: flex;
-  align-items: center;
-  opacity: 0.7;
-  border-radius: 2px;
-}
-.tree-action-button:hover {
-  opacity: 1;
-  background: var(--vscode-toolbar-hoverBackground);
 }
 </style>

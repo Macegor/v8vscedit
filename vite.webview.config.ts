@@ -92,7 +92,14 @@ export default defineConfig({
   resolve: {
     alias: aliases,
   },
-  plugins: [vue(), webviewManifestPlugin()],
+  plugins: [vue({
+    template: {
+      compilerOptions: {
+        // vscode-elements — веб-компоненты, не компилировать как Vue-компоненты
+        isCustomElement: (tag) => tag.startsWith('vscode-'),
+      },
+    },
+  }), webviewManifestPlugin()],
   build: {
     target: 'es2020',
     outDir: 'dist/ui',

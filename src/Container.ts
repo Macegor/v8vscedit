@@ -196,7 +196,6 @@ export class Container {
       isProjectInitialized: () => this.isProjectInitialized(),
       getStandaloneServerStatus: () => this.standaloneServerService.getStatus(),
       getProcessingState: () => this.treeProcessingState,
-      gitMetadataStatusService: this.gitMetadataStatusService,
       refreshActionsView: () => this.treeSearchViewProvider.refresh(),
     });
     context.subscriptions.push(this.universalPanelViewProvider);

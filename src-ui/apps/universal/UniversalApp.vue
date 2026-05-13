@@ -138,17 +138,47 @@ function handleHostMessage(msg: HostToUiMessage): void {
     if (state.openNodeIds) openNodeIds.value = new Set(state.openNodeIds);
     if (state.rootNodes) rootNodes.value = state.rootNodes as TreeNodeDto[];
     if (state.standaloneStatus) standaloneStatus.value = state.standaloneStatus as StandaloneServerStatusDto;
+    return;
   }
+
+  if (msg.type === 'childrenLoaded') {
+    const updated = replaceNodeChildren(rootNodes.value, msg.nodeId, msg.children as TreeNodeDto[]);
+    if (updated) {
+      rootNodes.value = updated;
+    }
+  }
+}
+
+/** Заменяет children у узла по id, возвращает новый массив узлов (иммутабельно) */
+function replaceNodeChildren(nodes: readonly TreeNodeDto[], targetId: string, children: TreeNodeDto[]): TreeNodeDto[] | null {
+  for (let i = 0; i < nodes.length; i += 1) {
+    if (nodes[i].id === targetId) {
+      const updated = [...nodes];
+      updated[i] = { ...nodes[i], children, loaded: true };
+      return updated;
+    }
+    if (nodes[i].children) {
+      const updatedChildren = replaceNodeChildren(nodes[i].children!, targetId, children);
+      if (updatedChildren) {
+        const updated = [...nodes];
+        updated[i] = { ...nodes[i], children: updatedChildren };
+        return updated;
+      }
+    }
+  }
+  return null;
 }
 
 onMounted(() => {
   props.messageBus.on('state', handleHostMessage);
   props.messageBus.on('init', handleHostMessage);
+  props.messageBus.on('childrenLoaded', handleHostMessage);
 });
 
 onUnmounted(() => {
   props.messageBus.off('state', handleHostMessage);
   props.messageBus.off('init', handleHostMessage);
+  props.messageBus.off('childrenLoaded', handleHostMessage);
 });
 </script>
 

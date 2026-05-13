@@ -66,7 +66,7 @@ onUnmounted(() => {
     </div>
 
     <div class="tabs-bar" role="tablist">
-      <button
+      <vscode-button
         v-for="tab in tabs"
         :key="tab.id"
         class="tab-button"
@@ -76,7 +76,7 @@ onUnmounted(() => {
         @click="activeTab = tab.id"
       >
         {{ tab.label }}
-      </button>
+      </vscode-button>
     </div>
 
     <div class="tab-content">
@@ -145,24 +145,12 @@ onUnmounted(() => {
 }
 
 .tab-button {
-  padding: 6px 16px;
-  border: none;
-  background: transparent;
-  color: var(--vscode-foreground);
-  font-family: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  transition: border-color 0.15s;
-}
-
-.tab-button:hover {
-  background: var(--vscode-list-hoverBackground);
+  border-bottom: 2px solid transparent !important;
+  border-radius: 0 !important;
 }
 
 .tab-button.active {
-  border-bottom-color: var(--vscode-tab-activeForeground, var(--vscode-foreground));
-  color: var(--vscode-tab-activeForeground, var(--vscode-foreground));
+  border-bottom-color: var(--vscode-tab-activeForeground, var(--vscode-foreground)) !important;
 }
 
 .tab-content {

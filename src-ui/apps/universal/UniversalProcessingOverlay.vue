@@ -1,7 +1,7 @@
 <template>
   <div class="processing-overlay" role="progressbar" aria-label="Обработка">
     <div class="processing-spinner">
-      <span class="codicon codicon-loading codicon-modifier-spin" />
+      <vscode-progress-ring />
     </div>
   </div>
 </template>
@@ -19,6 +19,5 @@
 }
 .processing-spinner {
   font-size: 32px;
-  color: var(--vscode-progressBar-background);
 }
 </style>

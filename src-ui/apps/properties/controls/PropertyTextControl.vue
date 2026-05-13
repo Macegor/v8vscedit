@@ -16,10 +16,6 @@ const localValue = ref(String(props.control.value ?? ''));
 watch(() => props.control.value, (newVal) => {
   localValue.value = String(newVal ?? '');
 });
-
-function onInput(): void {
-  emit('change', localValue.value);
-}
 </script>
 
 <template>
@@ -27,14 +23,12 @@ function onInput(): void {
     <label class="control-label" :for="'prop-' + control.id">
       {{ control.label }}
     </label>
-    <input
+    <vscode-textfield
       :id="'prop-' + control.id"
-      class="control-input"
-      type="text"
-      v-model="localValue"
+      :value="localValue"
       :disabled="readonly"
       :title="control.description"
-      @change="onInput"
+      @input="(e: Event) => { localValue = (e.target as HTMLInputElement).value; emit('change', localValue); }"
     />
   </div>
 </template>
@@ -55,23 +49,7 @@ function onInput(): void {
   flex-shrink: 0;
 }
 
-.control-input {
+vscode-textfield {
   flex: 1;
-  background: var(--vscode-input-background);
-  color: var(--vscode-input-foreground);
-  border: 1px solid var(--vscode-input-border, transparent);
-  border-radius: 2px;
-  padding: 2px 6px;
-  font-family: inherit;
-  font-size: 12px;
-}
-
-.control-input:focus {
-  outline: 1px solid var(--vscode-focusBorder);
-}
-
-.control-input:disabled {
-  opacity: 0.5;
-  background: transparent;
 }
 </style>
