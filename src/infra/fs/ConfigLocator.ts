@@ -19,11 +19,20 @@ export type { ConfigEntry } from '../../domain/Configuration';
  */
 export class ConfigLocator {
   private static readonly MAX_DEPTH = 10;
-  private static readonly SKIP_DIRS = new Set(['node_modules', '.git', '.cursor', 'dist', 'out']);
+  private static readonly SKIP_DIRS = new Set(['node_modules', '.git', '.cursor', '.kilo', 'dist', 'out']);
 
+  /**
+   * Ищет конфигурации только внутри `src/` в корне рабочей области.
+   * Это исключает попадание служебных каталогов (.git, .kilo, node_modules
+   * и любых других) в результаты поиска и гарантирует, что дубликатов
+   * из вложенных копий проекта (git-worktree и т.п.) не возникнет.
+   */
   find(rootDir: string): FoundConfig[] {
     const results: FoundConfig[] = [];
-    this.scanDir(rootDir, 0, results);
+    const srcDir = path.join(rootDir, 'src');
+    if (fs.existsSync(srcDir) && fs.statSync(srcDir).isDirectory()) {
+      this.scanDir(srcDir, 0, results);
+    }
     return results;
   }
 

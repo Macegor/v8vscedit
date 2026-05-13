@@ -3,6 +3,7 @@
 .vscode/
 .codex
 .v8vscedit/
+.kilo
 env.json
 
 # Зависимости и артефакты сборки
