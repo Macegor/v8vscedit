@@ -117,6 +117,18 @@ const MODULE_SLOT_ACTIONS: Partial<Record<string, { command: string; title: stri
 };
 
 const CHILDREN_CHUNK_SIZE = 40;
+const PASSIVE_NODE_ACTIONS = new Set<string>([
+  'v8vscedit.showProperties',
+  'v8vscedit.openXmlFile',
+  'v8vscedit.openObjectModule',
+  'v8vscedit.openManagerModule',
+  'v8vscedit.openConstantModule',
+  'v8vscedit.openRecordSetModule',
+  'v8vscedit.openServiceModule',
+  'v8vscedit.openCommonModuleCode',
+  'v8vscedit.openCommandModule',
+  'v8vscedit.openFormModule',
+]);
 
 /**
  * Универсальная панель — основной навигатор метаданных на Vue.
@@ -259,7 +271,9 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
       const node = this.nodeById.get(p.nodeId);
       if (node) {
         await this.executeCommand(p.actionId, node);
-        this.services.refreshActionsView();
+        if (!PASSIVE_NODE_ACTIONS.has(p.actionId)) {
+          this.services.refreshActionsView();
+        }
       }
       return;
     }
@@ -516,7 +530,6 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
     if (node?.command) {
       await this.executeCommand(node.command.command, node);
     }
-    this.services.refreshActionsView();
   }
 
   private async executeNodeDefault(nodeId: string): Promise<void> {

@@ -78,6 +78,7 @@ export class PropertiesViewController {
   private activeNode: MetadataNode | undefined;
   private activeProperties: ObjectPropertiesCollection = [];
   private propertyUpdateQueue: Promise<void> = Promise.resolve();
+  private readonly pendingBasedOnPreloads = new Set<string>();
 
   constructor(
     private readonly subsystemXmlService: SubsystemXmlService,
@@ -183,7 +184,13 @@ export class PropertiesViewController {
       return properties;
     }
     const location = getObjectLocationFromXml(node.xmlPath);
-    const snapshot = this.basedOnService.readSnapshot(location.configRoot, objectKind, node.textLabel);
+    const hasReverseIndex = this.basedOnService.hasPreloadedReverseIndex(location.configRoot);
+    const snapshot = this.basedOnService.readSnapshot(location.configRoot, objectKind, node.textLabel, {
+      includeReverse: false,
+    });
+    if (!hasReverseIndex) {
+      this.scheduleBasedOnReverseIndexPreload(location.configRoot, node);
+    }
     const basedOn = properties.find((item) => item.key === 'BasedOn');
     const baseSection = basedOn?.section ?? 'Ввод на основании';
     const baseSectionOrder = basedOn?.sectionOrder ?? 120;
@@ -205,6 +212,7 @@ export class PropertiesViewController {
       value: { items: snapshot.basedFor.map(toMetadataReferenceListItem) },
       section: baseSection,
       sectionOrder: baseSectionOrder,
+      readonly: !hasReverseIndex,
     };
     const result = properties.filter((item) => item.key !== 'BasedOn' && item.key !== 'BasedFor');
     const insertAfter = result.findIndex((item) => (item.sectionOrder ?? 0) > baseSectionOrder);
@@ -215,6 +223,30 @@ export class PropertiesViewController {
       result.splice(insertAfter, 0, ...basedItems);
     }
     return result;
+  }
+
+  private scheduleBasedOnReverseIndexPreload(configRoot: string, node: MetadataNode): void {
+    const key = `${configRoot}\u0000${node.nodeKind}\u0000${node.textLabel}`;
+    if (this.pendingBasedOnPreloads.has(key)) {
+      return;
+    }
+
+    this.pendingBasedOnPreloads.add(key);
+    void this.basedOnService.preloadReverseIndex(configRoot)
+      .then(() => {
+        const activeNode = this.activeNode;
+        if (
+          activeNode?.nodeKind === node.nodeKind &&
+          activeNode.textLabel === node.textLabel &&
+          activeNode.xmlPath === node.xmlPath
+        ) {
+          this.host.refreshActiveView();
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        this.pendingBasedOnPreloads.delete(key);
+      });
   }
 
   async handleWebviewMessage(message: unknown): Promise<void> {

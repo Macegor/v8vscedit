@@ -244,6 +244,7 @@ export class Container {
   reloadEntries(): void {
     const rootPath = this.workspaceFolder.uri.fsPath;
     const entries = findConfigurations(rootPath);
+    this.basedOnXmlService.invalidate();
     this.ensureHashCaches(entries);
     this.treeProvider.updateEntries(entries);
     if (this.isProjectInitialized()) {
@@ -385,6 +386,7 @@ export class Container {
       }
       this.scheduleChangedConfigurationStateRefresh(uri);
       if (path.extname(uri.fsPath).toLowerCase() === '.xml') {
+        this.basedOnXmlService.invalidate();
         this.scheduleTreeCacheRefresh(uri.fsPath);
       } else {
         this.scheduleDecorationRefresh();
