@@ -25,8 +25,11 @@ interface RunCliOptions {
   onProgressMessage?: (message: string) => void;
 }
 
-export interface ConfigurationImportHooks {
+export interface ConfigurationProgressHooks {
   readonly onProgressMessage?: (message: string) => void;
+}
+
+export interface ConfigurationImportHooks extends ConfigurationProgressHooks {
   readonly beforeProjectFilesChanged?: (filePaths: string[]) => void;
 }
 
@@ -253,7 +256,8 @@ export async function runUpdateExtension(
   extensionRoot: string,
   workspaceFolder: vscode.WorkspaceFolder,
   outputChannel: vscode.OutputChannel,
-  showSuccessMessage = true
+  showSuccessMessage = true,
+  hooks?: ConfigurationProgressHooks
 ): Promise<boolean> {
   const settingsPath = resolveSettingsPath(workspaceFolder.uri.fsPath, extensionRoot);
   const connection = resolveConnectionFromSettings(settingsPath);
@@ -279,6 +283,7 @@ export async function runUpdateExtension(
       failureOperation: 'быстрой загрузке изменённых файлов',
       logPrefix: 'import-git-changes',
       showSuccessMessage: false,
+      onProgressMessage: hooks?.onProgressMessage,
     },
     workspaceFolder,
     outputChannel
@@ -309,6 +314,7 @@ export async function runUpdateExtension(
         failureOperation: 'fallback-обновлении без хеш-кэша',
         logPrefix: 'sync-configuration-full',
         showSuccessMessage,
+        onProgressMessage: hooks?.onProgressMessage,
       },
       workspaceFolder,
       outputChannel
@@ -331,6 +337,7 @@ export async function runUpdateExtension(
       failureOperation: 'обновлении расширения',
       logPrefix: 'update-configuration',
       showSuccessMessage,
+      onProgressMessage: hooks?.onProgressMessage,
     },
     workspaceFolder,
     outputChannel
@@ -342,7 +349,8 @@ export async function runUpdateMainConfiguration(
   configRoot: string,
   workspaceFolder: vscode.WorkspaceFolder,
   outputChannel: vscode.OutputChannel,
-  showSuccessMessage = true
+  showSuccessMessage = true,
+  hooks?: ConfigurationProgressHooks
 ): Promise<boolean> {
   const settingsPath = resolveSettingsPath(workspaceFolder.uri.fsPath, configRoot);
   const connection = resolveConnectionFromSettings(settingsPath);
@@ -366,6 +374,7 @@ export async function runUpdateMainConfiguration(
       failureOperation: 'быстрой загрузке изменённых файлов',
       logPrefix: 'import-git-changes',
       showSuccessMessage: false,
+      onProgressMessage: hooks?.onProgressMessage,
     },
     workspaceFolder,
     outputChannel
@@ -394,6 +403,7 @@ export async function runUpdateMainConfiguration(
         failureOperation: 'fallback-обновлении без хеш-кэша',
         logPrefix: 'sync-configuration-full',
         showSuccessMessage,
+        onProgressMessage: hooks?.onProgressMessage,
       },
       workspaceFolder,
       outputChannel
@@ -414,6 +424,7 @@ export async function runUpdateMainConfiguration(
       failureOperation: 'обновлении конфигурации',
       logPrefix: 'update-configuration',
       showSuccessMessage,
+      onProgressMessage: hooks?.onProgressMessage,
     },
     workspaceFolder,
     outputChannel

@@ -21,6 +21,8 @@ export interface StandaloneServerStatusDto {
 export interface UniversalPanelState {
   readonly initialized: boolean;
   readonly processing: boolean;
+  readonly processingTitle?: string;
+  readonly processingMessage?: string;
   readonly searchQuery: string;
   readonly openNodeIds: readonly string[];
   readonly selectedNodeId?: string;

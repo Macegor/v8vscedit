@@ -17,6 +17,8 @@ const props = defineProps<{
 
 const initialized = ref(props.initialState?.initialized ?? false);
 const processing = ref(props.initialState?.processing ?? false);
+const processingTitle = ref(props.initialState?.processingTitle ?? '');
+const processingMessage = ref(props.initialState?.processingMessage ?? '');
 const searchQuery = ref(props.initialState?.searchQuery ?? '');
 const openNodeIds = ref<Set<string>>(new Set(props.initialState?.openNodeIds ?? []));
 const loadingNodeIds = ref<Set<string>>(new Set());
@@ -166,6 +168,8 @@ function handleHostMessage(msg: HostToUiMessage): void {
     const state = msg.state as Partial<UniversalPanelState>;
     if (state.initialized !== undefined) initialized.value = state.initialized;
     if (state.processing !== undefined) processing.value = state.processing;
+    if (state.processingTitle !== undefined) processingTitle.value = state.processingTitle;
+    if (state.processingMessage !== undefined) processingMessage.value = state.processingMessage;
     if (state.searchQuery !== undefined) searchQuery.value = state.searchQuery;
     if (state.openNodeIds) openNodeIds.value = new Set(state.openNodeIds);
     if (state.selectedNodeId !== undefined) selectedNodeId.value = state.selectedNodeId;
@@ -256,7 +260,11 @@ onUnmounted(() => {
 
 <template>
   <div class="universal-panel">
-    <UniversalProcessingOverlay v-if="processing" />
+    <UniversalProcessingOverlay
+      v-if="processing"
+      :title="processingTitle"
+      :message="processingMessage"
+    />
 
     <section class="operations" aria-label="Операции">
       <section v-if="!initialized" class="initialization" aria-label="Инициализация проекта">

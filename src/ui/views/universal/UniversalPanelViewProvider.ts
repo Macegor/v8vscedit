@@ -54,6 +54,8 @@ interface TreeNodeDto {
 interface UniversalPanelState {
   readonly initialized: boolean;
   readonly processing: boolean;
+  readonly processingTitle?: string;
+  readonly processingMessage?: string;
   readonly searchQuery: string;
   readonly openNodeIds: readonly string[];
   readonly selectedNodeId?: string;
@@ -204,9 +206,12 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
     this.nodeById.clear();
     this.nodeKeyById.clear();
     this.cachedRootNodes = this.buildRootNodes();
+    const processingState = this.services.getProcessingState();
     return {
       initialized: this.services.isProjectInitialized(),
-      processing: this.services.getProcessingState().active,
+      processing: processingState.active,
+      processingTitle: processingState.title,
+      processingMessage: processingState.message,
       searchQuery: this.services.treeProvider.getSearchQuery(),
       openNodeIds: [...this.currentOpenNodeIds],
       selectedNodeId: this.currentSelectedNodeId,
@@ -218,11 +223,14 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
   private postState(): void {
     if (!this.view) {return;}
     this.cachedRootNodes = this.buildRootNodes();
+    const processingState = this.services.getProcessingState();
     void this.view.webview.postMessage({
       type: 'state',
       state: {
         initialized: this.services.isProjectInitialized(),
-        processing: this.services.getProcessingState().active,
+        processing: processingState.active,
+        processingTitle: processingState.title,
+        processingMessage: processingState.message,
         searchQuery: this.services.treeProvider.getSearchQuery(),
         openNodeIds: [...this.currentOpenNodeIds],
         selectedNodeId: this.currentSelectedNodeId,

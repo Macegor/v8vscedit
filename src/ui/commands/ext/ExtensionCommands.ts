@@ -7,6 +7,7 @@ import { parseConfigXml } from '../../../infra/xml';
 import type { CommandServices, NodeArg } from '../_shared';
 import {
   type ConfigurationImportHooks,
+  type ConfigurationProgressHooks,
   extractExtensionTarget,
   runCompileExtension,
   runDecompileExtension,
@@ -166,14 +167,16 @@ export function registerExtensionCommands(
                   target.rootPath,
                   services.workspaceFolder,
                   services.outputChannel,
-                  ordered.length === 1
+                  ordered.length === 1,
+                  createProgressHooks(services, 'Обновление конфигураций', `${String(index + 1)}/${String(ordered.length)}: ${target.name}`)
                 )
               : await runUpdateExtension(
                   target.name,
                   target.rootPath,
                   services.workspaceFolder,
                   services.outputChannel,
-                  ordered.length === 1
+                  ordered.length === 1,
+                  createProgressHooks(services, 'Обновление конфигураций', `${String(index + 1)}/${String(ordered.length)}: ${target.name}`)
                 );
 
             if (!updated) {
@@ -326,8 +329,22 @@ export function registerExtensionCommands(
         },
         async () => {
           const ok = target.kind === 'cf'
-            ? await runUpdateMainConfiguration(target.name, target.rootPath, services.workspaceFolder, services.outputChannel, true)
-            : await runUpdateExtension(target.name, target.rootPath, services.workspaceFolder, services.outputChannel, true);
+            ? await runUpdateMainConfiguration(
+                target.name,
+                target.rootPath,
+                services.workspaceFolder,
+                services.outputChannel,
+                true,
+                createProgressHooks(services, `Обновление ${target.name}`)
+              )
+            : await runUpdateExtension(
+                target.name,
+                target.rootPath,
+                services.workspaceFolder,
+                services.outputChannel,
+                true,
+                createProgressHooks(services, `Обновление ${target.name}`)
+              );
           return ok;
         }
       );
@@ -628,12 +645,22 @@ function createImportHooks(
   messagePrefix?: string
 ): ConfigurationImportHooks {
   return {
+    ...createProgressHooks(services, title, messagePrefix),
+    beforeProjectFilesChanged: (filePaths) => {
+      services.suppressConfigurationReloadForFiles(filePaths);
+    },
+  };
+}
+
+function createProgressHooks(
+  services: CommandServices,
+  title: string,
+  messagePrefix?: string
+): ConfigurationProgressHooks {
+  return {
     onProgressMessage: (message) => {
       const fullMessage = messagePrefix ? `${messagePrefix}: ${message}` : message;
       setConfigurationProgress(services, title, fullMessage, true);
-    },
-    beforeProjectFilesChanged: (filePaths) => {
-      services.suppressConfigurationReloadForFiles(filePaths);
     },
   };
 }
