@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { MetadataNode } from '../../tree/TreeNode';
 import { getObjectLocationFromXml } from '../../../infra/fs';
+import { extractXmlAttribute } from '../../../infra/xml';
 import type { TypeRegistryFilter } from './TypeRegistryService';
 
 export function resolveTypeTarget(node: MetadataNode, propertyName = 'Type'): {
@@ -170,8 +171,7 @@ export function extractUuidFromXml(xml: string | null): string | null {
   if (!xml) {
     return null;
   }
-  const match = /uuid="([0-9a-fA-F-]{36})"/.exec(xml);
-  return match?.[1]?.toLowerCase() ?? null;
+  return extractXmlAttribute(xml, 'uuid')?.toLowerCase() ?? null;
 }
 
 export function isValidMetadataName(value: string): boolean {

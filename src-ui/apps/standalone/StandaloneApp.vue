@@ -86,9 +86,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import { getVscodeApi } from '@ui-shared/api/vscodeApi';
-import { loadInitialState } from '@ui-shared/api/loadInitialState';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { MessageBus } from '@ui-shared/api/messageBus';
 import type { HostToUiMessage } from '@ui-shared/protocol/hostMessages';
 import type {
   StandaloneServerSettingsSnapshot,
@@ -96,13 +95,16 @@ import type {
   StandaloneServerUiMessage,
 } from '@ui-shared/types/standalone';
 
-const vscode = getVscodeApi();
-const initialState = loadInitialState<StandaloneServerSettingsSnapshot>('standalone');
-if (!initialState) {
+const props = defineProps<{
+  initialState: StandaloneServerSettingsSnapshot | null;
+  messageBus: MessageBus;
+}>();
+
+if (!props.initialState) {
   throw new Error('Начальное состояние автономного сервера не передано');
 }
 
-const state = ref<StandaloneServerSettingsSnapshot>(initialState);
+const state = ref<StandaloneServerSettingsSnapshot>(props.initialState);
 const ibsrvPath = ref('');
 const platformPath = ref('');
 const databasePath = ref('');
@@ -118,7 +120,7 @@ const statusMessage = ref('');
 
 const statusVisible = computed(() => statusMessage.value.length > 0);
 
-applyState(initialState);
+applyState(props.initialState);
 
 function save(): void {
   if (saving.value) {
@@ -168,11 +170,10 @@ function setStatus(kind: 'idle' | 'success' | 'error', message: string): void {
 }
 
 function postMessage(message: StandaloneServerUiMessage): void {
-  vscode.postMessage(message);
+  props.messageBus.send(message);
 }
 
-window.addEventListener('message', (event: MessageEvent<HostToUiMessage<StandaloneServerSettingsSnapshot>>) => {
-  const message = event.data;
+function handleHostMessage(message: HostToUiMessage<StandaloneServerSettingsSnapshot>): void {
   if (message.type === 'state' || message.type === 'init') {
     applyState(message.state);
   } else if (message.type === 'status') {
@@ -180,6 +181,20 @@ window.addEventListener('message', (event: MessageEvent<HostToUiMessage<Standalo
   } else if (message.type === 'error') {
     setStatus('error', message.message);
   }
+}
+
+onMounted(() => {
+  props.messageBus.on('state', handleHostMessage);
+  props.messageBus.on('init', handleHostMessage);
+  props.messageBus.on('status', handleHostMessage);
+  props.messageBus.on('error', handleHostMessage);
+});
+
+onUnmounted(() => {
+  props.messageBus.off('state', handleHostMessage);
+  props.messageBus.off('init', handleHostMessage);
+  props.messageBus.off('status', handleHostMessage);
+  props.messageBus.off('error', handleHostMessage);
 });
 </script>
 

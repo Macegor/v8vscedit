@@ -11,7 +11,7 @@ import type {
   ObjectPropertyItem,
   ObjectPropertiesCollection,
 } from '../../tree/nodeBuilders/_types';
-import { TypeRegistryService } from './TypeRegistryService';
+import type { TypeRegistryService } from './TypeRegistryService';
 import {
   buildCommandParameterTypeInnerXml,
   buildMetadataTypeInnerXml,
@@ -20,13 +20,15 @@ import {
 import { buildEventSourceInnerXml } from './EventSubscriptionPropertyService';
 import { toCanonicalPropertyInput } from './PropertyPresentationRegistry';
 import {
-  BasedOnXmlService,
   type BasedOnMetaKind,
-  ConfigurationXmlEditor,
   extractSimpleTag,
   extractStandardAttributeXml,
   parseConfigXml,
   parseObjectXml,
+} from '../../../infra/xml';
+import type {
+  BasedOnXmlService,
+  ConfigurationXmlEditor,
 } from '../../../infra/xml';
 import { extractChildMetaElementXml, extractColumnXmlFromTabularSection } from '../../../infra/xml';
 import type { RepositoryService } from '../../../infra/repository/RepositoryService';
@@ -76,13 +78,13 @@ export class PropertiesViewController {
   private activeNode: MetadataNode | undefined;
   private activeProperties: ObjectPropertiesCollection = [];
   private propertyUpdateQueue: Promise<void> = Promise.resolve();
-  private readonly typeRegistry = new TypeRegistryService();
-  private readonly xmlEditor = new ConfigurationXmlEditor();
-  private readonly basedOnService = new BasedOnXmlService();
 
   constructor(
     private readonly subsystemXmlService: SubsystemXmlService,
     private readonly exchangePlanContentService: ExchangePlanContentService,
+    private readonly typeRegistry: TypeRegistryService,
+    private readonly xmlEditor: ConfigurationXmlEditor,
+    private readonly basedOnService: BasedOnXmlService,
     private readonly host: PropertiesViewControllerHost,
     private readonly supportService?: SupportInfoService,
     private readonly repositoryService?: RepositoryService,

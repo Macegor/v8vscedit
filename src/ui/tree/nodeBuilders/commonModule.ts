@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 import { buildNode } from '../nodes/_base';
 import { getNodeDescriptor } from '../nodes/index';
 import { getMetaFolder } from '../../../domain/MetaTypes';
-import { extractSimpleTag } from '../../../infra/xml';
+import { extractSimpleTag, extractTagInnerXml, parseLocalizedStringSection } from '../../../infra/xml';
 import type {
   EnumPropertyOption,
   HandlerContext,
@@ -161,22 +161,11 @@ function extractBooleanTag(xml: string, tagName: string): boolean {
 
 /** Извлекает локализованную строку из секции вида <Synonym> */
 function extractLocalizedString(xml: string, tagName: string): LocalizedStringValue {
-  const sectionMatch = new RegExp(`<${tagName}>([\\s\\S]*?)<\\/${tagName}>`).exec(xml);
-  if (!sectionMatch) {
+  const inner = extractTagInnerXml(xml, tagName);
+  if (inner === null) {
     return { presentation: '', values: [] };
   }
-
-  const values = Array.from(
-    sectionMatch[1].matchAll(/<v8:item>\s*<v8:lang>([^<]*)<\/v8:lang>\s*<v8:content>([\s\S]*?)<\/v8:content>\s*<\/v8:item>/g)
-  ).map((match) => ({
-    lang: match[1].trim(),
-    content: match[2].trim(),
-  }));
-
-  return {
-    presentation: values[0]?.content ?? '',
-    values,
-  };
+  return parseLocalizedStringSection(inner);
 }
 
 /** Формирует значение перечисления ReturnValuesReuse с русскими представлениями */

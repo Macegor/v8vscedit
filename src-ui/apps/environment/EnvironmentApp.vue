@@ -67,19 +67,21 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
-import { getVscodeApi } from '@ui-shared/api/vscodeApi';
-import { loadInitialState } from '@ui-shared/api/loadInitialState';
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
+import { MessageBus } from '@ui-shared/api/messageBus';
 import type { HostToUiMessage, HostStatusKind } from '@ui-shared/protocol/hostMessages';
 import type { ProjectEnvironmentSnapshot, ProjectEnvironmentUiMessage } from '@ui-shared/types/environment';
 
-const vscode = getVscodeApi();
-const initialState = loadInitialState<ProjectEnvironmentSnapshot>('environment');
-if (!initialState) {
+const props = defineProps<{
+  initialState: ProjectEnvironmentSnapshot | null;
+  messageBus: MessageBus;
+}>();
+
+if (!props.initialState) {
   throw new Error('Начальное состояние настроек проекта не передано');
 }
 
-const state = ref<ProjectEnvironmentSnapshot>(initialState);
+const state = ref<ProjectEnvironmentSnapshot>(props.initialState);
 const platformPath = ref(state.value.settings.platformPath || '');
 const baseId = ref(findSelectedBaseId(state.value));
 const dbUser = ref(state.value.settings.dbUser || '');
@@ -152,11 +154,10 @@ function findSelectedBaseId(snapshot: ProjectEnvironmentSnapshot): string {
 }
 
 function postMessage(message: ProjectEnvironmentUiMessage): void {
-  vscode.postMessage(message);
+  props.messageBus.send(message);
 }
 
-window.addEventListener('message', (event: MessageEvent<HostToUiMessage<ProjectEnvironmentSnapshot>>) => {
-  const message = event.data;
+function handleHostMessage(message: HostToUiMessage<ProjectEnvironmentSnapshot>): void {
   if (message.type === 'state' || message.type === 'init') {
     applyState(message.state);
   } else if (message.type === 'status') {
@@ -164,6 +165,20 @@ window.addEventListener('message', (event: MessageEvent<HostToUiMessage<ProjectE
   } else if (message.type === 'error') {
     setStatus('error', message.message);
   }
+}
+
+onMounted(() => {
+  props.messageBus.on('state', handleHostMessage);
+  props.messageBus.on('init', handleHostMessage);
+  props.messageBus.on('status', handleHostMessage);
+  props.messageBus.on('error', handleHostMessage);
+});
+
+onUnmounted(() => {
+  props.messageBus.off('state', handleHostMessage);
+  props.messageBus.off('init', handleHostMessage);
+  props.messageBus.off('status', handleHostMessage);
+  props.messageBus.off('error', handleHostMessage);
 });
 </script>
 

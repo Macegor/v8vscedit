@@ -23,6 +23,7 @@ export * from './SubsystemXmlService';
 export * from './ExchangePlanContentService';
 export * from './TemplateXml';
 export * from './TypedFieldPropertyRules';
+export * from './MetadataPropertiesXml';
 export type { ConfigInfo } from '../../domain/Configuration';
 export type { MetaObject, MetaChild } from '../../domain/MetaObject';
 

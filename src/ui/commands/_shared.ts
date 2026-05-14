@@ -1,5 +1,6 @@
 import type * as vscode from 'vscode';
 import type { ChangedConfiguration } from '../../infra/fs/ConfigurationChangeDetector';
+import type { CfeBorrowService } from '../../infra/cfe/CfeBorrowService';
 import type { RepositoryService } from '../../infra/repository/RepositoryService';
 import type { AiSkillsInstaller } from '../../infra/skills/AiSkillsInstaller';
 import type { StandaloneServerService } from '../../infra/standalone';
@@ -23,6 +24,7 @@ export interface CommandServices {
   workspaceFolder: vscode.WorkspaceFolder;
   metadataXmlCreator: MetadataXmlCreator;
   metadataXmlRemover: MetadataXmlRemover;
+  cfeBorrowService: CfeBorrowService;
   reloadEntries: () => void | Promise<void>;
   propertiesViewProvider: PropertiesViewProvider;
   subsystemEditorViewProvider: SubsystemEditorViewProvider;

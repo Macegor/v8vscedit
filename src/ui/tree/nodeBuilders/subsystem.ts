@@ -4,7 +4,14 @@ import * as vscode from 'vscode';
 import type { MetadataNode } from '../TreeNode';
 import { buildNode } from '../nodes/_base';
 import { getNodeDescriptor } from '../nodes/index';
-import { extractSimpleTag, extractSynonym } from '../../../infra/xml';
+import {
+  extractFirstBalancedBlock,
+  extractRepeatedSimpleTagValues,
+  extractSimpleTag,
+  extractSynonym,
+  extractTagInnerXml,
+  parseLocalizedStringSection,
+} from '../../../infra/xml';
 import type {
   HandlerContext,
   LocalizedStringValue,
@@ -235,19 +242,8 @@ function safeReadFile(filePath: string): string {
 
 /** Извлекает имена дочерних подсистем из первой секции ChildObjects файла подсистемы */
 function extractChildSubsystems(xml: string): string[] {
-  const childBlockMatch = /<ChildObjects>([\s\S]*?)<\/ChildObjects>/.exec(xml);
-  if (!childBlockMatch) {
-    return [];
-  }
-
-  const result: string[] = [];
-  for (const match of childBlockMatch[1].matchAll(/<Subsystem>([^<]+)<\/Subsystem>/g)) {
-    const name = match[1].trim();
-    if (name) {
-      result.push(name);
-    }
-  }
-  return result;
+  const childBlock = extractFirstBalancedBlock(xml, 'ChildObjects');
+  return childBlock ? extractRepeatedSimpleTagValues(childBlock, 'Subsystem') : [];
 }
 
 /** Извлекает булево свойство подсистемы */
@@ -257,42 +253,23 @@ function extractBooleanTag(xml: string, tagName: string): boolean {
 
 /** Извлекает локализованную строку из секции вида <Synonym> */
 function extractLocalizedString(xml: string, tagName: string): LocalizedStringValue {
-  const sectionMatch = new RegExp(`<${tagName}>([\\s\\S]*?)<\\/${tagName}>`).exec(xml);
-  if (!sectionMatch) {
+  const inner = extractTagInnerXml(xml, tagName);
+  if (inner === null) {
     return { presentation: '', values: [] };
   }
-
-  const values = Array.from(
-    sectionMatch[1].matchAll(/<v8:item>\s*<v8:lang>([^<]*)<\/v8:lang>\s*<v8:content>([\s\S]*?)<\/v8:content>\s*<\/v8:item>/g)
-  ).map((match) => ({
-    lang: match[1].trim(),
-    content: match[2].trim(),
-  }));
-
-  return {
-    presentation: values[0]?.content ?? '',
-    values,
-  };
+  return parseLocalizedStringSection(inner);
 }
 
 /** Возвращает ссылку на картинку подсистемы из Picture/xr:Ref */
 function extractPictureRef(xml: string): string {
-  const pictureSection = /<Picture>([\s\S]*?)<\/Picture>/.exec(xml);
-  if (!pictureSection) {
-    return '';
-  }
-  const refMatch = /<xr:Ref>([^<]*)<\/xr:Ref>/.exec(pictureSection[1]);
-  return refMatch ? refMatch[1].trim() : '';
+  const pictureSection = extractTagInnerXml(xml, 'Picture');
+  return pictureSection ? (extractSimpleTag(pictureSection, 'xr:Ref') ?? '').trim() : '';
 }
 
 /** Возвращает признак загрузки прозрачного фона из Picture/xr:LoadTransparent */
 function extractPictureLoadTransparent(xml: string): boolean {
-  const pictureSection = /<Picture>([\s\S]*?)<\/Picture>/.exec(xml);
-  if (!pictureSection) {
-    return false;
-  }
-  const loadTransparentMatch = /<xr:LoadTransparent>([^<]*)<\/xr:LoadTransparent>/.exec(pictureSection[1]);
-  return (loadTransparentMatch?.[1] ?? '').trim().toLowerCase() === 'true';
+  const pictureSection = extractTagInnerXml(xml, 'Picture');
+  return pictureSection ? (extractSimpleTag(pictureSection, 'xr:LoadTransparent') ?? '').trim().toLowerCase() === 'true' : false;
 }
 
 /** Удаляет дубликаты строк с сохранением порядка */

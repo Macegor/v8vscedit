@@ -12,7 +12,14 @@ import { PropertiesViewController } from './ui/views/properties/PropertiesViewCo
 import { SubsystemEditorViewProvider } from './ui/views/subsystem/SubsystemEditorViewProvider';
 import { TreeSearchViewProvider } from './ui/views/search/TreeSearchViewProvider';
 import { SupportInfoService } from './infra/support/SupportInfoService';
-import { ExchangePlanContentService, MetadataXmlCreator, MetadataXmlRemover } from './infra/xml';
+import {
+  BasedOnXmlService,
+  ConfigurationXmlEditor,
+  ExchangePlanContentService,
+  MetadataXmlCreator,
+  MetadataXmlRemover,
+} from './infra/xml';
+import { CfeBorrowService } from './infra/cfe/CfeBorrowService';
 import { SubsystemXmlService } from './infra/xml/SubsystemXmlService';
 import { RepositoryService } from './infra/repository/RepositoryService';
 import { GitMetadataStatusService } from './infra/git/GitMetadataStatusService';
@@ -30,6 +37,7 @@ import { updateMetadataCacheAfterRename } from './infra/cache/MetadataCache';
 import { BslAnalyzerConfigService, ProjectEnvironmentService } from './infra/environment';
 import { ProjectEnvironmentViewProvider } from './ui/views/environment/ProjectEnvironmentViewProvider';
 import { StandaloneServerViewProvider } from './ui/views/standalone/StandaloneServerViewProvider';
+import { TypeRegistryService } from './ui/views/properties/TypeRegistryService';
 import {
   type UniversalPanelProcessingState,
   UniversalPanelViewProvider,
@@ -67,6 +75,10 @@ export class Container {
   readonly metadataXmlRemover: MetadataXmlRemover;
   readonly exchangePlanContentService: ExchangePlanContentService;
   readonly subsystemXmlService: SubsystemXmlService;
+  readonly typeRegistryService: TypeRegistryService;
+  readonly configurationXmlEditor: ConfigurationXmlEditor;
+  readonly basedOnXmlService: BasedOnXmlService;
+  readonly cfeBorrowService: CfeBorrowService;
   readonly treeSearchViewProvider: TreeSearchViewProvider;
   readonly universalPanelViewProvider: UniversalPanelViewProvider;
   readonly lspManager: LspManager;
@@ -119,6 +131,10 @@ export class Container {
     );
     this.subsystemXmlService = new SubsystemXmlService();
     this.exchangePlanContentService = new ExchangePlanContentService();
+    this.typeRegistryService = new TypeRegistryService();
+    this.configurationXmlEditor = new ConfigurationXmlEditor();
+    this.basedOnXmlService = new BasedOnXmlService();
+    this.cfeBorrowService = new CfeBorrowService();
 
     // Mutable ref: PropertiesViewProvider зависит от контроллера,
     // а колбэки контроллера — от провайдера.
@@ -127,6 +143,9 @@ export class Container {
     const propertiesController = new PropertiesViewController(
       this.subsystemXmlService,
       this.exchangePlanContentService,
+      this.typeRegistryService,
+      this.configurationXmlEditor,
+      this.basedOnXmlService,
       {
         refreshActiveView: () => {
           providerRef.current?.refresh();
@@ -262,6 +281,7 @@ export class Container {
       workspaceFolder: this.workspaceFolder,
       metadataXmlCreator: this.metadataXmlCreator,
       metadataXmlRemover: this.metadataXmlRemover,
+      cfeBorrowService: this.cfeBorrowService,
       reloadEntries: () => this.reloadEntries(),
       propertiesViewProvider: this.propertiesProvider,
       subsystemEditorViewProvider: this.subsystemEditorViewProvider,

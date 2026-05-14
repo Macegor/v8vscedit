@@ -109,116 +109,128 @@ const SOURCE_EVENTS: Record<EventSourceKind, readonly string[]> = {
 /** Строит свойства подписки на событие: источник как состав типов, событие как зависимый список. */
 export class EventSubscriptionPropertyService {
   buildProperties(fullObjectXml: string, sourceXmlPath: string | undefined): ObjectPropertiesCollection {
-    const propertiesInner = extractFirstBalancedBlock(fullObjectXml, 'Properties');
-    if (propertiesInner === null) {
-      return [];
-    }
-
-    const childrenByTag = new Map(
-      extractTopLevelPropertiesChildren(`<Properties>${propertiesInner}</Properties>`).map((child) => [child.tag, child.inner])
-    );
-    const sourceType = parseMetadataType(childrenByTag.get('Source') ?? '');
-    const event = stripXmlText(childrenByTag.get('Event') ?? '');
-    const handler = stripXmlText(childrenByTag.get('Handler') ?? childrenByTag.get('ProcedureName') ?? '');
-    const result: ObjectPropertiesCollection = [];
-
-    const name = stripXmlText(childrenByTag.get('Name') ?? '');
-    if (name || childrenByTag.has('Name')) {
-      result.push({
-        key: 'Name',
-        title: propertyTitle('Name'),
-        kind: 'string',
-        value: name,
-      });
-    }
-
-    if (childrenByTag.has('Synonym')) {
-      const synonym = parseLocalizedStringSection(childrenByTag.get('Synonym') ?? '');
-      if (synonym.presentation || synonym.values.length > 0) {
-        result.push({
-          key: 'Synonym',
-          title: propertyTitle('Synonym'),
-          kind: 'localizedString',
-          value: synonym,
-        });
-      }
-    }
-
-    if (childrenByTag.has('Comment')) {
-      const comment = parseLocalizedStringSection(childrenByTag.get('Comment') ?? '');
-      if (comment.presentation || comment.values.length > 0) {
-        result.push({
-          key: 'Comment',
-          title: propertyTitle('Comment'),
-          kind: 'localizedString',
-          value: comment,
-        });
-      }
-    }
-
-    if (childrenByTag.has('Source')) {
-      result.push({
-        key: 'Source',
-        title: 'Источник',
-        kind: 'metadataType',
-        value: sourceType,
-      });
-    }
-
-    if (childrenByTag.has('Event')) {
-      result.push({
-        key: 'Event',
-        title: propertyTitle('Event'),
-        kind: 'enum',
-        value: buildEventValue(event, this.getEventOptionsForSource(sourceType, sourceXmlPath)),
-      });
-    }
-
-    if (childrenByTag.has('Handler') || childrenByTag.has('ProcedureName')) {
-      result.push({
-        key: childrenByTag.has('Handler') ? 'Handler' : 'ProcedureName',
-        title: propertyTitle(childrenByTag.has('Handler') ? 'Handler' : 'ProcedureName'),
-        kind: 'string',
-        value: handler,
-      });
-    }
-
-    if (childrenByTag.has('SuppressObject')) {
-      const suppressObject = stripXmlText(childrenByTag.get('SuppressObject') ?? '');
-      result.push({
-        key: 'SuppressObject',
-        title: propertyTitle('SuppressObject'),
-        kind: suppressObject.toLowerCase() === 'true' || suppressObject.toLowerCase() === 'false' ? 'boolean' : 'string',
-        value: suppressObject.toLowerCase() === 'true' || suppressObject.toLowerCase() === 'false'
-          ? suppressObject.toLowerCase() === 'true'
-          : suppressObject,
-      });
-    }
-
-    return result;
+    return buildEventSubscriptionProperties(fullObjectXml, sourceXmlPath);
   }
 
   getEventOptionsForSource(sourceValue: MetadataTypeValue, sourceXmlPath: string | undefined): EnumPropertyOption[] {
-    const expandedKinds = expandSourceKinds(sourceValue, sourceXmlPath, new Set<string>());
-    if (expandedKinds.length === 0) {
-      return EVENT_ORDER.map(toEventOption);
-    }
-
-    let intersection: Set<string> | null = null;
-    for (const kind of expandedKinds) {
-      const events = SOURCE_EVENTS[kind];
-      const current = new Set<string>(events);
-      if (intersection === null) {
-        intersection = current;
-      } else {
-        const previous: Set<string> = intersection;
-        intersection = new Set<string>(Array.from(previous).filter((event) => current.has(event)));
-      }
-    }
-
-    const values = intersection ? [...intersection] : [];
-    return EVENT_ORDER.filter((event) => values.includes(event)).map(toEventOption);
+    return getEventOptionsForSource(sourceValue, sourceXmlPath);
   }
+}
+
+/** Строит свойства подписки на событие без состояния, чтобы builder дерева не создавал сервисы. */
+export function buildEventSubscriptionProperties(
+  fullObjectXml: string,
+  sourceXmlPath: string | undefined
+): ObjectPropertiesCollection {
+  const propertiesInner = extractFirstBalancedBlock(fullObjectXml, 'Properties');
+  if (propertiesInner === null) {
+    return [];
+  }
+
+  const childrenByTag = new Map(
+    extractTopLevelPropertiesChildren(`<Properties>${propertiesInner}</Properties>`).map((child) => [child.tag, child.inner])
+  );
+  const sourceType = parseMetadataType(childrenByTag.get('Source') ?? '');
+  const event = stripXmlText(childrenByTag.get('Event') ?? '');
+  const handler = stripXmlText(childrenByTag.get('Handler') ?? childrenByTag.get('ProcedureName') ?? '');
+  const result: ObjectPropertiesCollection = [];
+
+  const name = stripXmlText(childrenByTag.get('Name') ?? '');
+  if (name || childrenByTag.has('Name')) {
+    result.push({
+      key: 'Name',
+      title: propertyTitle('Name'),
+      kind: 'string',
+      value: name,
+    });
+  }
+
+  if (childrenByTag.has('Synonym')) {
+    const synonym = parseLocalizedStringSection(childrenByTag.get('Synonym') ?? '');
+    if (synonym.presentation || synonym.values.length > 0) {
+      result.push({
+        key: 'Synonym',
+        title: propertyTitle('Synonym'),
+        kind: 'localizedString',
+        value: synonym,
+      });
+    }
+  }
+
+  if (childrenByTag.has('Comment')) {
+    const comment = parseLocalizedStringSection(childrenByTag.get('Comment') ?? '');
+    if (comment.presentation || comment.values.length > 0) {
+      result.push({
+        key: 'Comment',
+        title: propertyTitle('Comment'),
+        kind: 'localizedString',
+        value: comment,
+      });
+    }
+  }
+
+  if (childrenByTag.has('Source')) {
+    result.push({
+      key: 'Source',
+      title: 'Источник',
+      kind: 'metadataType',
+      value: sourceType,
+    });
+  }
+
+  if (childrenByTag.has('Event')) {
+    result.push({
+      key: 'Event',
+      title: propertyTitle('Event'),
+      kind: 'enum',
+      value: buildEventValue(event, getEventOptionsForSource(sourceType, sourceXmlPath)),
+    });
+  }
+
+  if (childrenByTag.has('Handler') || childrenByTag.has('ProcedureName')) {
+    result.push({
+      key: childrenByTag.has('Handler') ? 'Handler' : 'ProcedureName',
+      title: propertyTitle(childrenByTag.has('Handler') ? 'Handler' : 'ProcedureName'),
+      kind: 'string',
+      value: handler,
+    });
+  }
+
+  if (childrenByTag.has('SuppressObject')) {
+    const suppressObject = stripXmlText(childrenByTag.get('SuppressObject') ?? '');
+    result.push({
+      key: 'SuppressObject',
+      title: propertyTitle('SuppressObject'),
+      kind: suppressObject.toLowerCase() === 'true' || suppressObject.toLowerCase() === 'false' ? 'boolean' : 'string',
+      value: suppressObject.toLowerCase() === 'true' || suppressObject.toLowerCase() === 'false'
+        ? suppressObject.toLowerCase() === 'true'
+        : suppressObject,
+    });
+  }
+
+  return result;
+}
+
+export function getEventOptionsForSource(sourceValue: MetadataTypeValue, sourceXmlPath: string | undefined): EnumPropertyOption[] {
+  const expandedKinds = expandSourceKinds(sourceValue, sourceXmlPath, new Set<string>());
+  if (expandedKinds.length === 0) {
+    return EVENT_ORDER.map(toEventOption);
+  }
+
+  let intersection: Set<string> | null = null;
+  for (const kind of expandedKinds) {
+    const events = SOURCE_EVENTS[kind];
+    const current = new Set<string>(events);
+    if (intersection === null) {
+      intersection = current;
+    } else {
+      const previous: Set<string> = intersection;
+      intersection = new Set<string>(Array.from(previous).filter((event) => current.has(event)));
+    }
+  }
+
+  const values = intersection ? [...intersection] : [];
+  return EVENT_ORDER.filter((event) => values.includes(event)).map(toEventOption);
 }
 
 /** Формирует внутренность блока `<Source>` для подписки на событие. */
