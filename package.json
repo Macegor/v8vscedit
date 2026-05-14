@@ -643,6 +643,8 @@
     "clean": "node scripts/clean-dist.mjs",
     "lint": "eslint . --max-warnings=0",
     "test": "node ./out/test/runTests.js",
+    "coverage": "c8 --check-coverage --100 npm test",
+    "coverage:report": "c8 npm test",
     "pretest": "npm run typecheck && npm run build && npm run test:compile"
   },
   "devDependencies": {
@@ -652,7 +654,8 @@
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.85.0",
     "@vitejs/plugin-vue": "^6.0.6",
-    "@vscode/test-electron": "^2.3.0",
+    "@vscode/test-electron": "^2.5.2",
+    "c8": "^11.0.0",
     "eslint": "^10.3.0",
     "glob": "^13.0.6",
     "mocha": "^11.7.5",
