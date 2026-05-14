@@ -227,23 +227,29 @@ export function registerExtensionCommands(
       }
 
       fs.mkdirSync(extensionRoot, { recursive: true });
-      const ok = await runWithStandaloneServerStopped(services, `Подключение расширения ${normalizedExtensionName}`, () =>
-        runDecompileExtension(
-          normalizedExtensionName,
-          extensionRoot,
-          services.workspaceFolder,
-          services.outputChannel
-        )
+      await runExclusiveConfigurationOperation(
+        {
+          title: `Подключение расширения ${normalizedExtensionName}`,
+          startMessage: 'подготовка',
+          services,
+          afterSuccess: async () => {
+            services.markConfigurationsClean([extensionRoot]);
+            await services.reloadEntries();
+            services.bslAnalyzerConfigService.updateSource(getConnectedExtensionRoots(services, extensionRoot));
+          },
+          afterFailure: async () => {
+            fs.rmSync(extensionRoot, { recursive: true, force: true });
+            await services.reloadEntries();
+          },
+        },
+        () =>
+          runDecompileExtension(
+            normalizedExtensionName,
+            extensionRoot,
+            services.workspaceFolder,
+            services.outputChannel
+          )
       );
-      if (!ok) {
-        fs.rmSync(extensionRoot, { recursive: true, force: true });
-        await services.reloadEntries();
-        return;
-      }
-
-      services.markConfigurationsClean([extensionRoot]);
-      await services.reloadEntries();
-      services.bslAnalyzerConfigService.updateSource(getConnectedExtensionRoots(services, extensionRoot));
     }),
 
     vscode.commands.registerCommand('v8vscedit.showConfigActions', async (node: NodeArg) => {
@@ -357,17 +363,22 @@ export function registerExtensionCommands(
         return;
       }
 
-      const ok = await runWithStandaloneServerStopped(services, `Импорт расширения ${target.extensionName}`, () =>
-        runDecompileExtension(
-          target.extensionName,
-          target.extensionRoot,
-          services.workspaceFolder,
-          services.outputChannel
-        )
+      await runExclusiveConfigurationOperation(
+        {
+          title: `Импорт расширения ${target.extensionName}`,
+          startMessage: 'подготовка',
+          cleanRootPath: target.extensionRoot,
+          reloadEntriesAfterSuccess: true,
+          services,
+        },
+        () =>
+          runDecompileExtension(
+            target.extensionName,
+            target.extensionRoot,
+            services.workspaceFolder,
+            services.outputChannel
+          )
       );
-      if (ok) {
-        services.markConfigurationsClean([target.extensionRoot]);
-      }
     }),
 
     vscode.commands.registerCommand('v8vscedit.compileExtensionToDb', async (node: NodeArg) => {
@@ -377,17 +388,21 @@ export function registerExtensionCommands(
         return;
       }
 
-      const ok = await runWithStandaloneServerStopped(services, `Загрузка расширения ${target.extensionName}`, () =>
-        runCompileExtension(
-          target.extensionName,
-          target.extensionRoot,
-          services.workspaceFolder,
-          services.outputChannel
-        )
+      await runExclusiveConfigurationOperation(
+        {
+          title: `Загрузка расширения ${target.extensionName}`,
+          startMessage: 'подготовка',
+          cleanRootPath: target.extensionRoot,
+          services,
+        },
+        () =>
+          runCompileExtension(
+            target.extensionName,
+            target.extensionRoot,
+            services.workspaceFolder,
+            services.outputChannel
+          )
       );
-      if (ok) {
-        services.markConfigurationsClean([target.extensionRoot]);
-      }
     }),
 
     vscode.commands.registerCommand('v8vscedit.updateExtensionInDb', async (node: NodeArg) => {
@@ -397,17 +412,21 @@ export function registerExtensionCommands(
         return;
       }
 
-      const ok = await runWithStandaloneServerStopped(services, `Обновление расширения ${target.extensionName}`, () =>
-        runUpdateExtension(
-          target.extensionName,
-          target.extensionRoot,
-          services.workspaceFolder,
-          services.outputChannel
-        )
+      await runExclusiveConfigurationOperation(
+        {
+          title: `Обновление расширения ${target.extensionName}`,
+          startMessage: 'подготовка',
+          cleanRootPath: target.extensionRoot,
+          services,
+        },
+        () =>
+          runUpdateExtension(
+            target.extensionName,
+            target.extensionRoot,
+            services.workspaceFolder,
+            services.outputChannel
+          )
       );
-      if (ok) {
-        services.markConfigurationsClean([target.extensionRoot]);
-      }
     }),
 
     vscode.commands.registerCommand('v8vscedit.compileAndUpdateExtensionInDb', async (node: NodeArg) => {
@@ -417,39 +436,42 @@ export function registerExtensionCommands(
         return;
       }
 
-      const ok = await runWithStandaloneServerStopped(services, `Полное обновление расширения ${target.extensionName}`, async () => {
-        const compiled = await runCompileExtension(
-          target.extensionName,
-          target.extensionRoot,
-          services.workspaceFolder,
-          services.outputChannel,
-          false
-        );
-        if (!compiled) {
-          return false;
+      await runExclusiveConfigurationOperation(
+        {
+          title: `Полное обновление расширения ${target.extensionName}`,
+          startMessage: 'подготовка',
+          cleanRootPath: target.extensionRoot,
+          services,
+        },
+        async () => {
+          const compiled = await runCompileExtension(
+            target.extensionName,
+            target.extensionRoot,
+            services.workspaceFolder,
+            services.outputChannel,
+            false
+          );
+          if (!compiled) {
+            return false;
+          }
+
+          const updated = await runUpdateExtension(
+            target.extensionName,
+            target.extensionRoot,
+            services.workspaceFolder,
+            services.outputChannel,
+            false
+          );
+          if (!updated) {
+            return false;
+          }
+
+          void vscode.window.showInformationMessage(
+            `Загрузка и обновление расширения "${target.extensionName}" в БД успешно завершены.`
+          );
+          return true;
         }
-
-        const updated = await runUpdateExtension(
-          target.extensionName,
-          target.extensionRoot,
-          services.workspaceFolder,
-          services.outputChannel,
-          false
-        );
-        if (!updated) {
-          return false;
-        }
-
-        void vscode.window.showInformationMessage(
-          `Загрузка и обновление расширения "${target.extensionName}" в БД успешно завершены.`
-        );
-        return true;
-      });
-      if (!ok) {
-        return;
-      }
-
-      services.markConfigurationsClean([target.extensionRoot]);
+      );
     })
   );
 }
@@ -509,6 +531,7 @@ async function runWithStandaloneServerStopped(
       }
     } else {
       services.outputChannel.appendLine(`[standalone] Операция "${operationTitle}" завершилась неуспешно, автономный сервер не запускается.`);
+      setConfigurationProgress(services, operationTitle, 'остановлено', false);
       services.refreshActionsView();
     }
   }
@@ -882,8 +905,10 @@ async function runExclusiveConfigurationOperation(
   options: {
     title: string;
     startMessage: string;
-    cleanRootPath: string;
+    cleanRootPath?: string;
     reloadEntriesAfterSuccess?: boolean;
+    afterSuccess?: () => void | Promise<void>;
+    afterFailure?: () => void | Promise<void>;
     services: CommandServices;
   },
   operation: () => Promise<boolean>
@@ -897,6 +922,14 @@ async function runExclusiveConfigurationOperation(
   await vscode.commands.executeCommand('setContext', 'v8vscedit.isUpdatingConfigurations', true);
   setConfigurationProgress(options.services, options.title, options.startMessage, true);
   await yieldToUi();
+  let failureHookCalled = false;
+  const runAfterFailure = async (): Promise<void> => {
+    if (failureHookCalled) {
+      return;
+    }
+    failureHookCalled = true;
+    await options.afterFailure?.();
+  };
   try {
     const ok = await runWithStandaloneServerStopped(options.services, options.title, operation);
     if (ok) {
@@ -905,13 +938,18 @@ async function runExclusiveConfigurationOperation(
         await yieldToUi();
         await options.services.reloadEntries();
       }
-      options.services.markConfigurationsClean([options.cleanRootPath]);
+      if (options.cleanRootPath) {
+        options.services.markConfigurationsClean([options.cleanRootPath]);
+      }
+      await options.afterSuccess?.();
       setConfigurationProgress(options.services, options.title, 'завершено', false);
     } else {
+      await runAfterFailure();
       setConfigurationProgress(options.services, options.title, 'остановлено', false);
     }
     return ok;
   } catch (error) {
+    await runAfterFailure();
     setConfigurationProgress(options.services, options.title, 'ошибка', false);
     showConfigurationCommandError(`Ошибка операции "${options.title}".`, error, options.services);
     return false;
