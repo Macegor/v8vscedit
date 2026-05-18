@@ -10,11 +10,14 @@
     "node_modules/**",
     "out/test/**",
     "src/test/**",
-    "src-ui/**"
+    "src-ui/**",
+    "vite.*.config.ts",
+    "vite.shared.ts"
   ],
   "extension": [
     ".js",
     ".ts"
   ],
+  "exclude-after-remap": false,
   "sourceMap": true
 }

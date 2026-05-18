@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { BasedOnXmlService } from '../../infra/xml';
+import { BasedOnXmlService } from '../../infra/xml/BasedOnXmlService';
 
 suite('BasedOnXmlService', () => {
   test('Редактирует прямой и обратный ввод на основании', () => {

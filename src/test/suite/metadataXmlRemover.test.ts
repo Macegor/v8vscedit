@@ -2,7 +2,8 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { MetadataXmlCreator, MetadataXmlRemover } from '../../infra/xml';
+import { MetadataXmlCreator } from '../../infra/xml/MetadataXmlCreator';
+import { MetadataXmlRemover } from '../../infra/xml/MetadataXmlRemover';
 
 suite('metadataXmlRemover', () => {
   test('блокирует удаление корневого объекта при найденных ссылках', () => {
@@ -67,6 +68,25 @@ suite('metadataXmlRemover', () => {
     assert.strictEqual(result.success, true);
     assert.ok(!fs.readFileSync(xmlPath, 'utf-8').includes('<Name>ФормаЭлемента</Name>'));
     assert.ok(!fs.existsSync(formDir));
+  });
+
+  test('удаляет команду вместе с модулем команды', () => {
+    const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-remove-cf-'));
+    fs.writeFileSync(path.join(configRoot, 'Configuration.xml'), buildConfigXml(), 'utf-8');
+    const creator = new MetadataXmlCreator();
+    assert.strictEqual(creator.addRootObject({ configRoot, kind: 'Catalog', name: 'Товары' }).success, true);
+    const xmlPath = path.join(configRoot, 'Catalogs', 'Товары.xml');
+    assert.strictEqual(creator.addChildElement({ ownerObjectXmlPath: xmlPath, childTag: 'Command', name: 'Открыть' }).success, true);
+
+    const commandDir = path.join(configRoot, 'Catalogs', 'Товары', 'Commands', 'Открыть');
+    assert.ok(fs.existsSync(path.join(commandDir, 'Ext', 'CommandModule.bsl')));
+
+    const remover = new MetadataXmlRemover();
+    const result = remover.removeChildElement({ ownerObjectXmlPath: xmlPath, childTag: 'Command', name: 'Открыть' });
+
+    assert.strictEqual(result.success, true);
+    assert.ok(!fs.readFileSync(xmlPath, 'utf-8').includes('<Name>Открыть</Name>'));
+    assert.ok(!fs.existsSync(commandDir));
   });
 
   test('удаляет только выбранный реквизит из нескольких однотипных элементов', () => {

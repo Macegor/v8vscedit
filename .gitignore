@@ -11,6 +11,8 @@ node_modules/
 dist/
 out/
 *.vsix
+coverage/
+coverage-*
 
 # Примеры конфигураций (только для справки, не для VCS)
 example2/

@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ConfigurationXmlEditor } from '../../infra/xml';
+import { ConfigurationXmlEditor } from '../../infra/xml/ConfigurationXmlEditor';
 
 suite('configurationXmlEditor', () => {
   test('Изменяет свойства Configuration.xml и роли по умолчанию', () => {
@@ -53,7 +53,9 @@ suite('configurationXmlEditor', () => {
 <MetaDataObject>
   <Configuration>
     <Properties><Name>Тест</Name></Properties>
-    <ChildObjects></ChildObjects>
+    <ChildObjects>
+      <SessionParameter>ТекущийПользователь</SessionParameter>
+    </ChildObjects>
   </Configuration>
 </MetaDataObject>`,
       'utf-8'
@@ -65,6 +67,7 @@ suite('configurationXmlEditor', () => {
     assert.strictEqual(delRes.success, true);
     const saved = fs.readFileSync(configPath, 'utf-8');
     assert.ok(!saved.includes('<Catalog>Клиенты</Catalog>'));
+    assert.ok(saved.includes('<SessionParameter>ТекущийПользователь</SessionParameter>'));
   });
 
   test('Изменяет список владельцев справочника', () => {
@@ -173,6 +176,7 @@ suite('configurationXmlEditor', () => {
   <Configuration>
     <Properties><Name>Тест</Name></Properties>
     <ChildObjects>
+      <Catalog>ДругойСправочник</Catalog>
       <Catalog>Контрагенты</Catalog>
     </ChildObjects>
   </Configuration>
@@ -184,6 +188,7 @@ suite('configurationXmlEditor', () => {
     assert.strictEqual(result.success, true);
     assert.ok(fs.existsSync(path.join(catalogs, 'Партнеры.xml')));
     const cfg = fs.readFileSync(configPath, 'utf-8');
+    assert.ok(cfg.includes('<Catalog>ДругойСправочник</Catalog>'));
     assert.ok(cfg.includes('<Catalog>Партнеры</Catalog>'));
   });
 });

@@ -3,7 +3,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { ConfigurationChangeDetector } from '../../infra/fs/ConfigurationChangeDetector';
-import { MetadataXmlCreator, ObjectXmlReader } from '../../infra/xml';
+import { MetadataXmlCreator } from '../../infra/xml/MetadataXmlCreator';
+import { ObjectXmlReader } from '../../infra/xml/ObjectXmlReader';
 import {
   buildRootMetaObjectProperties,
   buildTypedFieldProperties,
