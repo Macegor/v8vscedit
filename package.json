@@ -579,6 +579,56 @@
           "type": "string",
           "default": "",
           "description": "Путь к исполняемому файлу bsl-analyzer (если пусто — скачивается автоматически)"
+        },
+        "v8vscedit.agent.host": {
+          "type": "string",
+          "default": "localhost",
+          "description": "Адрес SSH-сервера конфигуратора в режиме агента"
+        },
+        "v8vscedit.agent.listenAddress": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Локальный адрес, на котором конфигуратор слушает SSH-подключения в режиме агента"
+        },
+        "v8vscedit.agent.port": {
+          "type": "number",
+          "default": 1543,
+          "description": "Порт SSH-сервера конфигуратора в режиме агента"
+        },
+        "v8vscedit.agent.user": {
+          "type": "string",
+          "default": "",
+          "description": "Пользователь SSH для подключения к конфигуратору в режиме агента. Если пусто, используется --db-user из env.json"
+        },
+        "v8vscedit.agent.privateKeyPath": {
+          "type": "string",
+          "default": "",
+          "description": "Путь к приватному SSH-ключу для подключения к конфигуратору в режиме агента"
+        },
+        "v8vscedit.agent.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Автоматически запускать конфигуратор с параметром /AgentMode перед операциями с конфигурацией"
+        },
+        "v8vscedit.agent.visible": {
+          "type": "boolean",
+          "default": false,
+          "description": "Запускать конфигуратор в режиме агента с параметром /Visible"
+        },
+        "v8vscedit.agent.agentModeArgs": {
+          "type": "string",
+          "default": "",
+          "description": "Дополнительные параметры запуска конфигуратора после /AgentMode"
+        },
+        "v8vscedit.agent.progressInterval": {
+          "type": "number",
+          "default": 0.5,
+          "description": "Интервал сообщений прогресса агента конфигуратора в секундах"
+        },
+        "v8vscedit.agent.startupTimeoutMs": {
+          "type": "number",
+          "default": 15000,
+          "description": "Максимальное время ожидания открытия SSH-порта после запуска конфигуратора в режиме агента, в миллисекундах"
         }
       }
     },
@@ -652,6 +702,7 @@
     "@types/glob": "^8.1.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "^20.0.0",
+    "@types/ssh2": "^1.15.5",
     "@types/vscode": "^1.85.0",
     "@vitejs/plugin-vue": "^6.0.6",
     "@vscode/test-electron": "^2.5.2",
@@ -668,6 +719,7 @@
     "@vscode-elements/elements": "^2.5.1",
     "fast-xml-parser": "^4.5.6",
     "iconv-lite": "^0.7.2",
+    "ssh2": "^1.17.0",
     "vscode-languageclient": "^9.0.1",
     "vue": "^3.5.34"
   }

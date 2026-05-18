@@ -8,8 +8,8 @@ import {
   diffHashSnapshots,
   loadHashCache,
   saveHashCache,
-} from '../../cli/core/hashCache';
-import { collectConfigFiles } from '../../cli/commands/importGitChanges';
+} from '../../infra/cache/HashCache';
+import { collectConfigFilesForLoad } from '../../infra/agent/ConfigLoadFileCollector';
 
 suite('HashCache', () => {
   test('diffHashSnapshots корректно определяет added/modified/deleted', () => {
@@ -109,7 +109,7 @@ suite('PartialLoadList', () => {
       fs.writeFileSync(path.join(objectDir, 'Заказ.xml'), '<xml/>', 'utf-8');
       fs.writeFileSync(path.join(extDir, 'ObjectModule.bsl'), 'Процедура Тест() КонецПроцедуры', 'utf-8');
 
-      const list = collectConfigFiles(tempRoot, ['Documents/Заказ/Ext/ObjectModule.bsl'], false);
+      const list = collectConfigFilesForLoad(tempRoot, ['Documents/Заказ/Ext/ObjectModule.bsl'], false);
       assert.ok(list.includes('Documents/Заказ/Заказ.xml'));
       assert.ok(list.includes('Documents/Заказ/Ext/ObjectModule.bsl'));
     } finally {
@@ -127,7 +127,7 @@ suite('PartialLoadList', () => {
       fs.writeFileSync(path.join(objectDir, 'Templates', 'Текст.xml'), '<xml/>', 'utf-8');
       fs.writeFileSync(path.join(templateDir, 'Ext', 'Template.txt'), 'текст', 'utf-8');
 
-      const list = collectConfigFiles(
+      const list = collectConfigFilesForLoad(
         tempRoot,
         ['DataProcessors/Обработка/Templates/Текст/Ext/Template.txt'],
         false

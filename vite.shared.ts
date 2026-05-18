@@ -12,6 +12,8 @@ export const aliases = {
 export const nodeExternal = [
   'vscode',
   '@vscode/test-electron',
+  'ssh2',
+  'cpu-features',
   ...builtinModules,
   ...builtinModules.map((name) => `node:${name}`),
 ];

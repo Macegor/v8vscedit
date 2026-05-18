@@ -1,8 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { spawn } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
+import { launchInteractiveDesignerWithAgentPause } from '../../../infra/agent';
 import { normalizeInfoBasePath, resolveV8ExecutablePath, resolveV8PathHintFromVersion } from '../../../infra/process';
+import { getAgentOperationServiceForInteractiveDesigner } from '../ext/ExtensionCommandRunner';
 
 interface DbRunConnectionParams {
   infoBasePath?: string;
@@ -33,9 +35,27 @@ export async function runDbClientFromWorkspace(
     const connection = resolveConnectionFromSettings(settingsPath);
     const v8Path = resolveV8ExecutablePath(connection.v8Path ?? '');
     const args = buildLaunchArguments(options, connection);
+    const agentService = options.mode === 'DESIGNER'
+      ? await getAgentOperationServiceForInteractiveDesigner(workspaceFolder, outputChannel)
+      : undefined;
 
     outputChannel.appendLine(`[db-run] Запуск: ${v8Path} ${args.join(' ')}`);
-    spawnDetached(v8Path, args, workspaceFolder.uri.fsPath);
+    await launchInteractiveDesignerWithAgentPause({
+      agentSession: agentService?.service,
+      forceAgentDisconnect: agentService?.forceDisconnect,
+      launch: () => spawnDetached(v8Path, args, workspaceFolder.uri.fsPath),
+      hooks: {
+        onMessage: (message) => outputChannel.appendLine(`[db-run][agent] ${message}`),
+      },
+      onMessage: (message) => outputChannel.appendLine(`[db-run] ${message}`),
+      onReconnectError: (error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        outputChannel.appendLine(`[db-run][agent][error] Не удалось повторно подключить базу к агенту: ${message}`);
+        void vscode.window.showWarningMessage(
+          `Конфигуратор закрыт, но не удалось повторно подключить базу к агенту.\n${message}`
+        );
+      },
+    });
 
     const modeLabel = options.mode === 'DESIGNER' ? 'конфигуратор' : 'тонкий клиент';
     await vscode.window.showInformationMessage(`Запущен ${modeLabel} 1С.`);
@@ -85,7 +105,7 @@ function buildLaunchArguments(options: DbRunOptions, params: DbRunConnectionPara
   return args;
 }
 
-function spawnDetached(command: string, args: string[], cwd: string): void {
+function spawnDetached(command: string, args: string[], cwd: string): ChildProcess {
   const child = spawn(command, args, {
     cwd,
     shell: false,
@@ -93,6 +113,7 @@ function spawnDetached(command: string, args: string[], cwd: string): void {
     stdio: 'ignore',
   });
   child.unref();
+  return child;
 }
 
 function resolveSettingsPath(workspaceRoot: string): string {

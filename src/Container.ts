@@ -315,7 +315,7 @@ export class Container {
 
   private wireConfigurationWatcher(): void {
     const watcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(this.workspaceFolder, '**/Configuration.xml'),
+      new vscode.RelativePattern(this.workspaceFolder, 'src/**/Configuration.xml'),
       false,
       false,
       false
@@ -350,31 +350,31 @@ export class Container {
 
   private wireConfigurationSourceWatcher(): void {
     const xmlWatcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(this.workspaceFolder, '**/*.xml'),
+      new vscode.RelativePattern(this.workspaceFolder, 'src/**/*.xml'),
       false,
       false,
       false
     );
     const bslWatcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(this.workspaceFolder, '**/*.bsl'),
+      new vscode.RelativePattern(this.workspaceFolder, 'src/**/*.bsl'),
       false,
       false,
       false
     );
     const textTemplateWatcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(this.workspaceFolder, '**/Ext/Template.txt'),
+      new vscode.RelativePattern(this.workspaceFolder, 'src/**/Ext/Template.txt'),
       false,
       false,
       false
     );
     const binaryTemplateWatcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(this.workspaceFolder, '**/Ext/Template.bin'),
+      new vscode.RelativePattern(this.workspaceFolder, 'src/**/Ext/Template.bin'),
       false,
       false,
       false
     );
     const htmlTemplateWatcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(this.workspaceFolder, '**/Ext/Template/*.html'),
+      new vscode.RelativePattern(this.workspaceFolder, 'src/**/Ext/Template/*.html'),
       false,
       false,
       false
