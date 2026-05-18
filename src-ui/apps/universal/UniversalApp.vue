@@ -292,8 +292,8 @@ onUnmounted(() => {
           <button type="button" title="Настройки проекта" aria-label="Настройки проекта" @click="sendCommand('v8vscedit.configureEnvironment')">
             <span class="codicon codicon-settings-gear" aria-hidden="true" />
           </button>
-          <button type="button" title="Установить ИИ-скилы 1С" aria-label="Установить ИИ-скилы 1С" @click="sendCommand('v8vscedit.installAiSkills')">
-            <span class="codicon codicon-sparkle" aria-hidden="true" />
+          <button type="button" title="ИИ и MCP" aria-label="ИИ и MCP" @click="sendCommand('v8vscedit.openAiSettings')">
+            <span class="ai-mark" aria-hidden="true">AI</span>
           </button>
         </div>
 
@@ -389,6 +389,12 @@ button {
 button:hover {
   background: var(--vscode-toolbar-hoverBackground);
   outline: 1px solid var(--vscode-toolbar-hoverOutline, transparent);
+}
+.ai-mark {
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 .primary-action {
   width: 100%;

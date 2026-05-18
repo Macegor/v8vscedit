@@ -121,6 +121,11 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
     return [...this.entries];
   }
 
+  /** Возвращает полную модель дерева для автоматизаций без учёта активного поиска. */
+  getAutomationRoots(): MetadataNode[] {
+    return [...this.roots];
+  }
+
   /** Обновляет фильтр дерева. Строки короче трёх символов сбрасывают фильтрацию. */
   setSearchQuery(query: string): void {
     const nextQuery = query.trim();

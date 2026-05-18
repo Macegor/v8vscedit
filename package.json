@@ -13,6 +13,7 @@
   "activationEvents": [
     "onView:v8vsceditUniversal",
     "onLanguage:bsl",
+    "onCommand:v8vscedit.openAiSettings",
     "onCommand:v8vscedit.refresh"
   ],
   "categories": [
@@ -99,6 +100,14 @@
         "command": "v8vscedit.installAiSkills",
         "title": "Установить ИИ-скилы 1С",
         "icon": "$(extensions)"
+      },
+      {
+        "command": "v8vscedit.openAiSettings",
+        "title": "ИИ и MCP",
+        "icon": {
+          "light": "./src/icons/light/ai.svg",
+          "dark": "./src/icons/dark/ai.svg"
+        }
       },
       {
         "command": "v8vscedit.standalone.configure",
@@ -580,6 +589,76 @@
           "default": "",
           "description": "Путь к исполняемому файлу bsl-analyzer (если пусто — скачивается автоматически)"
         },
+        "v8vscedit.mcp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Автоматически запускать локальный MCP-сервер после полной загрузки дерева метаданных"
+        },
+        "v8vscedit.mcp.host": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Локальный адрес MCP-сервера. В целях безопасности принимаются только 127.0.0.1, localhost или ::1"
+        },
+        "v8vscedit.mcp.port": {
+          "type": "number",
+          "default": 38481,
+          "description": "Порт локального MCP-сервера. Если порт занят, расширение попробует следующие порты"
+        },
+        "v8vscedit.aiMcp.bslAnalyzer.autoStart": {
+          "type": "boolean",
+          "default": false,
+          "description": "Автоматически запускать локальные MCP-профили bsl-analyzer из панели ИИ и MCP"
+        },
+        "v8vscedit.aiMcp.bslAnalyzer.reference.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Включить профиль reference MCP-сервера bsl-analyzer"
+        },
+        "v8vscedit.aiMcp.bslAnalyzer.workspace.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Включить профиль workspace MCP-сервера bsl-analyzer"
+        },
+        "v8vscedit.aiMcp.bslAnalyzer.workspace.sourceDir": {
+          "type": "string",
+          "default": "",
+          "description": "Каталог проекта для workspace-профиля MCP bsl-analyzer. Если пусто, используется корень открытой рабочей области"
+        },
+        "v8vscedit.aiMcp.bslAnalyzer.embedding.url": {
+          "type": "string",
+          "default": "",
+          "description": "EMBEDDING_URL для семантического поиска MCP bsl-analyzer"
+        },
+        "v8vscedit.aiMcp.bslAnalyzer.embedding.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "EMBEDDING_API_KEY для embedding API MCP bsl-analyzer"
+        },
+        "v8vscedit.aiMcp.bslAnalyzer.embedding.model": {
+          "type": "string",
+          "default": "qwen/qwen3-embedding-0.6b",
+          "description": "EMBEDDING_MODEL для семантического поиска MCP bsl-analyzer"
+        },
+        "v8vscedit.aiMcp.bslAnalyzer.naparnikToken": {
+          "type": "string",
+          "default": "",
+          "description": "NAPARNIK_TOKEN для инструмента its_help MCP bsl-analyzer"
+        },
+        "v8vscedit.aiMcp.bslAnalyzer.onec.url": {
+          "type": "string",
+          "default": "",
+          "description": "URL HTTP-сервиса BSLAnalyzerService, например http://localhost/base/hs/bsl-analyzer"
+        },
+        "v8vscedit.aiMcp.bslAnalyzer.onec.user": {
+          "type": "string",
+          "default": "",
+          "description": "Пользователь 1С для live-инструментов MCP bsl-analyzer"
+        },
+        "v8vscedit.aiMcp.bslAnalyzer.onec.password": {
+          "type": "string",
+          "default": "",
+          "description": "Пароль 1С для live-инструментов MCP bsl-analyzer"
+        },
         "v8vscedit.agent.host": {
           "type": "string",
           "default": "localhost",
@@ -716,11 +795,13 @@
     "vue-tsc": "^3.2.8"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@vscode-elements/elements": "^2.5.1",
     "fast-xml-parser": "^4.5.6",
     "iconv-lite": "^0.7.2",
     "ssh2": "^1.17.0",
     "vscode-languageclient": "^9.0.1",
-    "vue": "^3.5.34"
+    "vue": "^3.5.34",
+    "zod": "^4.4.3"
   }
 }

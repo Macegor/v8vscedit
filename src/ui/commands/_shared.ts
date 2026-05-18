@@ -13,6 +13,7 @@ import type { PropertiesViewProvider } from '../views/PropertiesViewProvider';
 import type { RepositoryCommitViewProvider } from '../views/RepositoryCommitViewProvider';
 import type { RepositoryConnectionViewProvider } from '../views/RepositoryConnectionViewProvider';
 import type { ProjectEnvironmentViewProvider } from '../views/environment/ProjectEnvironmentViewProvider';
+import type { AiMcpViewProvider } from '../views/ai/AiMcpViewProvider';
 import type { StandaloneServerViewProvider } from '../views/standalone/StandaloneServerViewProvider';
 import type { SubsystemEditorViewProvider } from '../views/subsystem/SubsystemEditorViewProvider';
 import type { UniversalPanelProcessingState } from '../views/universal/UniversalPanelViewProvider';
@@ -35,6 +36,7 @@ export interface CommandServices {
   repositoryCommitViewProvider: RepositoryCommitViewProvider;
   bslAnalyzerConfigService: BslAnalyzerConfigService;
   projectEnvironmentViewProvider: ProjectEnvironmentViewProvider;
+  aiMcpViewProvider?: AiMcpViewProvider;
   standaloneServerService: StandaloneServerService;
   standaloneServerViewProvider: StandaloneServerViewProvider;
   aiSkillsInstaller: AiSkillsInstaller;

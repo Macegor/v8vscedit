@@ -93,6 +93,14 @@ export class LspManager implements vscode.Disposable {
     }
   }
 
+  async ensureAnalyzerBinary(): Promise<boolean> {
+    return this.analyzerService.ensureBinary();
+  }
+
+  getAnalyzerExecutablePath(): string {
+    return this.analyzerService.getExecutablePath();
+  }
+
   /** Регистрирует команды и подписки, связанные с LSP */
   registerCommands(): void {
     const { context } = this;

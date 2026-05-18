@@ -7,6 +7,7 @@ import { type ChangedConfiguration, ConfigurationChangeDetector } from './infra/
 import { MetadataTreeProvider } from './ui/tree/MetadataTreeProvider';
 import type { MetadataNode } from './ui/tree/TreeNode';
 import { registerCommands } from './ui/commands/CommandRegistry';
+import type { CommandServices } from './ui/commands/_shared';
 import { PropertiesViewProvider } from './ui/views/PropertiesViewProvider';
 import { PropertiesViewController } from './ui/views/properties/PropertiesViewController';
 import { SubsystemEditorViewProvider } from './ui/views/subsystem/SubsystemEditorViewProvider';
@@ -42,6 +43,9 @@ import {
   type UniversalPanelProcessingState,
   UniversalPanelViewProvider,
 } from './ui/views/universal/UniversalPanelViewProvider';
+import { V8McpServer } from './ui/mcp/V8McpServer';
+import { BslAnalyzerMcpService } from './ui/mcp/BslAnalyzerMcpService';
+import { AiMcpViewProvider } from './ui/views/ai/AiMcpViewProvider';
 
 /**
  * Композиционный корень расширения. Собирает зависимости в одном месте,
@@ -81,6 +85,9 @@ export class Container {
   readonly cfeBorrowService: CfeBorrowService;
   readonly treeSearchViewProvider: TreeSearchViewProvider;
   readonly universalPanelViewProvider: UniversalPanelViewProvider;
+  readonly mcpServer: V8McpServer;
+  readonly bslAnalyzerMcpService: BslAnalyzerMcpService;
+  readonly aiMcpViewProvider: AiMcpViewProvider;
   readonly lspManager: LspManager;
   readonly changeDetector: ConfigurationChangeDetector;
 
@@ -223,6 +230,22 @@ export class Container {
     this.changeDetector = new ConfigurationChangeDetector(workspaceFolder.uri.fsPath);
 
     this.lspManager = new LspManager(context, this.outputChannel);
+    this.mcpServer = new V8McpServer(this.buildMcpCommandServices(), this.configurationXmlEditor);
+    this.bslAnalyzerMcpService = new BslAnalyzerMcpService(
+      this.outputChannel,
+      () => this.lspManager.ensureAnalyzerBinary(),
+      () => this.lspManager.getAnalyzerExecutablePath()
+    );
+    this.aiMcpViewProvider = new AiMcpViewProvider(
+      context.extensionUri,
+      workspaceFolder,
+      this.outputChannel,
+      this.mcpServer,
+      this.bslAnalyzerMcpService,
+      () => this.startMcpServer(true),
+      () => this.mcpServer.stop()
+    );
+    context.subscriptions.push(this.mcpServer, this.bslAnalyzerMcpService, this.aiMcpViewProvider);
   }
 
   /** Создаёт контейнер и выполняет регистрацию всех подсистем */
@@ -236,7 +259,10 @@ export class Container {
     c.wireCommands();
     c.wireReadonlyGuard();
     c.reloadEntries();
+    c.wireMcpConfigurationWatcher();
+    c.startMcpServer();
     c.wireLsp();
+    c.startBslAnalyzerMcpServers();
     return c;
   }
 
@@ -277,7 +303,19 @@ export class Container {
   }
 
   private wireCommands(): void {
-    registerCommands(this.context, {
+    registerCommands(this.context, this.buildCommandServices());
+    registerSupportIndicatorCommands(this.context);
+  }
+
+  private buildCommandServices(): CommandServices {
+    return {
+      ...this.buildMcpCommandServices(),
+      aiMcpViewProvider: this.aiMcpViewProvider,
+    };
+  }
+
+  private buildMcpCommandServices(): Omit<CommandServices, 'aiMcpViewProvider'> {
+    return {
       treeProvider: this.treeProvider,
       workspaceFolder: this.workspaceFolder,
       metadataXmlCreator: this.metadataXmlCreator,
@@ -309,8 +347,7 @@ export class Container {
       },
       setTreeProcessingState: (state) => this.setTreeProcessingState(state),
       refreshActionsView: () => this.refreshActionsView(),
-    });
-    registerSupportIndicatorCommands(this.context);
+    };
   }
 
   private wireConfigurationWatcher(): void {
@@ -661,6 +698,54 @@ export class Container {
   private wireLsp(): void {
     this.lspManager.registerCommands();
     this.lspManager.startWithAutoUpdate();
+  }
+
+  private wireMcpConfigurationWatcher(): void {
+    this.context.subscriptions.push(
+      vscode.workspace.onDidChangeConfiguration((event) => {
+        if (!event.affectsConfiguration('v8vscedit.mcp') && !event.affectsConfiguration('v8vscedit.aiMcp')) {
+          return;
+        }
+        if (event.affectsConfiguration('v8vscedit.mcp')) {
+          void this.mcpServer.stop().then(() => this.startMcpServer());
+        }
+        if (event.affectsConfiguration('v8vscedit.aiMcp')) {
+          this.startBslAnalyzerMcpServers();
+        }
+        this.aiMcpViewProvider.refresh();
+      })
+    );
+  }
+
+  private startMcpServer(force = false): void {
+    const config = vscode.workspace.getConfiguration('v8vscedit');
+    if (!force && !config.get<boolean>('mcp.enabled', true)) {
+      this.outputChannel.appendLine('[mcp] Автозапуск отключён настройкой v8vscedit.mcp.enabled');
+      return;
+    }
+
+    const host = config.get<string>('mcp.host', '127.0.0.1');
+    if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1') {
+      this.outputChannel.appendLine(`[mcp][warn] Небезопасный адрес "${host}" отклонён, используется 127.0.0.1.`);
+    }
+    const port = config.get<number>('mcp.port', 38481);
+    void this.mcpServer
+      .start({ host: host === '127.0.0.1' || host === 'localhost' || host === '::1' ? host : '127.0.0.1', port })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.outputChannel.appendLine(`[mcp][error] ${message}`);
+      });
+  }
+
+  private startBslAnalyzerMcpServers(): void {
+    const settings = this.aiMcpViewProvider.getSettings();
+    void this.bslAnalyzerMcpService.applyAutoStart(settings).then(() => {
+      this.aiMcpViewProvider.refresh();
+    }).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      this.outputChannel.appendLine(`[bsl-mcp][error] ${message}`);
+      this.aiMcpViewProvider.refresh();
+    });
   }
 
   private isProjectInitialized(): boolean {

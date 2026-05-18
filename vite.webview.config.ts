@@ -6,6 +6,7 @@ import type { OutputBundle, OutputChunk } from 'rollup';
 import { aliases, type WebviewManifest } from './vite.shared';
 
 const entries = {
+  ai: 'src-ui/apps/ai/main.ts',
   environment: 'src-ui/apps/environment/main.ts',
   standalone: 'src-ui/apps/standalone/main.ts',
   'tree-search': 'src-ui/apps/tree-search/main.ts',
