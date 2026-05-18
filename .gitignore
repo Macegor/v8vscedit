@@ -24,3 +24,5 @@ npm-debug.log*
 
 .vscode-test/
 .DS_Store
+
+docs/1cdocs
