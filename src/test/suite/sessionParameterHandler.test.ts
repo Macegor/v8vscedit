@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 import { sessionParameterHandler } from '../../ui/tree/nodeBuilders/sessionParameter';
 import { MetadataNode } from '../../ui/tree/TreeNode';
 
-const EXAMPLE_CF = path.resolve(__dirname, '../../../../example/cf');
+const EXAMPLE_CF = path.resolve(__dirname, '../../../example/src/cf');
 
 suite('sessionParameterHandler', () => {
   test('Свойства параметра сеанса: порядок как в XML и тип', function () {

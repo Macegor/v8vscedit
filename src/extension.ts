@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { Container } from './Container';
-import { FormEditorProvider } from './formEditor/FormEditorProvider';
+import { registerBslSurroundCommands } from './ui/commands/snippets/BslSurroundCommands';
 
 /**
  * Точка входа VS Code-расширения. Намеренно тонкая: вся логика сборки
@@ -10,8 +10,7 @@ import { FormEditorProvider } from './formEditor/FormEditorProvider';
 let container: Container | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
-  // Визуальный редактор форм — регистрируется безусловно (не требует workspace)
-  context.subscriptions.push(FormEditorProvider.register(context));
+  registerBslSurroundCommands(context);
 
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) {
@@ -21,5 +20,5 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): Promise<void> | undefined {
-  return container?.lspManager.stop();
+  return container?.deactivate();
 }

@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import type { MetaTreeNodeContext, NodeKind, TreeNodeModel } from './TreeNodeModel';
 
-export { AddMetadataTarget, MetaTreeNodeContext, NodeKind, TreeNodeModel, getNodeKindLabel } from './TreeNodeModel';
+export { getNodeKindLabel } from './TreeNodeModel';
+export type { AddMetadataTarget, MetaTreeNodeContext, NodeKind, TreeNodeModel } from './TreeNodeModel';
 
 /**
  * Тонкая vscode-обёртка над `TreeNodeModel`.

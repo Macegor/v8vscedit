@@ -3,6 +3,7 @@
 .vscode/
 .codex
 .v8vscedit/
+.kilo
 env.json
 
 # Зависимости и артефакты сборки
@@ -10,6 +11,8 @@ node_modules/
 dist/
 out/
 *.vsix
+coverage/
+coverage-*
 
 # Примеры конфигураций (только для справки, не для VCS)
 example2/
@@ -21,3 +24,5 @@ npm-debug.log*
 
 .vscode-test/
 .DS_Store
+
+docs/1cdocs

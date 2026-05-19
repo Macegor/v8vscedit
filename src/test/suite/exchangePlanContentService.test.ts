@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import * as path from 'path';
-import { ExchangePlanContentService } from '../../infra/xml';
+import { ExchangePlanContentService } from '../../infra/xml/ExchangePlanContentService';
 
 const EXAMPLE_CF = path.resolve(process.cwd(), 'example/src/cf');
 

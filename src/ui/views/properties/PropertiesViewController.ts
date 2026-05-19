@@ -11,7 +11,7 @@ import type {
   ObjectPropertyItem,
   ObjectPropertiesCollection,
 } from '../../tree/nodeBuilders/_types';
-import { TypeRegistryService } from './TypeRegistryService';
+import type { TypeRegistryService } from './TypeRegistryService';
 import {
   buildCommandParameterTypeInnerXml,
   buildMetadataTypeInnerXml,
@@ -20,17 +20,26 @@ import {
 import { buildEventSourceInnerXml } from './EventSubscriptionPropertyService';
 import { toCanonicalPropertyInput } from './PropertyPresentationRegistry';
 import {
-  BasedOnXmlService,
   type BasedOnMetaKind,
-  ConfigurationXmlEditor,
   extractSimpleTag,
   extractStandardAttributeXml,
   parseConfigXml,
   parseObjectXml,
 } from '../../../infra/xml';
+import type {
+  BasedOnXmlService,
+  ConfigurationXmlEditor,
+} from '../../../infra/xml';
 import { extractChildMetaElementXml, extractColumnXmlFromTabularSection } from '../../../infra/xml';
 import type { RepositoryService } from '../../../infra/repository/RepositoryService';
 import { type SupportInfoService, SupportMode } from '../../../infra/support/SupportInfoService';
+import { getHandlerForNode } from '../../tree/nodeBuilders/index';
+import type {
+  PropertyControl,
+  PropertiesRenderContext,
+  PropertySection,
+  PropertiesViewState,
+} from './_types';
 import { getObjectLocationFromXml } from '../../../infra/fs';
 import { META_TYPES } from '../../../domain/MetaTypes';
 import { getDefaultStandardAttributeIndexing } from '../../../domain/StandardAttribute';
@@ -41,7 +50,6 @@ import type {
 } from '../../../infra/xml/SubsystemXmlService';
 import type { ExchangePlanContentSnapshot } from '../../../infra/xml/ExchangePlanContentService';
 import type { ExchangePlanContentService } from '../../../infra/xml/ExchangePlanContentService';
-import type { PropertiesRenderContext } from './rendering/_types';
 import {
   arePropertyEditValuesEqual,
   extractFormNameFromReference,
@@ -70,13 +78,14 @@ export class PropertiesViewController {
   private activeNode: MetadataNode | undefined;
   private activeProperties: ObjectPropertiesCollection = [];
   private propertyUpdateQueue: Promise<void> = Promise.resolve();
-  private readonly typeRegistry = new TypeRegistryService();
-  private readonly xmlEditor = new ConfigurationXmlEditor();
-  private readonly basedOnService = new BasedOnXmlService();
+  private readonly pendingBasedOnPreloads = new Set<string>();
 
   constructor(
     private readonly subsystemXmlService: SubsystemXmlService,
     private readonly exchangePlanContentService: ExchangePlanContentService,
+    private readonly typeRegistry: TypeRegistryService,
+    private readonly xmlEditor: ConfigurationXmlEditor,
+    private readonly basedOnService: BasedOnXmlService,
     private readonly host: PropertiesViewControllerHost,
     private readonly supportService?: SupportInfoService,
     private readonly repositoryService?: RepositoryService,
@@ -91,6 +100,63 @@ export class PropertiesViewController {
   clearActiveNode(): void {
     this.activeNode = undefined;
     this.activeProperties = [];
+  }
+
+  getActiveNode(): MetadataNode | undefined {
+    return this.activeNode;
+  }
+
+  /** Возвращает сериализуемое состояние для Vue-панели свойств. */
+  getViewState(): PropertiesViewState | null {
+    const node = this.activeNode;
+    if (!node) {
+      return null;
+    }
+
+    const handler = getHandlerForNode(node);
+    const canShow = handler?.canShowProperties?.(node) ?? false;
+    if (!handler?.getProperties || !canShow) {
+      return null;
+    }
+
+    const properties = handler.getProperties(node);
+    const context = this.buildRenderContext(node, properties);
+    const visibleProperties = context.properties.filter((property) => property.key !== 'StandardAttributes');
+    if (
+      visibleProperties.length === 0 &&
+      !context.subsystemSnapshot &&
+      !context.exchangePlanContentSnapshot
+    ) {
+      return null;
+    }
+
+    const controls = visibleProperties.map((prop) => this.toControl(prop, context.isEditLocked));
+    const sections = this.groupIntoSections(controls, visibleProperties);
+
+    let readonlyReason: PropertiesViewState['readonlyReason'];
+    if (context.isEditLockedBySupport) {
+      readonlyReason = 'support';
+    } else if (context.isEditLockedByRepository) {
+      readonlyReason = 'repository';
+    }
+
+    return {
+      title: `${node.textLabel} — Свойства`,
+      readonly: context.isEditLocked,
+      readonlyReason,
+      sections,
+      subsystemSnapshot: context.subsystemSnapshot,
+      exchangePlanContentSnapshot: context.exchangePlanContentSnapshot,
+    };
+  }
+
+  /** Обрабатывает изменение простого свойства из Vue-приложения. */
+  handlePropertyChange(controlId: string, value: unknown): void {
+    void this.handleWebviewMessage({
+      type: 'propertyChanged' as const,
+      key: controlId,
+      value: value as string | boolean | string[] | undefined,
+    });
   }
 
   buildRenderContext(node: MetadataNode, properties: ObjectPropertiesCollection): PropertiesRenderContext {
@@ -118,7 +184,13 @@ export class PropertiesViewController {
       return properties;
     }
     const location = getObjectLocationFromXml(node.xmlPath);
-    const snapshot = this.basedOnService.readSnapshot(location.configRoot, objectKind, node.textLabel);
+    const hasReverseIndex = this.basedOnService.hasPreloadedReverseIndex(location.configRoot);
+    const snapshot = this.basedOnService.readSnapshot(location.configRoot, objectKind, node.textLabel, {
+      includeReverse: false,
+    });
+    if (!hasReverseIndex) {
+      this.scheduleBasedOnReverseIndexPreload(location.configRoot, node);
+    }
     const basedOn = properties.find((item) => item.key === 'BasedOn');
     const baseSection = basedOn?.section ?? 'Ввод на основании';
     const baseSectionOrder = basedOn?.sectionOrder ?? 120;
@@ -140,6 +212,7 @@ export class PropertiesViewController {
       value: { items: snapshot.basedFor.map(toMetadataReferenceListItem) },
       section: baseSection,
       sectionOrder: baseSectionOrder,
+      readonly: !hasReverseIndex,
     };
     const result = properties.filter((item) => item.key !== 'BasedOn' && item.key !== 'BasedFor');
     const insertAfter = result.findIndex((item) => (item.sectionOrder ?? 0) > baseSectionOrder);
@@ -150,6 +223,30 @@ export class PropertiesViewController {
       result.splice(insertAfter, 0, ...basedItems);
     }
     return result;
+  }
+
+  private scheduleBasedOnReverseIndexPreload(configRoot: string, node: MetadataNode): void {
+    const key = `${configRoot}\u0000${node.nodeKind}\u0000${node.textLabel}`;
+    if (this.pendingBasedOnPreloads.has(key)) {
+      return;
+    }
+
+    this.pendingBasedOnPreloads.add(key);
+    void this.basedOnService.preloadReverseIndex(configRoot)
+      .then(() => {
+        const activeNode = this.activeNode;
+        if (
+          activeNode?.nodeKind === node.nodeKind &&
+          activeNode.textLabel === node.textLabel &&
+          activeNode.xmlPath === node.xmlPath
+        ) {
+          this.host.refreshActiveView();
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        this.pendingBasedOnPreloads.delete(key);
+      });
   }
 
   async handleWebviewMessage(message: unknown): Promise<void> {
@@ -1072,5 +1169,89 @@ export class PropertiesViewController {
       return SupportMode.None;
     }
     return this.supportService.getSupportMode(xmlPath);
+  }
+
+  /** Преобразует ObjectPropertyItem в PropertyControl для Vue. */
+  private toControl(property: ObjectPropertyItem, isEditLocked: boolean): PropertyControl {
+    const readonly = isEditLocked || property.readonly === true;
+    const base: PropertyControl = {
+      id: property.key,
+      label: property.title,
+      kind: property.kind,
+      value: typeof property.value === 'string' || typeof property.value === 'boolean' ? property.value : '',
+      readonly,
+      inherited: property.inherited ?? false,
+    };
+
+    switch (property.kind) {
+      case 'enum': {
+        const ev = property.value as EnumPropertyValue;
+        base.value = ev.current;
+        base.options = ev.allowedValues;
+        break;
+      }
+      case 'multiEnum': {
+        const mv = property.value as MultiEnumPropertyValue;
+        base.selected = mv.selected;
+        base.options = mv.allowedValues;
+        base.value = mv.selected;
+        break;
+      }
+      case 'localizedString': {
+        const lv = property.value as LocalizedStringValue;
+        base.value = lv.presentation;
+        break;
+      }
+      case 'metadataType': {
+        const tv = property.key === 'Type'
+          ? ensureDefaultQualifiers(property.value as MetadataTypeValue)
+          : property.value as MetadataTypeValue;
+        base.typePresentation = tv.presentation;
+        base.typeItems = tv.items;
+        base.stringQualifiers = tv.stringQualifiers ?? null;
+        base.numberQualifiers = tv.numberQualifiers ?? null;
+        base.dateQualifiers = tv.dateQualifiers ?? null;
+        base.value = tv;
+        break;
+      }
+      case 'metadataReferenceList': {
+        const rv = property.value as MetadataReferenceListValue;
+        base.referenceItems = rv.items;
+        base.value = rv;
+        break;
+      }
+    }
+
+    return base;
+  }
+
+  /** Группирует контролы в секции по section/sectionOrder исходных свойств. */
+  private groupIntoSections(
+    controls: PropertyControl[],
+    properties: ObjectPropertiesCollection
+  ): PropertySection[] {
+    const sectionMap = new Map<string, { order: number; controls: PropertyControl[] }>();
+
+    for (let i = 0; i < properties.length; i++) {
+      const prop = properties[i];
+      const sectionName = prop.section ?? 'Свойства';
+      const existing = sectionMap.get(sectionName);
+      if (existing) {
+        existing.controls.push(controls[i]);
+      } else {
+        sectionMap.set(sectionName, {
+          order: prop.sectionOrder ?? Number.MAX_SAFE_INTEGER,
+          controls: [controls[i]],
+        });
+      }
+    }
+
+    return Array.from(sectionMap.entries())
+      .sort((a, b) => a[1].order - b[1].order)
+      .map(([title, data]) => ({
+        title,
+        order: data.order,
+        controls: data.controls,
+      }));
   }
 }

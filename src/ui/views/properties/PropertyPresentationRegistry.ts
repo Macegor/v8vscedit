@@ -1,5 +1,10 @@
 import { META_TYPES } from '../../../domain/MetaTypes';
 import { getStandardAttributePresentation } from '../../../domain/StandardAttribute';
+import {
+  extractMobileFunctionalityUseItems,
+  extractRepeatedSimpleTagValues,
+  extractRepeatedTagInnerXml,
+} from '../../../infra/xml';
 
 /** Описание представления XML-ссылки на объект метаданных. */
 interface MetadataReferencePresentation {
@@ -340,34 +345,32 @@ function formatKnownScalarValue(value: string): string {
 }
 
 function formatMobileFunctionalities(innerXml: string): string {
-  const items = Array.from(innerXml.matchAll(
-    /<app:functionality>\s*<app:functionality>([^<]+)<\/app:functionality>\s*<app:use>(true|false)<\/app:use>\s*<\/app:functionality>/g
-  )).map((match) => {
-    const functionality = match[1].trim();
-    const use = match[2].trim() === 'true' ? 'Да' : 'Нет';
-    return `${MOBILE_FUNCTIONALITY_LABELS[functionality] ?? titleFromPascalCase(functionality)}: ${use}`;
+  const items = extractMobileFunctionalityUseItems(innerXml).map((item) => {
+    const title = MOBILE_FUNCTIONALITY_LABELS[item.functionality] ?? titleFromPascalCase(item.functionality);
+    const use = item.use ? 'Да' : 'Нет';
+    return `${title}: ${use}`;
   });
 
   return items.join('\n');
 }
 
 function formatMetadataReferenceItems(innerXml: string): string {
-  const items = Array.from(innerXml.matchAll(/<xr:Item\b[^>]*>([^<]+)<\/xr:Item>/g))
-    .map((match) => formatPropertyDisplayValue(match[1].trim()))
+  const items = extractRepeatedSimpleTagValues(innerXml, 'Item')
+    .map((value) => formatPropertyDisplayValue(value))
     .filter((item) => item.length > 0);
   return items.join('\n');
 }
 
 function formatFieldItems(innerXml: string): string {
-  const items = Array.from(innerXml.matchAll(/<xr:Field\b[^>]*>([^<]+)<\/xr:Field>/g))
-    .map((match) => formatPropertyDisplayValue(match[1].trim()))
+  const items = extractRepeatedSimpleTagValues(innerXml, 'Field')
+    .map((value) => formatPropertyDisplayValue(value))
     .filter((item) => item.length > 0);
   return items.join('\n');
 }
 
 function formatCharacteristics(innerXml: string): string {
-  const characteristics = Array.from(innerXml.matchAll(/<xr:Characteristic\b[^>]*>([\s\S]*?)<\/xr:Characteristic>/g))
-    .map((match) => formatPropertyDisplayValue(match[1].replace(/\s+/g, ' ').trim()))
+  const characteristics = extractRepeatedTagInnerXml(innerXml, 'Characteristic')
+    .map((value) => formatPropertyDisplayValue(value.replace(/\s+/g, ' ').trim()))
     .filter((item) => item.length > 0);
   return characteristics.join('\n');
 }

@@ -6,7 +6,7 @@ import {
   BslAnalyzerConfigService,
   buildBslAnalyzerSourceConfig,
   upsertSourceSection,
-} from '../../infra/environment';
+} from '../../infra/environment/BslAnalyzerConfigService';
 
 suite('BslAnalyzerConfigService', () => {
   test('Создаёт source без extensions, если расширений нет', () => {
@@ -65,7 +65,7 @@ suite('BslAnalyzerConfigService', () => {
       '[diagnostics]',
       'enabled = true',
       '',
-    ].join('\n'));
+    ].join('\n') + '\n');
   });
 
   test('Создаёт файл в корне проекта', () => {

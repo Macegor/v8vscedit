@@ -2,6 +2,11 @@
 .vscode-test/**
 out/**
 node_modules/**
+!node_modules/ssh2/**
+!node_modules/asn1/**
+!node_modules/bcrypt-pbkdf/**
+!node_modules/safer-buffer/**
+!node_modules/tweetnacl/**
 example/**
 example2/**
 .cursor/**
@@ -11,8 +16,12 @@ grammars/**
 AGENTS.md
 **/*.log
 .gitignore
-webpack.config.js
 tsconfig.json
+tsconfig.*.json
+vite*.config.ts
+vite.shared.ts
+src-ui/**
+scripts/**
 **/*.map
 **/*.ts
 src/test/**

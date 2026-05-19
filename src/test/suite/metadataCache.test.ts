@@ -5,7 +5,7 @@ import * as path from 'path';
 import type { ConfigEntry } from '../../domain/Configuration';
 import { buildMetadataCacheSnapshot, type MetadataCacheNode } from '../../infra/cache/MetadataCache';
 import { getObjectLocationFromXml } from '../../infra/fs/MetaPathResolver';
-import { MetadataXmlCreator } from '../../infra/xml';
+import { MetadataXmlCreator } from '../../infra/xml/MetadataXmlCreator';
 
 const EXAMPLE_CFE = path.resolve(process.cwd(), 'example/src/cfe/EVOLC');
 

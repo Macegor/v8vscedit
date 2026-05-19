@@ -54,7 +54,12 @@ const REPOSITORY_NAMESPACE = 'http://v8.1c.ru/8.3/config/objects';
 const CONFIGURATION_ROOT_LOCK_NAME = '__configuration_root__';
 const EXTENSION_ROOT_LOCK_NAME = '__extension_root__';
 
-const ROOT_KIND_NAMES: Partial<Record<MetaKind, string>> = {
+/**
+ * Внутренние имена типов объектов 1С, используемые для формирования полного имени
+ * при захвате/освобождении в хранилище. Это НЕ человекочитаемые метки (label из META_TYPES),
+ * а технические идентификаторы платформы 1С (например, «БизнесПроцесс» без дефиса).
+ */
+const ONE_C_TYPE_NAMES: Partial<Record<MetaKind, string>> = {
   Subsystem: 'Подсистема',
   CommonModule: 'ОбщийМодуль',
   SessionParameter: 'ПараметрСеанса',
@@ -106,18 +111,24 @@ const ROOT_KIND_NAMES: Partial<Record<MetaKind, string>> = {
   ExternalDataSource: 'ВнешнийИсточникДанных',
 };
 
-const CHILD_KIND_NAMES: Partial<Record<MetaKind, string>> = {
-  Attribute: 'Реквизит',
-  AddressingAttribute: 'РеквизитАдресации',
-  TabularSection: 'ТабличнаяЧасть',
-  Column: 'Реквизит',
-  Form: 'Форма',
-  Command: 'Команда',
-  Template: 'Макет',
-  Dimension: 'Измерение',
-  Resource: 'Ресурс',
-  EnumValue: 'ЗначениеПеречисления',
-};
+/**
+ * Виды дочерних узлов (ChildTag + Column), для которых захват идёт
+ * через владельца, а не напрямую. Используется только для проверки
+ * принадлежности — логика блокировки/разблокировки всегда работает
+ * с полным именем корневого объекта-владельца.
+ */
+const CHILD_LIKE_KINDS: ReadonlySet<string> = new Set([
+  'Attribute',
+  'AddressingAttribute',
+  'TabularSection',
+  'Form',
+  'Command',
+  'Template',
+  'Dimension',
+  'Resource',
+  'EnumValue',
+  'Column',
+]);
 
 /**
  * Инфраструктурный сервис хранилища: хранит настройки в `env.json`,
@@ -371,17 +382,16 @@ export class RepositoryService {
       return null;
     }
 
-    const childKindName = CHILD_KIND_NAMES[kind];
-    if (!childKindName) {
-      return this.buildRootObjectFullName(kind, node.xmlPath, node.label);
+    if (CHILD_LIKE_KINDS.has(kind)) {
+      const ownerXmlPath = node.metaContext?.ownerObjectXmlPath;
+      if (!ownerXmlPath) {
+        return null;
+      }
+
+      return this.resolveRootObjectFullName(ownerXmlPath);
     }
 
-    const ownerXmlPath = node.metaContext?.ownerObjectXmlPath;
-    if (!ownerXmlPath) {
-      return null;
-    }
-
-    return this.resolveRootObjectFullName(ownerXmlPath);
+    return this.buildRootObjectFullName(kind, node.xmlPath, node.label);
   }
 
   createObjectsFileForNode(node: RepositoryNodeRef, recursive: boolean): { filePath: string; fullNames: string[] } {
@@ -430,7 +440,7 @@ export class RepositoryService {
   }
 
   private buildRootObjectFullName(kind: MetaKind, xmlPath: string | undefined, fallbackLabel: string | undefined): string | null {
-    const rootKindName = ROOT_KIND_NAMES[kind];
+    const rootKindName = ONE_C_TYPE_NAMES[kind];
     if (!rootKindName) {
       return null;
     }

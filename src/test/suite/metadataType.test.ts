@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { buildMetadataTypeInnerXml, ensureDefaultQualifiers, parseMetadataType } from '../../ui/views/properties/MetadataTypeService';
-import { updateObjectTypeProperty } from '../../infra/xml';
+import { ObjectXmlReader } from '../../infra/xml/ObjectXmlReader';
 
 suite('metadataType', () => {
   test('Парсит составной тип и квалификаторы', () => {
@@ -29,16 +29,22 @@ suite('metadataType', () => {
     const inner = buildMetadataTypeInnerXml({
       items: [
         { canonical: 'Number', display: 'Число', group: 'primitive' },
+        { canonical: 'String', display: 'Строка', group: 'primitive' },
+        { canonical: 'Date', display: 'Дата', group: 'primitive' },
         { canonical: 'DefinedType.Контакт', display: 'ОпределяемыйТип.Контакт', group: 'defined' },
       ],
       numberQualifiers: { digits: 15, fractionDigits: 2, allowedSign: 'Any' },
+      stringQualifiers: { length: 25, allowedLength: 'Fixed' },
+      dateQualifiers: { dateFractions: 'Date' },
       presentation: 'Число, ОпределяемыйТип.Контакт',
       rawInnerXml: '',
     });
 
     assert.ok(inner.includes('<v8:Type>xs:decimal</v8:Type>'));
     assert.ok(inner.includes('<v8:TypeSet>cfg:DefinedType.Контакт</v8:TypeSet>'));
-    assert.ok(inner.includes('<v8:Digits>15</v8:Digits>'));
+    assert.ok(inner.includes('\t<v8:Digits>15</v8:Digits>'));
+    assert.ok(inner.includes('\t<v8:Length>25</v8:Length>'));
+    assert.ok(inner.includes('\t<v8:DateFractions>Date</v8:DateFractions>'));
   });
 
   test('Добавляет NumberQualifiers по умолчанию для Number', () => {
@@ -76,7 +82,7 @@ suite('metadataType', () => {
       'utf-8'
     );
 
-    const changed = updateObjectTypeProperty(xmlPath, {
+    const changed = new ObjectXmlReader().updateTypeInObject(xmlPath, {
       targetKind: 'SessionParameter',
       targetName: 'Тест',
       typeInnerXml: '<v8:Type>xs:boolean</v8:Type>',
@@ -114,7 +120,7 @@ suite('metadataType', () => {
       'utf-8'
     );
 
-    const changed = updateObjectTypeProperty(xmlPath, {
+    const changed = new ObjectXmlReader().updateTypeInObject(xmlPath, {
       targetKind: 'Attribute',
       targetName: 'TargetAttribute',
       typeInnerXml: '<v8:Type xmlns:d5p1="http://v8.1c.ru/8.1/data/enterprise/current-config">d5p1:DocumentRef.OtherDocument</v8:Type>',

@@ -11,49 +11,60 @@ export type FoundConfig = ConfigEntry;
 export type { ConfigEntry } from '../../domain/Configuration';
 
 /**
- * Рекурсивный поиск каталогов с `Configuration.xml`.
+ * Поиск штатных каталогов с `Configuration.xml`.
  *
  * Отличает расширение (cfe) от основной конфигурации (cf) по наличию тега
  * `ConfigurationExtensionPurpose` — читаются только первые 8 КБ файла, тег
  * всегда расположен в начале блока `Properties`.
  */
 export class ConfigLocator {
-  private static readonly MAX_DEPTH = 10;
-  private static readonly SKIP_DIRS = new Set(['node_modules', '.git', '.cursor', 'dist', 'out']);
-
+  /**
+   * Ищет конфигурации только в штатной структуре проекта:
+   * `src/cf/Configuration.xml` и прямые подкаталоги `src/cfe`.
+   * Произвольный рекурсивный обход `src/**` здесь намеренно запрещён,
+   * иначе служебные копии и вложенные выгрузки снова появляются дублями.
+   */
   find(rootDir: string): FoundConfig[] {
     const results: FoundConfig[] = [];
-    this.scanDir(rootDir, 0, results);
+    const srcDir = path.join(rootDir, 'src');
+    if (!isDirectory(srcDir)) {
+      return results;
+    }
+
+    this.addIfConfigurationRoot(path.join(srcDir, 'cf'), results);
+    this.scanDirectCfeChildren(path.join(srcDir, 'cfe'), results);
     return results;
   }
 
-  private scanDir(dir: string, depth: number, results: FoundConfig[]): void {
-    if (depth > ConfigLocator.MAX_DEPTH) {
+  private scanDirectCfeChildren(cfeDir: string, results: FoundConfig[]): void {
+    if (!isDirectory(cfeDir)) {
       return;
     }
 
     let entries: fs.Dirent[];
     try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
+      entries = fs.readdirSync(cfeDir, { withFileTypes: true });
     } catch {
       return;
     }
 
-    const configFile = entries.find((e) => e.isFile() && e.name.toLowerCase() === 'configuration.xml');
-    if (configFile) {
-      results.push({
-        rootPath: dir,
-        kind: this.detectKind(path.join(dir, configFile.name)),
-      });
-      return;
-    }
-
     for (const entry of entries) {
-      if (!entry.isDirectory() || ConfigLocator.SKIP_DIRS.has(entry.name)) {
+      if (!entry.isDirectory() || isIgnoredDirectoryName(entry.name)) {
         continue;
       }
-      this.scanDir(path.join(dir, entry.name), depth + 1, results);
+      this.addIfConfigurationRoot(path.join(cfeDir, entry.name), results);
     }
+  }
+
+  private addIfConfigurationRoot(dir: string, results: FoundConfig[]): void {
+    const configXmlPath = path.join(dir, 'Configuration.xml');
+    if (!isFile(configXmlPath)) {
+      return;
+    }
+    results.push({
+      rootPath: dir,
+      kind: this.detectKind(configXmlPath),
+    });
   }
 
   private detectKind(configXmlPath: string): 'cf' | 'cfe' {
@@ -71,6 +82,26 @@ export class ConfigLocator {
     }
     return 'cf';
   }
+}
+
+function isDirectory(directoryPath: string): boolean {
+  try {
+    return fs.statSync(directoryPath).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function isFile(filePath: string): boolean {
+  try {
+    return fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function isIgnoredDirectoryName(name: string): boolean {
+  return name.startsWith('.') || name === 'node_modules' || name === 'dist' || name === 'out';
 }
 
 /**

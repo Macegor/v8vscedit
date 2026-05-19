@@ -1,5 +1,6 @@
 import type * as vscode from 'vscode';
 import type { ChangedConfiguration } from '../../infra/fs/ConfigurationChangeDetector';
+import type { CfeBorrowService } from '../../infra/cfe/CfeBorrowService';
 import type { RepositoryService } from '../../infra/repository/RepositoryService';
 import type { AiSkillsInstaller } from '../../infra/skills/AiSkillsInstaller';
 import type { StandaloneServerService } from '../../infra/standalone';
@@ -12,6 +13,7 @@ import type { PropertiesViewProvider } from '../views/PropertiesViewProvider';
 import type { RepositoryCommitViewProvider } from '../views/RepositoryCommitViewProvider';
 import type { RepositoryConnectionViewProvider } from '../views/RepositoryConnectionViewProvider';
 import type { ProjectEnvironmentViewProvider } from '../views/environment/ProjectEnvironmentViewProvider';
+import type { AiMcpViewProvider } from '../views/ai/AiMcpViewProvider';
 import type { StandaloneServerViewProvider } from '../views/standalone/StandaloneServerViewProvider';
 import type { SubsystemEditorViewProvider } from '../views/subsystem/SubsystemEditorViewProvider';
 import type { UniversalPanelProcessingState } from '../views/universal/UniversalPanelViewProvider';
@@ -23,6 +25,7 @@ export interface CommandServices {
   workspaceFolder: vscode.WorkspaceFolder;
   metadataXmlCreator: MetadataXmlCreator;
   metadataXmlRemover: MetadataXmlRemover;
+  cfeBorrowService: CfeBorrowService;
   reloadEntries: () => void | Promise<void>;
   propertiesViewProvider: PropertiesViewProvider;
   subsystemEditorViewProvider: SubsystemEditorViewProvider;
@@ -33,6 +36,7 @@ export interface CommandServices {
   repositoryCommitViewProvider: RepositoryCommitViewProvider;
   bslAnalyzerConfigService: BslAnalyzerConfigService;
   projectEnvironmentViewProvider: ProjectEnvironmentViewProvider;
+  aiMcpViewProvider?: AiMcpViewProvider;
   standaloneServerService: StandaloneServerService;
   standaloneServerViewProvider: StandaloneServerViewProvider;
   aiSkillsInstaller: AiSkillsInstaller;

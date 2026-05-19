@@ -94,6 +94,7 @@ suite('eventSubscriptionProperties', () => {
       items: [
         { canonical: 'DefinedType.Документы', display: 'ОпределяемыйТип.Документы', group: 'defined' },
         { canonical: 'DocumentObject', display: 'ДокументОбъект', group: 'reference' },
+        { canonical: 'DocumentObject.Заказ', display: 'ДокументОбъект.Заказ', group: 'reference' },
         { canonical: 'CatalogObject.Номенклатура', display: 'СправочникОбъект.Номенклатура', group: 'reference' },
       ],
       stringQualifiers: { length: 50, allowedLength: 'Variable' },
@@ -103,6 +104,7 @@ suite('eventSubscriptionProperties', () => {
 
     assert.ok(inner.includes('<v8:TypeSet>cfg:DefinedType.Документы</v8:TypeSet>'));
     assert.ok(inner.includes('<v8:TypeSet>cfg:DocumentObject</v8:TypeSet>'));
+    assert.ok(inner.includes('<v8:Type>cfg:DocumentObject.Заказ</v8:Type>'));
     assert.ok(inner.includes('<v8:Type>cfg:CatalogObject.Номенклатура</v8:Type>'));
     assert.ok(!inner.includes('StringQualifiers'));
   });

@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { normalizeInfoBasePath, resolveV8ExecutablePath, resolveV8PathHintFromVersion } from '../../infra/process';
+import { normalizeInfoBasePath, resolveV8ExecutablePath, resolveV8PathHintFromVersion } from '../../infra/process/OnecPlatform';
 
 suite('OnecPlatform', () => {
   test('Сохраняет абсолютный путь файловой базы на macOS/Linux', () => {
@@ -45,14 +45,24 @@ suite('OnecPlatform', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-onec-priority-'));
     try {
       const thickClient = path.join(root, '1cv8');
+      const binClient = path.join(root, 'bin', '1cv8');
+      const macOsClient = path.join(root, 'Contents', 'MacOS', '1cv8');
       const thinClient = path.join(root, '1cv8c.app', 'Contents', 'MacOS', '1cv8c');
+      fs.mkdirSync(path.dirname(binClient), { recursive: true });
+      fs.mkdirSync(path.dirname(macOsClient), { recursive: true });
       fs.mkdirSync(path.dirname(thinClient), { recursive: true });
       fs.writeFileSync(thickClient, '');
+      fs.writeFileSync(binClient, '');
+      fs.writeFileSync(macOsClient, '');
       fs.writeFileSync(thinClient, '');
       fs.chmodSync(thickClient, 0o755);
+      fs.chmodSync(binClient, 0o755);
+      fs.chmodSync(macOsClient, 0o755);
       fs.chmodSync(thinClient, 0o755);
 
-      assert.strictEqual(resolveV8ExecutablePath(root, 'darwin'), thickClient);
+      const resolved = resolveV8ExecutablePath(root, 'darwin');
+      assert.strictEqual(path.basename(resolved), '1cv8');
+      assert.ok(!resolved.includes('1cv8c.app'));
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { CommandServices } from './_shared';
+import { registerAiMcpCommands } from './ai/AiMcpCommands';
 import { registerDbCommands } from './db/DbCommands';
 import { registerBorrowToExtensionCommand } from './ext/BorrowToExtensionCommand';
 import { registerExtensionCommands } from './ext/ExtensionCommands';
@@ -37,6 +38,7 @@ export function registerCommands(
   registerRemoveMetadataCommand(context, services);
   registerTreeSearchCommands(context, services);
   registerInitializeProjectCommand(context, services);
+  registerAiMcpCommands(context, services);
   registerDbCommands(context, services);
   registerStandaloneServerCommands(context, services);
   registerInstallAiSkillsCommand(context, services);

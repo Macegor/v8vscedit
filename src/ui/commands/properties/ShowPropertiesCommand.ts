@@ -13,7 +13,7 @@ export function registerShowPropertiesCommand(
         return;
       }
       if (node.nodeKind === 'Subsystem') {
-        services.subsystemEditorViewProvider.show(node);
+        services.subsystemEditorViewProvider.show(node.textLabel, node.xmlPath ?? '');
         return;
       }
       services.propertiesViewProvider.show(node);

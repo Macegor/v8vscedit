@@ -1,11 +1,15 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { buildConfigurationProperties } from '../../ui/views/properties/PropertyBuilder';
+import {
+  buildConfigurationProperties,
+  buildEffectivePropertyItemsForKeys,
+} from '../../ui/views/properties/PropertyBuilder';
+import { formatXmlPropertyDisplay } from '../../ui/views/properties/PropertyPresentationRegistry';
 import type { EnumPropertyValue, MultiEnumPropertyValue } from '../../ui/views/properties/_types';
 
-const EXAMPLE_CFE = path.resolve(__dirname, '../../../../example/cfe/EVOLC');
-const EXAMPLE_CF = path.resolve(__dirname, '../../../../example/cf');
+const EXAMPLE_CFE = path.resolve(__dirname, '../../../example/src/cfe/EVOLC');
+const EXAMPLE_CF = path.resolve(__dirname, '../../../example/src/cf');
 
 suite('Properties — Configuration.xml', () => {
   test('Показывает свойства основной конфигурации с русскими подписями и enum-значениями', () => {
@@ -58,5 +62,38 @@ suite('Properties — Configuration.xml', () => {
     const rolesValue = roles.value as MultiEnumPropertyValue;
     assert.deepStrictEqual(rolesValue.selected, ['Role.ев_ОсновнаяРоль']);
     assert.ok(rolesValue.allowedValues.some((item) => item.value === 'Role.ев_ОсновнаяРоль'));
+  });
+
+  test('Сравнивает унаследованные локализованные строки и форматирует мобильные возможности', () => {
+    const inherited = `
+<Name>Тест</Name>
+<Synonym>
+  <v8:item>
+    <v8:lang>ru</v8:lang>
+    <v8:content>Тест</v8:content>
+  </v8:item>
+</Synonym>`;
+    const local = `
+<Name>Тест</Name>
+<Synonym>
+  <v8:item>
+    <v8:lang>ru</v8:lang>
+    <v8:content>Тест</v8:content>
+  </v8:item>
+</Synonym>`;
+
+    const props = buildEffectivePropertyItemsForKeys(local, inherited, ['Name', 'Synonym']);
+    const synonym = props.find((item) => item.key === 'Synonym');
+    assert.strictEqual(synonym?.source, 'inherited');
+
+    assert.strictEqual(
+      formatXmlPropertyDisplay('UsedMobileApplicationFunctionalities', `
+        <app:functionality>
+          <app:functionality>UnknownMobileFeature</app:functionality>
+          <app:use>true</app:use>
+        </app:functionality>
+      `),
+      'Unknown мобильного Feature: Да'
+    );
   });
 });

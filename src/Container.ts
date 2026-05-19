@@ -7,11 +7,20 @@ import { type ChangedConfiguration, ConfigurationChangeDetector } from './infra/
 import { MetadataTreeProvider } from './ui/tree/MetadataTreeProvider';
 import type { MetadataNode } from './ui/tree/TreeNode';
 import { registerCommands } from './ui/commands/CommandRegistry';
+import type { CommandServices } from './ui/commands/_shared';
 import { PropertiesViewProvider } from './ui/views/PropertiesViewProvider';
+import { PropertiesViewController } from './ui/views/properties/PropertiesViewController';
 import { SubsystemEditorViewProvider } from './ui/views/subsystem/SubsystemEditorViewProvider';
 import { TreeSearchViewProvider } from './ui/views/search/TreeSearchViewProvider';
 import { SupportInfoService } from './infra/support/SupportInfoService';
-import { ExchangePlanContentService, MetadataXmlCreator, MetadataXmlRemover } from './infra/xml';
+import {
+  BasedOnXmlService,
+  ConfigurationXmlEditor,
+  ExchangePlanContentService,
+  MetadataXmlCreator,
+  MetadataXmlRemover,
+} from './infra/xml';
+import { CfeBorrowService } from './infra/cfe/CfeBorrowService';
 import { SubsystemXmlService } from './infra/xml/SubsystemXmlService';
 import { RepositoryService } from './infra/repository/RepositoryService';
 import { GitMetadataStatusService } from './infra/git/GitMetadataStatusService';
@@ -29,10 +38,15 @@ import { updateMetadataCacheAfterRename } from './infra/cache/MetadataCache';
 import { BslAnalyzerConfigService, ProjectEnvironmentService } from './infra/environment';
 import { ProjectEnvironmentViewProvider } from './ui/views/environment/ProjectEnvironmentViewProvider';
 import { StandaloneServerViewProvider } from './ui/views/standalone/StandaloneServerViewProvider';
+import { TypeRegistryService } from './ui/views/properties/TypeRegistryService';
 import {
   type UniversalPanelProcessingState,
   UniversalPanelViewProvider,
 } from './ui/views/universal/UniversalPanelViewProvider';
+import { V8McpServer } from './ui/mcp/V8McpServer';
+import { BslAnalyzerMcpService } from './ui/mcp/BslAnalyzerMcpService';
+import { AiMcpViewProvider } from './ui/views/ai/AiMcpViewProvider';
+import { disposeCachedAgentOperationServices } from './ui/commands/ext/ExtensionCommandRunner';
 
 /**
  * Композиционный корень расширения. Собирает зависимости в одном месте,
@@ -66,8 +80,15 @@ export class Container {
   readonly metadataXmlRemover: MetadataXmlRemover;
   readonly exchangePlanContentService: ExchangePlanContentService;
   readonly subsystemXmlService: SubsystemXmlService;
+  readonly typeRegistryService: TypeRegistryService;
+  readonly configurationXmlEditor: ConfigurationXmlEditor;
+  readonly basedOnXmlService: BasedOnXmlService;
+  readonly cfeBorrowService: CfeBorrowService;
   readonly treeSearchViewProvider: TreeSearchViewProvider;
   readonly universalPanelViewProvider: UniversalPanelViewProvider;
+  readonly mcpServer: V8McpServer;
+  readonly bslAnalyzerMcpService: BslAnalyzerMcpService;
+  readonly aiMcpViewProvider: AiMcpViewProvider;
   readonly lspManager: LspManager;
   readonly changeDetector: ConfigurationChangeDetector;
 
@@ -118,31 +139,59 @@ export class Container {
     );
     this.subsystemXmlService = new SubsystemXmlService();
     this.exchangePlanContentService = new ExchangePlanContentService();
-    this.propertiesProvider = new PropertiesViewProvider(
+    this.typeRegistryService = new TypeRegistryService();
+    this.configurationXmlEditor = new ConfigurationXmlEditor();
+    this.basedOnXmlService = new BasedOnXmlService();
+    this.cfeBorrowService = new CfeBorrowService();
+
+    // Mutable ref: PropertiesViewProvider зависит от контроллера,
+    // а колбэки контроллера — от провайдера.
+    const providerRef: { current: PropertiesViewProvider | undefined } = { current: undefined };
+
+    const propertiesController = new PropertiesViewController(
       this.subsystemXmlService,
       this.exchangePlanContentService,
+      this.typeRegistryService,
+      this.configurationXmlEditor,
+      this.basedOnXmlService,
+      {
+        refreshActiveView: () => {
+          providerRef.current?.refresh();
+        },
+        replaceActiveNode: (node) => {
+          providerRef.current?.replaceActiveNode(node);
+        },
+      },
       this.supportService,
       this.repositoryService,
       (configRoot, oldXmlPath, newXmlPath) => this.handleAfterRename(configRoot, oldXmlPath, newXmlPath),
       () => this.treeProvider.refresh()
     );
+
+    this.propertiesProvider = new PropertiesViewProvider(
+      propertiesController,
+      context.extensionUri
+    );
+    providerRef.current = this.propertiesProvider;
     this.subsystemEditorViewProvider = new SubsystemEditorViewProvider(
-      context.extensionUri,
       this.subsystemXmlService,
       this.supportService,
       this.repositoryService,
-      () => this.treeProvider.refresh()
+      context.extensionUri,
+      this.outputChannel
     );
     this.repositoryConnectionViewProvider = new RepositoryConnectionViewProvider(context.extensionUri);
     this.repositoryCommitViewProvider = new RepositoryCommitViewProvider(context.extensionUri);
     this.projectEnvironmentViewProvider = new ProjectEnvironmentViewProvider(
       this.projectEnvironmentService,
-      this.outputChannel
+      this.outputChannel,
+      context.extensionUri
     );
     this.standaloneServerViewProvider = new StandaloneServerViewProvider(
       this.standaloneServerService,
       this.outputChannel,
-      () => this.treeSearchViewProvider.refresh()
+      () => this.refreshActionsView(),
+      context.extensionUri
     );
     this.aiSkillsInstaller = new AiSkillsInstaller(this.outputChannel);
     this.metadataXmlCreator = new MetadataXmlCreator();
@@ -173,14 +222,31 @@ export class Container {
       },
       isProjectInitialized: () => this.isProjectInitialized(),
       getStandaloneServerStatus: () => this.standaloneServerService.getStatus(),
+      refreshStandaloneServerStatus: () => this.standaloneServerService.refreshHealth(),
       getProcessingState: () => this.treeProcessingState,
       gitMetadataStatusService: this.gitMetadataStatusService,
-      refreshActionsView: () => this.treeSearchViewProvider.refresh(),
+      refreshActionsView: () => this.refreshActionsView(),
     });
     context.subscriptions.push(this.universalPanelViewProvider);
     this.changeDetector = new ConfigurationChangeDetector(workspaceFolder.uri.fsPath);
 
     this.lspManager = new LspManager(context, this.outputChannel);
+    this.mcpServer = new V8McpServer(this.buildMcpCommandServices(), this.configurationXmlEditor);
+    this.bslAnalyzerMcpService = new BslAnalyzerMcpService(
+      this.outputChannel,
+      () => this.lspManager.ensureAnalyzerBinary(),
+      () => this.lspManager.getAnalyzerExecutablePath()
+    );
+    this.aiMcpViewProvider = new AiMcpViewProvider(
+      context.extensionUri,
+      workspaceFolder,
+      this.outputChannel,
+      this.mcpServer,
+      this.bslAnalyzerMcpService,
+      () => this.startMcpServer(true),
+      () => this.mcpServer.stop()
+    );
+    context.subscriptions.push(this.mcpServer, this.bslAnalyzerMcpService, this.aiMcpViewProvider);
   }
 
   /** Создаёт контейнер и выполняет регистрацию всех подсистем */
@@ -194,7 +260,10 @@ export class Container {
     c.wireCommands();
     c.wireReadonlyGuard();
     c.reloadEntries();
+    c.wireMcpConfigurationWatcher();
+    c.startMcpServer();
     c.wireLsp();
+    c.startBslAnalyzerMcpServers();
     return c;
   }
 
@@ -202,6 +271,7 @@ export class Container {
   reloadEntries(): void {
     const rootPath = this.workspaceFolder.uri.fsPath;
     const entries = findConfigurations(rootPath);
+    this.basedOnXmlService.invalidate();
     this.ensureHashCaches(entries);
     this.treeProvider.updateEntries(entries);
     if (this.isProjectInitialized()) {
@@ -211,6 +281,15 @@ export class Container {
     const hasCfe = entries.some((e) => e.kind === 'cfe');
     void vscode.commands.executeCommand('setContext', 'v8vscedit.hasCfeEntries', hasCfe);
     this.outputChannel.appendLine(`[init] Найдено конфигураций: ${String(entries.length)}`);
+  }
+
+  async deactivate(): Promise<void> {
+    await Promise.allSettled([
+      this.mcpServer.stop(),
+      this.bslAnalyzerMcpService.stopAll(),
+      disposeCachedAgentOperationServices(),
+      this.lspManager.stop(),
+    ]);
   }
 
   private wireUniversalPanelView(): void {
@@ -234,11 +313,24 @@ export class Container {
   }
 
   private wireCommands(): void {
-    registerCommands(this.context, {
+    registerCommands(this.context, this.buildCommandServices());
+    registerSupportIndicatorCommands(this.context);
+  }
+
+  private buildCommandServices(): CommandServices {
+    return {
+      ...this.buildMcpCommandServices(),
+      aiMcpViewProvider: this.aiMcpViewProvider,
+    };
+  }
+
+  private buildMcpCommandServices(): Omit<CommandServices, 'aiMcpViewProvider'> {
+    return {
       treeProvider: this.treeProvider,
       workspaceFolder: this.workspaceFolder,
       metadataXmlCreator: this.metadataXmlCreator,
       metadataXmlRemover: this.metadataXmlRemover,
+      cfeBorrowService: this.cfeBorrowService,
       reloadEntries: () => this.reloadEntries(),
       propertiesViewProvider: this.propertiesProvider,
       subsystemEditorViewProvider: this.subsystemEditorViewProvider,
@@ -264,14 +356,13 @@ export class Container {
         }
       },
       setTreeProcessingState: (state) => this.setTreeProcessingState(state),
-      refreshActionsView: () => this.treeSearchViewProvider.refresh(),
-    });
-    registerSupportIndicatorCommands(this.context);
+      refreshActionsView: () => this.refreshActionsView(),
+    };
   }
 
   private wireConfigurationWatcher(): void {
     const watcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(this.workspaceFolder, '**/Configuration.xml'),
+      new vscode.RelativePattern(this.workspaceFolder, 'src/**/Configuration.xml'),
       false,
       false,
       false
@@ -299,33 +390,38 @@ export class Container {
     this.universalPanelViewProvider.refresh();
   }
 
+  private refreshActionsView(): void {
+    this.treeSearchViewProvider.refresh();
+    this.universalPanelViewProvider.refresh();
+  }
+
   private wireConfigurationSourceWatcher(): void {
     const xmlWatcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(this.workspaceFolder, '**/*.xml'),
+      new vscode.RelativePattern(this.workspaceFolder, 'src/**/*.xml'),
       false,
       false,
       false
     );
     const bslWatcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(this.workspaceFolder, '**/*.bsl'),
+      new vscode.RelativePattern(this.workspaceFolder, 'src/**/*.bsl'),
       false,
       false,
       false
     );
     const textTemplateWatcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(this.workspaceFolder, '**/Ext/Template.txt'),
+      new vscode.RelativePattern(this.workspaceFolder, 'src/**/Ext/Template.txt'),
       false,
       false,
       false
     );
     const binaryTemplateWatcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(this.workspaceFolder, '**/Ext/Template.bin'),
+      new vscode.RelativePattern(this.workspaceFolder, 'src/**/Ext/Template.bin'),
       false,
       false,
       false
     );
     const htmlTemplateWatcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(this.workspaceFolder, '**/Ext/Template/*.html'),
+      new vscode.RelativePattern(this.workspaceFolder, 'src/**/Ext/Template/*.html'),
       false,
       false,
       false
@@ -337,6 +433,7 @@ export class Container {
       }
       this.scheduleChangedConfigurationStateRefresh(uri);
       if (path.extname(uri.fsPath).toLowerCase() === '.xml') {
+        this.basedOnXmlService.invalidate();
         this.scheduleTreeCacheRefresh(uri.fsPath);
       } else {
         this.scheduleDecorationRefresh();
@@ -611,6 +708,54 @@ export class Container {
   private wireLsp(): void {
     this.lspManager.registerCommands();
     this.lspManager.startWithAutoUpdate();
+  }
+
+  private wireMcpConfigurationWatcher(): void {
+    this.context.subscriptions.push(
+      vscode.workspace.onDidChangeConfiguration((event) => {
+        if (!event.affectsConfiguration('v8vscedit.mcp') && !event.affectsConfiguration('v8vscedit.aiMcp')) {
+          return;
+        }
+        if (event.affectsConfiguration('v8vscedit.mcp')) {
+          void this.mcpServer.stop().then(() => this.startMcpServer());
+        }
+        if (event.affectsConfiguration('v8vscedit.aiMcp')) {
+          this.startBslAnalyzerMcpServers();
+        }
+        this.aiMcpViewProvider.refresh();
+      })
+    );
+  }
+
+  private startMcpServer(force = false): void {
+    const config = vscode.workspace.getConfiguration('v8vscedit');
+    if (!force && !config.get<boolean>('mcp.enabled', true)) {
+      this.outputChannel.appendLine('[mcp] Автозапуск отключён настройкой v8vscedit.mcp.enabled');
+      return;
+    }
+
+    const host = config.get<string>('mcp.host', '127.0.0.1');
+    if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1') {
+      this.outputChannel.appendLine(`[mcp][warn] Небезопасный адрес "${host}" отклонён, используется 127.0.0.1.`);
+    }
+    const port = config.get<number>('mcp.port', 38481);
+    void this.mcpServer
+      .start({ host: host === '127.0.0.1' || host === 'localhost' || host === '::1' ? host : '127.0.0.1', port })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.outputChannel.appendLine(`[mcp][error] ${message}`);
+      });
+  }
+
+  private startBslAnalyzerMcpServers(): void {
+    const settings = this.aiMcpViewProvider.getSettings();
+    void this.bslAnalyzerMcpService.applyAutoStart(settings).then(() => {
+      this.aiMcpViewProvider.refresh();
+    }).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      this.outputChannel.appendLine(`[bsl-mcp][error] ${message}`);
+      this.aiMcpViewProvider.refresh();
+    });
   }
 
   private isProjectInitialized(): boolean {

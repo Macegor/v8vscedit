@@ -3,13 +3,17 @@ import * as path from 'path';
 import {
   parseCommonInfoBasePaths,
   parseV8iContent,
-} from '../../infra/environment';
+} from '../../infra/environment/InfoBaseRegistryService';
 
 suite('InfoBaseRegistryService', () => {
   test('Читает файловую и серверную базу из v8i', () => {
     const bases = parseV8iContent(`
+; комментарий перед первой секцией
+[БезСоединения]
+Connect=
+
 [Разработка]
-Connect=File=/Users/test/InfoBases/dev;
+Connect=File="/Users/test/InfoBases/dev;archive";
 ID=dev
 OrderInList=20
 
@@ -22,7 +26,8 @@ OrderInList=10
     assert.strictEqual(bases.length, 2);
     assert.strictEqual(bases[0].name, 'Разработка');
     assert.strictEqual(bases[0].kind, 'file');
-    assert.strictEqual(bases[0].connection, '/F/Users/test/InfoBases/dev');
+    assert.strictEqual(bases[0].connection, '/F/Users/test/InfoBases/dev;archive');
+    assert.strictEqual(bases[0].order, 20);
     assert.strictEqual(bases[1].kind, 'server');
     assert.strictEqual(bases[1].connection, '/Ssrv01/Demo_Test');
   });

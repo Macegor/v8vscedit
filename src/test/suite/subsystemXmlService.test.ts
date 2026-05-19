@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { SubsystemXmlService } from '../../infra/xml';
+import { SubsystemXmlService } from '../../infra/xml/SubsystemXmlService';
 
 suite('SubsystemXmlService', () => {
   test('читает и сохраняет принадлежность объекта к подсистемам', () => {
@@ -11,7 +11,7 @@ suite('SubsystemXmlService', () => {
     fs.mkdirSync(path.join(configRoot, 'Subsystems', 'Продажи', 'Subsystems', 'Розница'), { recursive: true });
     fs.writeFileSync(
       path.join(configRoot, 'Subsystems', 'Продажи.xml'),
-      buildSubsystemXml('Продажи', ['Catalog.Товары'], ['Розница']),
+      buildSubsystemXml('Продажи', ['Catalog.Товары'], ['Розница', 'НеСуществует']),
       'utf-8'
     );
     fs.writeFileSync(

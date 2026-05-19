@@ -2,7 +2,6 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import type { MetaKind } from '../../../domain/MetaTypes';
 import type { ConfigEntry } from '../../../domain/Configuration';
-import { CfeBorrowService } from '../../../infra/cfe/CfeBorrowService';
 import { updateMetadataCacheAfterAdd, type MetadataCacheAddTarget } from '../../../infra/cache/MetadataCache';
 import { getObjectLocationFromXml, resolveObjectXmlPath } from '../../../infra/fs/MetaPathResolver';
 import { parseConfigXml } from '../../../infra/xml';
@@ -40,8 +39,6 @@ interface BorrowTarget {
   /** Имя дочернего элемента (значение тега childTag) */
   childName?: string;
 }
-
-const borrowService = new CfeBorrowService();
 
 /** Регистрирует команду «Добавить в расширение» в контекстном меню навигатора */
 export function registerBorrowToExtensionCommand(
@@ -193,16 +190,16 @@ async function runBorrow(
 
         let result;
         if (target.formName) {
-          result = borrowService.borrowForm(
+          result = services.cfeBorrowService.borrowForm(
             target.cfDir, extDir, target.typeName, target.objectName, target.formName
           );
         } else if (target.childTag && target.childName) {
-          result = borrowService.borrowChild(
+          result = services.cfeBorrowService.borrowChild(
             target.cfDir, extDir, target.typeName, target.objectName,
             target.childTag, target.childName
           );
         } else {
-          result = borrowService.borrowObject(
+          result = services.cfeBorrowService.borrowObject(
             target.cfDir, extDir, target.typeName, target.objectName
           );
         }

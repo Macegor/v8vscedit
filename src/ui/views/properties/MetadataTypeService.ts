@@ -5,7 +5,7 @@ import type {
   MetadataTypeItem,
   MetadataTypeValue,
 } from './_types';
-import { extractSimpleTag } from '../../../infra/xml';
+import { extractFirstBalancedBlock, extractRepeatedSimpleTagValues, extractSimpleTag } from '../../../infra/xml';
 
 const TYPE_SYNONYMS: Record<string, string> = {
   'xs:string': 'String',
@@ -106,8 +106,8 @@ export function buildMetadataTypeItem(canonical: string): MetadataTypeItem {
 export function parseMetadataType(typeInner: string): MetadataTypeValue {
   const items: MetadataTypeItem[] = [];
   const seen = new Set<string>();
-  const rawTypes = Array.from(typeInner.matchAll(/<v8:Type(?:\s[^>]*)?>([^<]*)<\/v8:Type>/g)).map((m) => m[1].trim());
-  const typeSets = Array.from(typeInner.matchAll(/<v8:TypeSet(?:\s[^>]*)?>([^<]*)<\/v8:TypeSet>/g)).map((m) => m[1].trim());
+  const rawTypes = extractRepeatedSimpleTagValues(typeInner, 'Type');
+  const typeSets = extractRepeatedSimpleTagValues(typeInner, 'TypeSet');
 
   for (const raw of [...rawTypes, ...typeSets]) {
     const clean = raw.replace(/^d\d+p\d+:/, '').replace(/^cfg:/, '');
@@ -119,26 +119,26 @@ export function parseMetadataType(typeInner: string): MetadataTypeValue {
     items.push(buildMetadataTypeItem(canonical));
   }
 
-  const stringBlockMatch = /<v8:StringQualifiers>([\s\S]*?)<\/v8:StringQualifiers>/.exec(typeInner);
-  const numberBlockMatch = /<v8:NumberQualifiers>([\s\S]*?)<\/v8:NumberQualifiers>/.exec(typeInner);
-  const dateBlockMatch = /<v8:DateQualifiers>([\s\S]*?)<\/v8:DateQualifiers>/.exec(typeInner);
+  const stringBlock = extractFirstBalancedBlock(typeInner, 'v8:StringQualifiers');
+  const numberBlock = extractFirstBalancedBlock(typeInner, 'v8:NumberQualifiers');
+  const dateBlock = extractFirstBalancedBlock(typeInner, 'v8:DateQualifiers');
 
-  const stringQualifiers: MetadataStringQualifiers | undefined = stringBlockMatch
+  const stringQualifiers: MetadataStringQualifiers | undefined = stringBlock
     ? {
-        length: parseNumber(extractSimpleTag(stringBlockMatch[1], 'v8:Length')),
-        allowedLength: toAllowedLength(extractSimpleTag(stringBlockMatch[1], 'v8:AllowedLength')),
+        length: parseNumber(extractSimpleTag(stringBlock, 'v8:Length')),
+        allowedLength: toAllowedLength(extractSimpleTag(stringBlock, 'v8:AllowedLength')),
       }
     : undefined;
-  const numberQualifiers: MetadataNumberQualifiers | undefined = numberBlockMatch
+  const numberQualifiers: MetadataNumberQualifiers | undefined = numberBlock
     ? {
-        digits: parseNumber(extractSimpleTag(numberBlockMatch[1], 'v8:Digits')),
-        fractionDigits: parseNumber(extractSimpleTag(numberBlockMatch[1], 'v8:FractionDigits')),
-        allowedSign: toAllowedSign(extractSimpleTag(numberBlockMatch[1], 'v8:AllowedSign')),
+        digits: parseNumber(extractSimpleTag(numberBlock, 'v8:Digits')),
+        fractionDigits: parseNumber(extractSimpleTag(numberBlock, 'v8:FractionDigits')),
+        allowedSign: toAllowedSign(extractSimpleTag(numberBlock, 'v8:AllowedSign')),
       }
     : undefined;
-  const dateQualifiers: MetadataDateQualifiers | undefined = dateBlockMatch
+  const dateQualifiers: MetadataDateQualifiers | undefined = dateBlock
     ? {
-        dateFractions: toDateFractions(extractSimpleTag(dateBlockMatch[1], 'v8:DateFractions')),
+        dateFractions: toDateFractions(extractSimpleTag(dateBlock, 'v8:DateFractions')),
       }
     : undefined;
 

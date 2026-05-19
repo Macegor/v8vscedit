@@ -3,16 +3,17 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { extractChildMetaElementXml, updateObjectTypeProperty } from '../../infra/xml';
-import { getNodeHandler } from '../../ui/tree/nodeBuilders';
+import { ObjectXmlReader } from '../../infra/xml/ObjectXmlReader';
+import { extractChildMetaElementXml } from '../../infra/xml/XmlUtils';
+import { createLeafMetaObjectHandler } from '../../ui/tree/nodeBuilders/createLeafMetaObjectHandler';
 import { structuredMetaChildHandler } from '../../ui/tree/nodeBuilders/structuredMetaChildHandler';
 import { MetadataNode } from '../../ui/tree/TreeNode';
 import { buildCommandProperties } from '../../ui/views/properties/PropertyBuilder';
 import { TypeRegistryService } from '../../ui/views/properties/TypeRegistryService';
 import type { EnumPropertyValue, MetadataTypeValue } from '../../ui/views/properties/_types';
 
-const EXAMPLE_CF = path.resolve(__dirname, '../../../../example/cf');
-const EXAMPLE_CFE = path.resolve(__dirname, '../../../../example/cfe/EVOLC');
+const EXAMPLE_CF = path.resolve(__dirname, '../../../example/src/cf');
+const EXAMPLE_CFE = path.resolve(__dirname, '../../../example/src/cfe/EVOLC');
 
 suite('Properties — команды', () => {
   test('Показывает свойства команды объекта из XML владельца', () => {
@@ -82,11 +83,10 @@ suite('Properties — команды', () => {
       nodeKind: 'CommonCommand',
       xmlPath,
     }, vscode.TreeItemCollapsibleState.None);
-    const handler = getNodeHandler('CommonCommand');
-    if (!handler?.getProperties) {
-      assert.fail('Обработчик свойств общей команды не найден');
-    }
-    const props = handler.getProperties(node);
+    const handler = createLeafMetaObjectHandler('CommonCommand');
+    const props = handler.getProperties
+      ? handler.getProperties(node)
+      : assert.fail('Обработчик свойств общей команды не найден');
     const group = props.find((item) => item.key === 'Group');
 
     assert.ok(group, 'Group не найден');
@@ -166,7 +166,7 @@ suite('Properties — команды', () => {
       'utf-8'
     );
 
-    const changed = updateObjectTypeProperty(xmlPath, {
+    const changed = new ObjectXmlReader().updateTypeInObject(xmlPath, {
       targetKind: 'Command',
       targetName: 'ОткрытьСвязанныйОбъект',
       propertyName: 'CommandParameterType',

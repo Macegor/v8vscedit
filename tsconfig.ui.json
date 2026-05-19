@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "jsx": "preserve",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "types": ["vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "@ui/*": ["src-ui/*"],
+      "@ui-shared/*": ["src-ui/shared/*"]
+    }
+  },
+  "include": ["src-ui/**/*.ts", "src-ui/**/*.vue", "src-ui/env.d.ts"]
+}

@@ -9,14 +9,27 @@ import type {
   ObjectPropertyItem,
   ObjectPropertiesCollection,
 } from './_types';
-import { extractSimpleTag } from '../../../infra/xml';
+import {
+  extractElementInnerXml,
+  extractFirstBalancedBlock,
+  extractOpeningTagName,
+  extractRepeatedSimpleTagValues,
+  extractRootMetadataObjectElementXml,
+  extractRootMetadataObjectPropertiesInnerXml,
+  extractSimpleTag,
+  extractTagInnerXml,
+  extractTopLevelPropertiesChildren,
+  extractXmlAttribute,
+  hasSelfClosingXmlTag,
+  parseLocalizedStringSection,
+  stripXmlTagNamespacePrefixes,
+} from '../../../infra/xml';
 import {
   getTypedFieldPropertyKeys,
   isTypedFieldControlledPropertyKey,
   type TypeAwarePropertyOwnerKind,
 } from '../../../infra/xml/TypedFieldPropertyRules';
 import { parseMetadataType } from './MetadataTypeService';
-import { extractFirstBalancedBlock, extractTopLevelPropertiesChildren } from './MetadataXmlPropertiesService';
 import {
   formatEnumDisplayValue,
   formatPropertyDisplayValue,
@@ -1022,48 +1035,25 @@ export function getRootPropertyKeyOrder(rootMetaKind: NodeKind): string[] {
 
 /** Извлекает внутренность первого блока Properties корневого тега объекта (Catalog, ExchangePlan, …) */
 export function extractRootObjectPropertiesInnerXml(fullXml: string): string | null {
-  const rootMatch = /<MetaDataObject[^>]*>\s*<([A-Za-z][A-Za-z0-9]*)\b/.exec(fullXml);
-  const rootTag = rootMatch?.[1];
-  if (!rootTag) {
-    return null;
-  }
-  const re = new RegExp(`<${rootTag}\\b[^>]*>[\\s\\S]*?<Properties>([\\s\\S]*?)<\\/Properties>`);
-  const m = re.exec(fullXml);
-  return m?.[1] ?? null;
+  return extractRootMetadataObjectPropertiesInnerXml(fullXml);
 }
 
 function extractRootObjectElementXml(fullXml: string): string | null {
-  const rootMatch = /<MetaDataObject[^>]*>\s*<([A-Za-z][A-Za-z0-9]*)\b/.exec(fullXml);
-  const rootTag = rootMatch?.[1];
-  if (!rootTag) {
-    return null;
-  }
-  const re = new RegExp(`<${rootTag}\\b[^>]*>[\\s\\S]*?<\\/${rootTag}>`);
-  return re.exec(fullXml)?.[0] ?? null;
+  return extractRootMetadataObjectElementXml(fullXml);
 }
 
 /** Внутренность блока Properties внутри XML-фрагмента элемента */
 export function extractPropertiesInnerFromElement(elementXml: string): string | null {
-  const m = /<Properties>([\s\S]*?)<\/Properties>/.exec(elementXml);
-  return m?.[1] ?? null;
+  return extractTagInnerXml(elementXml, 'Properties');
 }
 
 /** Локализованная строка свойства (как в общем модуле) */
 export function extractLocalizedStringValue(xml: string, tagName: string): LocalizedStringValue {
-  const sectionMatch = new RegExp(`<${tagName}>([\\s\\S]*?)<\\/${tagName}>`).exec(xml);
-  if (!sectionMatch) {
+  const inner = extractTagInnerXml(xml, tagName);
+  if (inner === null) {
     return { presentation: '', values: [] };
   }
-  const values = Array.from(
-    sectionMatch[1].matchAll(/<v8:item>\s*<v8:lang>([^<]*)<\/v8:lang>\s*<v8:content>([\s\S]*?)<\/v8:content>\s*<\/v8:item>/g)
-  ).map((match) => ({
-    lang: match[1].trim(),
-    content: match[2].trim(),
-  }));
-  return {
-    presentation: values[0]?.content ?? '',
-    values,
-  };
+  return parseLocalizedStringSection(inner);
 }
 
 function isBooleanScalar(value: string | undefined): value is string {
@@ -1076,11 +1066,7 @@ function summarizeTypeBlock(propertiesSource: string): string {
 }
 
 function extractTypePropertyInner(propertiesSource: string, key: string): string {
-  const m = new RegExp(`<${key}>([\\s\\S]*?)<\\/${key}>`).exec(propertiesSource);
-  if (!m) {
-    return '';
-  }
-  return m[1].trim();
+  return extractTagInnerXml(propertiesSource, key)?.trim() ?? '';
 }
 
 function propertyTitle(key: string): string {
@@ -1155,12 +1141,12 @@ function tryBuildScalarStringPropertyItem(params: {
     title: propertyTitle(key),
     kind: 'string',
     value:
-      simple === undefined
-        ? complexInner === undefined
-          ? ''
-          : formatReadonlyXmlProperty(key, complexInner)
+      complexInner?.trim().includes('<')
+        ? formatReadonlyXmlProperty(key, complexInner)
+        : simple === undefined
+        ? ''
         : formatPropertyDisplayValue(simple),
-    readonly: simple === undefined && Boolean(complexInner?.trim().includes('<')),
+    readonly: Boolean(complexInner?.trim().includes('<')),
   };
 }
 
@@ -1538,26 +1524,20 @@ export function buildTypedFieldProperties(
 }
 
 function hasSelfClosingProperty(xml: string, key: string): boolean {
-  return new RegExp(`<${key}(?:\\s[^>]*)?\\/>`).test(xml);
+  return hasSelfClosingXmlTag(xml, key);
 }
 
 function extractUsePurposeValues(innerXml: string): string[] {
-  return Array.from(innerXml.matchAll(/<v8:Value\b[^>]*>([^<]+)<\/v8:Value>/g))
-    .map((match) => match[1].trim())
-    .filter((value) => value.length > 0);
+  return extractRepeatedSimpleTagValues(innerXml, 'Value');
 }
 
 function extractDefaultRoleValues(innerXml: string): string[] {
-  return Array.from(innerXml.matchAll(/<xr:Item\b[^>]*>([^<]+)<\/xr:Item>/g))
-    .map((match) => match[1].trim())
-    .filter((value) => value.length > 0);
+  return extractRepeatedSimpleTagValues(innerXml, 'Item');
 }
 
 function buildRoleOptions(fullConfigXml: string): EnumPropertyOption[] {
   const childObjectsInner = extractFirstBalancedBlock(fullConfigXml, 'ChildObjects') ?? '';
-  const roles = Array.from(childObjectsInner.matchAll(/<Role>([^<]+)<\/Role>/g))
-    .map((match) => match[1].trim())
-    .filter((value) => value.length > 0);
+  const roles = extractRepeatedSimpleTagValues(childObjectsInner, 'Role');
   return roles.map((role) => ({
     value: role.includes('.') ? role : `Role.${role}`,
     label: formatPropertyDisplayValue(role.includes('.') ? role : `Role.${role}`),
@@ -1573,11 +1553,8 @@ function buildMetadataReferenceListValue(
   itemLocalName = 'Item',
   formatDisplay: (canonical: string) => string = formatPropertyDisplayValue
 ): MetadataReferenceListValue {
-  const tagPattern = itemLocalName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return {
-    items: Array.from(innerXml.matchAll(new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${tagPattern}\\b[^>]*>([^<]+)<\\/(?:[A-Za-z_][\\w.-]*:)?${tagPattern}>`, 'g')))
-      .map((match) => match[1].trim())
-      .filter((value) => value.length > 0)
+    items: extractRepeatedSimpleTagValues(innerXml, itemLocalName)
       .map((canonical) => ({
         canonical,
         display: formatDisplay(canonical),
@@ -1612,9 +1589,9 @@ function normalizeStandardAttributeElementXml(elementXml: string): string {
   if (!elementXml.trim()) {
     return '';
   }
-  const name = /<[^>]*\bStandardAttribute\b[^>]*\bname="([^"]+)"/.exec(elementXml)?.[1] ?? '';
-  const inner = /^<[^>]+>([\s\S]*)<\/[^>]+>\s*$/.exec(elementXml.trim())?.[1] ?? '';
-  const normalizedInner = inner.replace(/<(\/?)(?:[A-Za-z_][\w.-]*:)([A-Za-z_][\w.-]*)([^>]*)>/g, '<$1$2$3>');
+  const name = extractXmlAttribute(elementXml, 'name') ?? '';
+  const inner = extractElementInnerXml(elementXml);
+  const normalizedInner = stripXmlTagNamespacePrefixes(inner);
   const displayName = escapeXmlText(getStandardAttributePresentation(name));
   return `<StandardAttribute><Properties><Name>${displayName}</Name>${normalizedInner}</Properties></StandardAttribute>`;
 }
@@ -1627,7 +1604,7 @@ function escapeXmlText(value: string): string {
 }
 
 function getTypedFieldPropertyKeyOrder(elementFullXml: string): string[] {
-  const tag = /^<([A-Za-z][A-Za-z0-9]*)\b/.exec(elementFullXml.trimStart())?.[1];
+  const tag = extractOpeningTagName(elementFullXml);
   const typeInner = summarizeTypeBlock(elementFullXml);
   if (
     typeInner &&

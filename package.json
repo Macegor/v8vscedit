@@ -13,6 +13,7 @@
   "activationEvents": [
     "onView:v8vsceditUniversal",
     "onLanguage:bsl",
+    "onCommand:v8vscedit.openAiSettings",
     "onCommand:v8vscedit.refresh"
   ],
   "categories": [
@@ -99,6 +100,14 @@
         "command": "v8vscedit.installAiSkills",
         "title": "Установить ИИ-скилы 1С",
         "icon": "$(extensions)"
+      },
+      {
+        "command": "v8vscedit.openAiSettings",
+        "title": "ИИ и MCP",
+        "icon": {
+          "light": "./src/icons/light/ai.svg",
+          "dark": "./src/icons/dark/ai.svg"
+        }
       },
       {
         "command": "v8vscedit.standalone.configure",
@@ -315,15 +324,134 @@
         "command": "v8vscedit.repository.setLabel",
         "title": "Установить метку версии",
         "icon": "$(tag)"
+      },
+      {
+        "command": "v8vscedit.bsl.surround.if",
+        "title": "Если"
+      },
+      {
+        "command": "v8vscedit.bsl.surround.ifElse",
+        "title": "Если / Иначе"
+      },
+      {
+        "command": "v8vscedit.bsl.surround.try",
+        "title": "Попытка"
+      },
+      {
+        "command": "v8vscedit.bsl.surround.while",
+        "title": "Пока"
+      },
+      {
+        "command": "v8vscedit.bsl.surround.forEach",
+        "title": "Для каждого"
+      },
+      {
+        "command": "v8vscedit.bsl.surround.procedure",
+        "title": "Процедура"
+      },
+      {
+        "command": "v8vscedit.bsl.surround.function",
+        "title": "Функция"
+      },
+      {
+        "command": "v8vscedit.bsl.surround.region",
+        "title": "Область"
       }
     ],
     "submenus": [
       {
         "id": "v8vscedit.repositoryMenu",
         "label": "Хранилище конфигурации"
+      },
+      {
+        "id": "v8vscedit.bslSurroundMenu",
+        "label": "Окружить"
       }
     ],
     "menus": {
+      "commandPalette": [
+        {
+          "command": "v8vscedit.bsl.surround.if",
+          "when": "false"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.ifElse",
+          "when": "false"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.try",
+          "when": "false"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.while",
+          "when": "false"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.forEach",
+          "when": "false"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.procedure",
+          "when": "false"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.function",
+          "when": "false"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.region",
+          "when": "false"
+        }
+      ],
+      "editor/context": [
+        {
+          "submenu": "v8vscedit.bslSurroundMenu",
+          "when": "editorLangId == bsl && editorHasSelection",
+          "group": "1_modification@1"
+        }
+      ],
+      "v8vscedit.bslSurroundMenu": [
+        {
+          "command": "v8vscedit.bsl.surround.if",
+          "when": "editorLangId == bsl && editorHasSelection",
+          "group": "conditions@1"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.ifElse",
+          "when": "editorLangId == bsl && editorHasSelection",
+          "group": "conditions@2"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.try",
+          "when": "editorLangId == bsl && editorHasSelection",
+          "group": "exceptions@1"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.while",
+          "when": "editorLangId == bsl && editorHasSelection",
+          "group": "loops@1"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.forEach",
+          "when": "editorLangId == bsl && editorHasSelection",
+          "group": "loops@2"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.procedure",
+          "when": "editorLangId == bsl && editorHasSelection",
+          "group": "declarations@1"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.function",
+          "when": "editorLangId == bsl && editorHasSelection",
+          "group": "declarations@2"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.region",
+          "when": "editorLangId == bsl && editorHasSelection",
+          "group": "regions@1"
+        }
+      ],
       "view/title": [
         {
           "command": "v8vscedit.refresh",
@@ -518,6 +646,28 @@
         "path": "./syntaxes/bsl.tmLanguage.json"
       }
     ],
+    "snippets": [
+      {
+        "language": "bsl",
+        "path": "./snippets/bsl/declarations/procedures.json"
+      },
+      {
+        "language": "bsl",
+        "path": "./snippets/bsl/control-flow/conditions.json"
+      },
+      {
+        "language": "bsl",
+        "path": "./snippets/bsl/control-flow/loops.json"
+      },
+      {
+        "language": "bsl",
+        "path": "./snippets/bsl/control-flow/exceptions.json"
+      },
+      {
+        "language": "bsl",
+        "path": "./snippets/bsl/surround/control-flow.json"
+      }
+    ],
     "languages": [
       {
         "id": "bsl",
@@ -532,18 +682,7 @@
         "configuration": "./language-configuration.json"
       }
     ],
-    "customEditors": [
-      {
-        "viewType": "v8vscedit.formEditor",
-        "displayName": "Визуальный редактор формы 1С",
-        "selector": [
-          {
-            "filenamePattern": "**/Ext/Form.xml"
-          }
-        ],
-        "priority": "option"
-      }
-    ],
+    "customEditors": [],
     "configurationDefaults": {
       "editor.semanticTokenColorCustomizations": {
         "rules": {
@@ -590,6 +729,126 @@
           "type": "string",
           "default": "",
           "description": "Путь к исполняемому файлу bsl-analyzer (если пусто — скачивается автоматически)"
+        },
+        "v8vscedit.mcp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Автоматически запускать локальный MCP-сервер после полной загрузки дерева метаданных"
+        },
+        "v8vscedit.mcp.host": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Локальный адрес MCP-сервера. В целях безопасности принимаются только 127.0.0.1, localhost или ::1"
+        },
+        "v8vscedit.mcp.port": {
+          "type": "number",
+          "default": 38481,
+          "description": "Порт локального MCP-сервера. Если порт занят, расширение попробует следующие порты"
+        },
+        "v8vscedit.aiMcp.bslAnalyzer.autoStart": {
+          "type": "boolean",
+          "default": false,
+          "description": "Автоматически запускать локальные MCP-профили bsl-analyzer из панели ИИ и MCP"
+        },
+        "v8vscedit.aiMcp.bslAnalyzer.reference.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Включить профиль reference MCP-сервера bsl-analyzer"
+        },
+        "v8vscedit.aiMcp.bslAnalyzer.workspace.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Включить профиль workspace MCP-сервера bsl-analyzer"
+        },
+        "v8vscedit.aiMcp.bslAnalyzer.workspace.sourceDir": {
+          "type": "string",
+          "default": "",
+          "description": "Каталог проекта для workspace-профиля MCP bsl-analyzer. Если пусто, используется корень открытой рабочей области"
+        },
+        "v8vscedit.aiMcp.bslAnalyzer.embedding.url": {
+          "type": "string",
+          "default": "",
+          "description": "EMBEDDING_URL для семантического поиска MCP bsl-analyzer"
+        },
+        "v8vscedit.aiMcp.bslAnalyzer.embedding.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "EMBEDDING_API_KEY для embedding API MCP bsl-analyzer"
+        },
+        "v8vscedit.aiMcp.bslAnalyzer.embedding.model": {
+          "type": "string",
+          "default": "qwen/qwen3-embedding-0.6b",
+          "description": "EMBEDDING_MODEL для семантического поиска MCP bsl-analyzer"
+        },
+        "v8vscedit.aiMcp.bslAnalyzer.naparnikToken": {
+          "type": "string",
+          "default": "",
+          "description": "NAPARNIK_TOKEN для инструмента its_help MCP bsl-analyzer"
+        },
+        "v8vscedit.aiMcp.bslAnalyzer.onec.url": {
+          "type": "string",
+          "default": "",
+          "description": "URL HTTP-сервиса BSLAnalyzerService, например http://localhost/base/hs/bsl-analyzer"
+        },
+        "v8vscedit.aiMcp.bslAnalyzer.onec.user": {
+          "type": "string",
+          "default": "",
+          "description": "Пользователь 1С для live-инструментов MCP bsl-analyzer"
+        },
+        "v8vscedit.aiMcp.bslAnalyzer.onec.password": {
+          "type": "string",
+          "default": "",
+          "description": "Пароль 1С для live-инструментов MCP bsl-analyzer"
+        },
+        "v8vscedit.agent.host": {
+          "type": "string",
+          "default": "localhost",
+          "description": "Адрес SSH-сервера конфигуратора в режиме агента"
+        },
+        "v8vscedit.agent.listenAddress": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Локальный адрес, на котором конфигуратор слушает SSH-подключения в режиме агента"
+        },
+        "v8vscedit.agent.port": {
+          "type": "number",
+          "default": 1543,
+          "description": "Порт SSH-сервера конфигуратора в режиме агента"
+        },
+        "v8vscedit.agent.user": {
+          "type": "string",
+          "default": "",
+          "description": "Пользователь SSH для подключения к конфигуратору в режиме агента. Если пусто, используется --db-user из env.json"
+        },
+        "v8vscedit.agent.privateKeyPath": {
+          "type": "string",
+          "default": "",
+          "description": "Путь к приватному SSH-ключу для подключения к конфигуратору в режиме агента"
+        },
+        "v8vscedit.agent.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Автоматически запускать конфигуратор с параметром /AgentMode перед операциями с конфигурацией"
+        },
+        "v8vscedit.agent.visible": {
+          "type": "boolean",
+          "default": false,
+          "description": "Запускать конфигуратор в режиме агента с параметром /Visible"
+        },
+        "v8vscedit.agent.agentModeArgs": {
+          "type": "string",
+          "default": "",
+          "description": "Дополнительные параметры запуска конфигуратора после /AgentMode"
+        },
+        "v8vscedit.agent.progressInterval": {
+          "type": "number",
+          "default": 0.5,
+          "description": "Интервал сообщений прогресса агента конфигуратора в секундах"
+        },
+        "v8vscedit.agent.startupTimeoutMs": {
+          "type": "number",
+          "default": 15000,
+          "description": "Максимальное время ожидания открытия SSH-порта после запуска конфигуратора в режиме агента, в миллисекундах"
         }
       }
     },
@@ -642,32 +901,49 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run build",
-    "build": "webpack --mode production",
-    "watch": "webpack --mode development --watch",
-    "compile": "tsc -p ./",
+    "build": "npm run clean && npm run build:node && npm run build:webview",
+    "build:node": "vite build --config vite.node.config.ts",
+    "build:webview": "vite build --config vite.webview.config.ts",
+    "watch": "node scripts/vite-watch.mjs",
+    "watch:node": "vite build --watch --config vite.node.config.ts",
+    "watch:webview": "vite build --watch --config vite.webview.config.ts",
+    "compile": "npm run typecheck",
+    "typecheck": "tsc -p tsconfig.json --noEmit && vue-tsc -p tsconfig.ui.json --noEmit",
+    "test:compile": "tsc -p tsconfig.test.json",
+    "clean": "node scripts/clean-dist.mjs",
     "lint": "eslint . --max-warnings=0",
     "test": "node ./out/test/runTests.js",
-    "pretest": "npm run compile && webpack --mode development"
+    "coverage": "c8 --check-coverage --100 npm test",
+    "coverage:report": "c8 npm test",
+    "pretest": "npm run typecheck && npm run build && npm run test:compile"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/glob": "^8.1.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "^20.0.0",
+    "@types/ssh2": "^1.15.5",
     "@types/vscode": "^1.85.0",
-    "@vscode/test-electron": "^2.3.0",
+    "@vitejs/plugin-vue": "^6.0.6",
+    "@vscode/test-electron": "^2.5.2",
+    "c8": "^11.0.0",
     "eslint": "^10.3.0",
     "glob": "^13.0.6",
     "mocha": "^11.7.5",
-    "ts-loader": "^9.5.0",
     "typescript": "^5.3.0",
     "typescript-eslint": "^8.59.1",
-    "webpack": "^5.89.0",
-    "webpack-cli": "^5.1.0"
+    "vite": "^8.0.12",
+    "vue-tsc": "^3.2.8"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@vscode-elements/elements": "^2.5.1",
+    "@vscode/codicons": "^0.0.45",
     "fast-xml-parser": "^4.5.6",
     "iconv-lite": "^0.7.2",
-    "vscode-languageclient": "^9.0.1"
+    "ssh2": "^1.17.0",
+    "vscode-languageclient": "^9.0.1",
+    "vue": "^3.5.34",
+    "zod": "^4.4.3"
   }
 }

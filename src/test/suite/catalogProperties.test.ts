@@ -1,11 +1,13 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { ensureStandardAttributeXml, parseObjectXml } from '../../infra/xml';
+import { ObjectXmlReader } from '../../infra/xml/ObjectXmlReader';
+import { ensureStandardAttributeXml } from '../../infra/xml/XmlUtils';
 import { buildRootMetaObjectProperties } from '../../ui/views/properties/PropertyBuilder';
 import type { EnumPropertyValue, LocalizedStringValue, MetadataReferenceListValue } from '../../ui/views/properties/_types';
 
 const EXAMPLE_CFE = path.resolve(process.cwd(), 'example/src/cfe/EVOLC');
+const objectReader = new ObjectXmlReader();
 
 suite('Properties — справочник', () => {
   test('Показывает свойства справочника по разделам конфигуратора', () => {
@@ -102,7 +104,7 @@ suite('Properties — справочник', () => {
   });
 
   test('Показывает стандартные реквизиты корневого объекта с русскими представлениями', () => {
-    const objectInfo = parseObjectXml(path.join(process.cwd(), 'example/src/cf/Catalogs/ПачкаДокументовДСВ_1ПрисоединенныеФайлы.xml'));
+    const objectInfo = objectReader.read(path.join(process.cwd(), 'example/src/cf/Catalogs/ПачкаДокументовДСВ_1ПрисоединенныеФайлы.xml'));
 
     const standardAttributes = objectInfo?.children.filter((item) => item.tag === 'StandardAttribute') ?? [];
     assert.ok(standardAttributes.length > 0, 'Стандартные реквизиты не найдены');
@@ -117,7 +119,7 @@ suite('Properties — справочник', () => {
   });
 
   test('Выводит стандартные реквизиты из поля ввода по строке, если блока StandardAttributes нет', () => {
-    const objectInfo = parseObjectXml(path.join(EXAMPLE_CFE, 'Catalogs', 'ев_КлиентыПартнеров.xml'));
+    const objectInfo = objectReader.read(path.join(EXAMPLE_CFE, 'Catalogs', 'ев_КлиентыПартнеров.xml'));
 
     const standardAttributes = objectInfo?.children.filter((item) => item.tag === 'StandardAttribute') ?? [];
     assert.deepStrictEqual(
