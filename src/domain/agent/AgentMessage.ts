@@ -17,7 +17,7 @@ export interface AgentMessage {
   readonly 'error-type'?: AgentErrorType;
 }
 
-export type AgentErrorType =
+export type KnownAgentErrorType =
   | 'UnknownError'
   | 'DesignerNotConnectedToInfoBase'
   | 'DesignerAlreadyConnectedToInfoBase'
@@ -30,8 +30,9 @@ export type AgentErrorType =
   | 'InfoBaseExclusiveLockRequired'
   | 'LanguageNotFound'
   | 'ExtensionWithDataIsActive'
-  | 'ExtensionNotFound'
-  | string;
+  | 'ExtensionNotFound';
+
+export type AgentErrorType = KnownAgentErrorType | (string & {});
 
 export interface AgentProgress {
   readonly percent?: number;
@@ -95,11 +96,19 @@ function extractProgress(value: unknown): AgentProgress | null {
 }
 
 function formatProgress(progress: AgentProgress): string {
-  const message = progress.message?.trim() || 'Прогресс операции';
+  const message = nonEmptyText(progress.message, 'Прогресс операции');
   if (typeof progress.percent !== 'number') {
     return message;
   }
   return `${message}: ${String(Math.round(progress.percent))}%`;
+}
+
+function nonEmptyText(value: string | undefined, fallback: string): string {
+  const trimmed = value?.trim();
+  if (trimmed) {
+    return trimmed;
+  }
+  return fallback;
 }
 
 function extractObjectText(value: unknown, key: string): string | null {

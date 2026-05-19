@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import vue from '@vitejs/plugin-vue';
 import { defineConfig, type Plugin } from 'vite';
-import type { OutputBundle, OutputChunk } from 'rollup';
+import type { OutputBundle, OutputChunk } from 'vite';
 import { aliases, type WebviewManifest } from './vite.shared';
 
 const entries = {

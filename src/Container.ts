@@ -46,6 +46,7 @@ import {
 import { V8McpServer } from './ui/mcp/V8McpServer';
 import { BslAnalyzerMcpService } from './ui/mcp/BslAnalyzerMcpService';
 import { AiMcpViewProvider } from './ui/views/ai/AiMcpViewProvider';
+import { disposeCachedAgentOperationServices } from './ui/commands/ext/ExtensionCommandRunner';
 
 /**
  * Композиционный корень расширения. Собирает зависимости в одном месте,
@@ -280,6 +281,15 @@ export class Container {
     const hasCfe = entries.some((e) => e.kind === 'cfe');
     void vscode.commands.executeCommand('setContext', 'v8vscedit.hasCfeEntries', hasCfe);
     this.outputChannel.appendLine(`[init] Найдено конфигураций: ${String(entries.length)}`);
+  }
+
+  async deactivate(): Promise<void> {
+    await Promise.allSettled([
+      this.mcpServer.stop(),
+      this.bslAnalyzerMcpService.stopAll(),
+      disposeCachedAgentOperationServices(),
+      this.lspManager.stop(),
+    ]);
   }
 
   private wireUniversalPanelView(): void {

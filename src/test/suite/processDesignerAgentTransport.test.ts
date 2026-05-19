@@ -62,7 +62,7 @@ suite('ProcessDesignerAgentTransport', () => {
     const transport = new ProcessDesignerAgentTransport(baseOptions(), () => fake);
 
     const result = await transport.execute('config load-config-from-files --dir=workspace/test', {
-      onQuestion: async () => 'yes',
+      onQuestion: () => Promise.resolve('yes'),
     });
 
     assert.deepStrictEqual(fake.channel.writes, ['config load-config-from-files --dir=workspace/test\n', 'yes\n']);
@@ -78,6 +78,24 @@ suite('ProcessDesignerAgentTransport', () => {
       transport.execute('config load-config-from-files --dir=workspace/test'),
       /Ошибка загрузки/
     );
+  });
+
+  test('после ошибки выполняет следующую команду в той же сессии', async () => {
+    const fake = new FakeSshClient();
+    fake.channel.replyMode = 'error-once';
+    const transport = new ProcessDesignerAgentTransport(baseOptions(), () => fake);
+
+    await assert.rejects(
+      transport.execute('config load-config-from-files --dir=workspace/test'),
+      /Ошибка загрузки/
+    );
+    const result = await transport.execute('config update-db-cfg');
+
+    assert.deepStrictEqual(fake.channel.writes, [
+      'config load-config-from-files --dir=workspace/test\n',
+      'config update-db-cfg\n',
+    ]);
+    assert.strictEqual(result.messages.at(-1)?.type, 'success');
   });
 
   test('завершает выполнение при закрытии SSH-канала', async () => {
@@ -122,7 +140,7 @@ function baseOptions() {
   };
 }
 
-type FakeReplyMode = 'success' | 'question' | 'error' | 'close';
+type FakeReplyMode = 'success' | 'question' | 'error' | 'error-once' | 'close';
 
 class FakeSshClient extends EventEmitter implements DesignerAgentSshClient {
   readonly channel = new FakeChannel();
@@ -176,6 +194,11 @@ class FakeChannel extends EventEmitter {
       return;
     }
     if (this.replyMode === 'error') {
+      this.emit('data', Buffer.from('[{"type":"error","message":"Ошибка загрузки"}]'));
+      return;
+    }
+    if (this.replyMode === 'error-once') {
+      this.replyMode = 'success';
       this.emit('data', Buffer.from('[{"type":"error","message":"Ошибка загрузки"}]'));
       return;
     }

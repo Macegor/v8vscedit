@@ -7,9 +7,8 @@ import { DesignerAgentJsonReader } from './DesignerAgentJsonReader';
 import type { AgentCommandHooks, AgentCommandResult, DesignerAgentTransport, DesignerAgentTransportFactory } from './AgentTransport';
 
 export interface DesignerAgentSshClient {
-  on(event: 'ready', listener: () => void): this;
+  on(event: 'ready' | 'close', listener: () => void): this;
   on(event: 'error', listener: (error: Error) => void): this;
-  on(event: 'close', listener: () => void): this;
   shell(windows: false, callback: (error: Error | undefined, channel: ClientChannel) => void): void;
   connect(config: ConnectConfig): void;
   end(): void;
@@ -29,7 +28,7 @@ export interface DesignerAgentConnectionOptions {
 export class ProcessDesignerAgentTransportFactory implements DesignerAgentTransportFactory {
   constructor(private readonly options: DesignerAgentConnectionOptions) {}
 
-  async create(_sessionKey: string): Promise<DesignerAgentTransport> {
+  async create(): Promise<DesignerAgentTransport> {
     const attempts = Math.max(1, this.options.connectAttempts ?? 1);
     let lastError: unknown;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -119,20 +118,23 @@ export class ProcessDesignerAgentTransport implements DesignerAgentTransport {
   }
 
   async execute(command: string, hooks?: AgentCommandHooks): Promise<AgentCommandResult> {
-    this.queue = this.queue.then(() => this.executeQueued(command, hooks));
+    this.queue = this.queue
+      .catch(() => undefined)
+      .then(() => this.executeQueued(command, hooks));
     return this.queue as Promise<AgentCommandResult>;
   }
 
-  async dispose(): Promise<void> {
+  dispose(): Promise<void> {
     this.disposed = true;
     if (!this.client) {
-      return;
+      return Promise.resolve();
     }
     this.channel?.write('common shutdown\n');
     this.channel?.end();
     this.client.end();
     this.channel = undefined;
     this.client = undefined;
+    return Promise.resolve();
   }
 
   private async executeQueued(command: string, hooks?: AgentCommandHooks): Promise<AgentCommandResult> {

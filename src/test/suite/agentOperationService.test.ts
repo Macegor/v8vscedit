@@ -13,25 +13,25 @@ class FakeTransport implements DesignerAgentTransport {
 
   constructor(private readonly connectError?: Error) {}
 
-  async execute(command: string, hooks?: AgentCommandHooks): Promise<AgentCommandResult> {
+  execute(command: string, hooks?: AgentCommandHooks): Promise<AgentCommandResult> {
     this.commands.push(command);
     if (command === 'common connect-ib' && this.connectError) {
-      throw this.connectError;
+      return Promise.reject(this.connectError);
     }
     hooks?.onMessage?.({ type: 'log', message: `выполнено: ${command}` });
-    return { messages: [] };
+    return Promise.resolve({ messages: [] });
   }
 
-  async dispose(): Promise<void> {
-    return undefined;
+  dispose(): Promise<void> {
+    return Promise.resolve();
   }
 }
 
 class FakeTransportFactory implements DesignerAgentTransportFactory {
   constructor(readonly transport: FakeTransport) {}
 
-  async create(_sessionKey: string): Promise<DesignerAgentTransport> {
-    return this.transport;
+  create(): Promise<DesignerAgentTransport> {
+    return Promise.resolve(this.transport);
   }
 }
 

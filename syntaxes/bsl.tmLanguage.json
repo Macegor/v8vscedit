@@ -1,0 +1,79 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "1C BSL",
+  "scopeName": "source.bsl",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#preprocessor"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#numbers"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.bsl",
+          "match": "//.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.bsl",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.bsl",
+              "match": "\"\""
+            }
+          ]
+        }
+      ]
+    },
+    "preprocessor": {
+      "patterns": [
+        {
+          "name": "entity.name.type.preprocessor.bsl",
+          "match": "(?i)^\\s*#\\s*(Если|ИначеЕсли|Иначе|КонецЕсли|Область|КонецОбласти|Использовать|НаКлиенте|НаСервере|НаСервереБезКонтекста|ВнешнееСоединение|МобильноеПриложениеКлиент|МобильноеПриложениеСервер|ТолстыйКлиентОбычноеПриложение|ТолстыйКлиентУправляемоеПриложение|ТонкийКлиент|ВебКлиент)\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.bsl",
+          "match": "(?i)\\b(Если|Тогда|ИначеЕсли|Иначе|КонецЕсли|Для|Каждого|Из|По|Цикл|КонецЦикла|Пока|Попытка|Исключение|КонецПопытки|ВызватьИсключение|Возврат|Продолжить|Прервать|Перейти|Процедура|КонецПроцедуры|Функция|КонецФункции|Экспорт|Перем|Знач|Новый|Выполнить|ДобавитьОбработчик|УдалитьОбработчик|Асинх|Ждать)\\b"
+        },
+        {
+          "name": "constant.language.bsl",
+          "match": "(?i)\\b(Истина|Ложь|Неопределено|NULL)\\b"
+        },
+        {
+          "name": "keyword.operator.bsl",
+          "match": "(?i)\\b(И|ИЛИ|НЕ)\\b|<>|<=|>=|=|<|>|\\+|-|\\*|/"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.bsl",
+          "match": "\\b\\d+(?:\\.\\d+)?\\b"
+        }
+      ]
+    }
+  }
+}

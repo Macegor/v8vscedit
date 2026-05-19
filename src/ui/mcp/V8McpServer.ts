@@ -85,7 +85,7 @@ export class V8McpServer implements vscode.Disposable {
     this.mcpServer = server;
     this.transport = transport;
     this.httpServer = httpServer;
-    this.endpoint = `http://${options.host}:${String(port)}/mcp`;
+    this.endpoint = `http://${formatHostForUrl(options.host)}:${String(port)}/mcp`;
     this.services.outputChannel.appendLine(`[mcp] Сервер запущен: ${this.endpoint}`);
   }
 
@@ -331,4 +331,8 @@ export class V8McpServer implements vscode.Disposable {
       content: [{ type: 'text', text: message }],
     };
   }
+}
+
+function formatHostForUrl(host: string): string {
+  return host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
 }

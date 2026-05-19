@@ -17,5 +17,5 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): Promise<void> | undefined {
-  return container?.lspManager.stop();
+  return container?.deactivate();
 }

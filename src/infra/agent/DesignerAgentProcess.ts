@@ -53,7 +53,20 @@ export class DesignerAgentProcess {
   }
 
   stop(): void {
-    this.child?.kill();
+    const child = this.child;
+    if (!child) {
+      return;
+    }
+
+    if (process.platform !== 'win32' && child.pid) {
+      try {
+        process.kill(-child.pid, 'SIGTERM');
+      } catch {
+        child.kill('SIGTERM');
+      }
+    } else {
+      child.kill('SIGTERM');
+    }
     this.child = undefined;
   }
 
@@ -65,7 +78,7 @@ export class DesignerAgentProcess {
     if (!this.exited) {
       return 'процесс ещё работает';
     }
-    return `код=${String(this.exitCode ?? '-')}, сигнал=${String(this.exitSignal ?? '-')}`;
+    return `код=${String(this.exitCode ?? '-')}, сигнал=${this.exitSignal ?? '-'}`;
   }
 }
 

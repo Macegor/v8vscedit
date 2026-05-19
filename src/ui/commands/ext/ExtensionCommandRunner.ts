@@ -86,6 +86,18 @@ export function getCachedAgentOperationService(workspaceFolder: vscode.Workspace
   return agentServices.get(key)?.service;
 }
 
+export async function disposeCachedAgentOperationServices(): Promise<void> {
+  const services = [...agentServices.values()];
+  agentServices.clear();
+  await Promise.all(services.map(async (entry) => {
+    try {
+      await entry.sessions.disposeAll();
+    } finally {
+      entry.process?.stop();
+    }
+  }));
+}
+
 export async function getAgentOperationServiceForInteractiveDesigner(
   workspaceFolder: vscode.WorkspaceFolder,
   outputChannel: vscode.OutputChannel
@@ -399,7 +411,7 @@ async function getAgentOperationService(
       onStdout: (text) => appendAgentProcessOutput(outputChannel, 'stdout', text),
       onStderr: (text) => appendAgentProcessOutput(outputChannel, 'stderr', text),
       onExit: (code, signal) => {
-        outputChannel.appendLine(`[agent][process] Конфигуратор в режиме агента завершился: код=${String(code ?? '-')}, сигнал=${String(signal ?? '-')}`);
+        outputChannel.appendLine(`[agent][process] Конфигуратор в режиме агента завершился: код=${String(code ?? '-')}, сигнал=${signal ?? '-'}`);
       },
     });
     outputChannel.appendLine('[agent] Конфигуратор запущен в режиме агента.');
@@ -434,7 +446,7 @@ function createAgentOperationServiceEntry(
     port: agentSettings.port,
     user: agentSettings.user,
     password: agentSettings.password,
-    privateKeyPath: agentSettings.privateKeyPath || undefined,
+    privateKeyPath: nonEmptyString(agentSettings.privateKeyPath),
     connectAttempts: 8,
     connectRetryDelayMs: 1000,
   };
@@ -454,10 +466,10 @@ function readAgentCommandSettings(connection: ConnectionParams): AgentCommandSet
   const rawModeArgs = config.get<string>('agentModeArgs', '');
   const configuredUser = config.get<string>('user', '').trim();
   return {
-    host: config.get<string>('host', 'localhost').trim() || 'localhost',
-    listenAddress: config.get<string>('listenAddress', '127.0.0.1').trim() || '127.0.0.1',
+    host: nonEmptyString(config.get<string>('host', 'localhost')) ?? 'localhost',
+    listenAddress: nonEmptyString(config.get<string>('listenAddress', '127.0.0.1')) ?? '127.0.0.1',
     port: config.get<number>('port', 1543),
-    user: configuredUser || connection.userName || 'admin',
+    user: configuredUser ? configuredUser : (nonEmptyString(connection.userName) ?? 'admin'),
     password: connection.password ?? '',
     privateKeyPath: config.get<string>('privateKeyPath', '').trim(),
     visible: config.get<boolean>('visible', false),
@@ -468,11 +480,52 @@ function readAgentCommandSettings(connection: ConnectionParams): AgentCommandSet
   };
 }
 
-function splitAgentModeArgs(rawValue: string): string[] {
-  return rawValue
-    .split(/\s+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
+export function splitAgentModeArgs(rawValue: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let quote: '"' | '\'' | undefined;
+  let escaped = false;
+
+  for (let index = 0; index < rawValue.length; index += 1) {
+    const char = rawValue[index] ?? '';
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+    if (char === '\\' && quote) {
+      const next = rawValue[index + 1];
+      if (next === quote || next === '\\') {
+        escaped = true;
+      } else {
+        current += char;
+      }
+      continue;
+    }
+    if ((char === '"' || char === "'") && (!quote || quote === char)) {
+      quote = quote ? undefined : char;
+      continue;
+    }
+    if (!quote && /\s/.test(char)) {
+      if (current) {
+        result.push(current);
+        current = '';
+      }
+      continue;
+    }
+    current += char;
+  }
+
+  if (escaped) {
+    current += '\\';
+  }
+  if (quote) {
+    throw new Error('Некорректные дополнительные параметры /AgentMode: не закрыта кавычка.');
+  }
+  if (current) {
+    result.push(current);
+  }
+  return result;
 }
 
 function toDesignerAgentConnection(connection: ConnectionParams): DesignerAgentInfoBaseConnection {
@@ -662,6 +715,14 @@ function parseIbConnection(rawValue: string): ConnectionParams {
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
+}
+
+function nonEmptyString(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (trimmed) {
+    return trimmed;
+  }
+  return undefined;
 }
 
 function resolveV8PathFromSettings(defaults: Record<string, unknown>): string {

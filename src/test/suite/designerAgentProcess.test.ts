@@ -4,6 +4,7 @@ import {
   buildDesignerAgentModeArgs,
   type DesignerAgentInfoBaseConnection,
 } from '../../infra/agent';
+import { splitAgentModeArgs } from '../../ui/commands/ext/ExtensionCommandRunner';
 
 suite('DesignerAgentProcess', () => {
   const connection: DesignerAgentInfoBaseConnection = {
@@ -58,5 +59,12 @@ suite('DesignerAgentProcess', () => {
       '/tmp/host_id',
       '/AgentBaseDir=/tmp/manual-base',
     ]);
+  });
+
+  test('разбирает дополнительные параметры AgentMode с путями в кавычках', () => {
+    assert.deepStrictEqual(
+      splitAgentModeArgs('/AgentPort 1601 /AgentBaseDir "C:\\Users\\Test User\\agent base" /Visible'),
+      ['/AgentPort', '1601', '/AgentBaseDir', 'C:\\Users\\Test User\\agent base', '/Visible']
+    );
   });
 });

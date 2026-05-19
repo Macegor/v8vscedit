@@ -44,18 +44,19 @@ class FakeAgentSession implements DesignerAgentInfoBaseSession {
     return this.connected;
   }
 
-  async disconnectInfoBase(): Promise<boolean> {
+  disconnectInfoBase(): Promise<boolean> {
     this.events.push('disconnect');
     this.connected = false;
-    return true;
+    return Promise.resolve(true);
   }
 
-  async reconnectInfoBase(): Promise<void> {
+  reconnectInfoBase(): Promise<void> {
     this.events.push('connect');
     if (this.reconnectError) {
-      throw this.reconnectError;
+      return Promise.reject(this.reconnectError);
     }
     this.connected = true;
+    return Promise.resolve();
   }
 }
 

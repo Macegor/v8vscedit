@@ -15,7 +15,12 @@ export class DesignerAgentSessionManager implements DesignerAgentTransportFactor
   async create(sessionKey: string): Promise<DesignerAgentTransport> {
     let session = this.sessions.get(sessionKey);
     if (!session) {
-      session = this.createConfiguredSession(sessionKey);
+      session = this.createConfiguredSession(sessionKey).catch((error: unknown) => {
+        if (this.sessions.get(sessionKey) === session) {
+          this.sessions.delete(sessionKey);
+        }
+        throw error;
+      });
       this.sessions.set(sessionKey, session);
     }
     return session;

@@ -7,7 +7,7 @@ export class DesignerAgentJsonReader {
     this.buffer += Buffer.isBuffer(chunk) ? chunk.toString('utf-8') : chunk;
     const batches: AgentMessage[][] = [];
 
-    while (true) {
+    for (;;) {
       const range = findFirstJsonArray(this.buffer);
       if (!range) {
         this.trimNoiseBeforeJson();
@@ -24,7 +24,11 @@ export class DesignerAgentJsonReader {
         this.buffer = this.buffer.slice(range.end + 1);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`Не удалось разобрать JSON-ответ агента: ${message}. Фрагмент: ${rawJson.slice(0, 200)}`);
+        const parseError = new Error(
+          `Не удалось разобрать JSON-ответ агента: ${message}. Фрагмент: ${rawJson.slice(0, 200)}`
+        ) as Error & { cause?: unknown };
+        parseError.cause = error;
+        throw parseError;
       }
     }
   }

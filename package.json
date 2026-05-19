@@ -797,6 +797,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@vscode-elements/elements": "^2.5.1",
+    "@vscode/codicons": "^0.0.45",
     "fast-xml-parser": "^4.5.6",
     "iconv-lite": "^0.7.2",
     "ssh2": "^1.17.0",
