@@ -32,6 +32,30 @@ export function mirrorDirectorySnapshot(sourceDir: string, targetDir: string): v
   copyAllEntries(sourceDir, targetDir);
 }
 
+export function syncSelectedSnapshotFiles(sourceDir: string, targetDir: string, relativeFiles: readonly string[]): void {
+  if (!fs.existsSync(sourceDir)) {
+    throw new Error(`Каталог источника не найден: ${sourceDir}`);
+  }
+
+  for (const relativeFile of relativeFiles) {
+    const normalized = normalizeSnapshotRelativePath(relativeFile);
+    const sourcePath = path.join(sourceDir, normalized);
+    const targetPath = path.join(targetDir, normalized);
+    if (!fs.existsSync(sourcePath)) {
+      fs.rmSync(targetPath, { force: true });
+      continue;
+    }
+
+    const stat = fs.statSync(sourcePath);
+    if (!stat.isFile()) {
+      continue;
+    }
+
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.copyFileSync(sourcePath, targetPath);
+  }
+}
+
 export function collectSnapshotProjectFiles(sourceDir: string, targetDir: string): string[] {
   const result = new Set<string>();
   collectSourceProjectFiles(sourceDir, targetDir, result);
@@ -171,4 +195,18 @@ function copyAllEntries(sourceDir: string, targetDir: string): void {
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
     fs.copyFileSync(sourcePath, targetPath);
   }
+}
+
+function normalizeSnapshotRelativePath(relativePath: string): string {
+  const normalized = relativePath.replace(/\\/g, '/').trim();
+  if (!normalized || path.posix.isAbsolute(normalized)) {
+    throw new Error('Путь файла снимка должен быть относительным.');
+  }
+
+  const parts = normalized.split('/').filter(Boolean);
+  if (parts.some((part) => part === '..')) {
+    throw new Error('Путь файла снимка не должен выходить за пределы каталога.');
+  }
+
+  return parts.join(path.sep);
 }

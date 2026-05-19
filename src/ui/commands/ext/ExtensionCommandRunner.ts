@@ -343,11 +343,13 @@ async function runAgentConfigurationOperation(
     const importHooks = isImportHooks(options.hooks) ? options.hooks : undefined;
     await operation(service, {
       onMessage: (message) => {
-        const statusMessage = trimStatusMessage(message);
         options.outputChannel.appendLine(`[agent] ${message}`);
-        setOperationStatus(options.progressTitle, statusMessage, true);
-        options.hooks?.onProgressMessage?.(statusMessage);
-        options.onProgressMessage?.(statusMessage);
+        const statusMessage = getAgentStatusMessage(message);
+        if (statusMessage) {
+          setOperationStatus(options.progressTitle, statusMessage, true);
+          options.hooks?.onProgressMessage?.(statusMessage);
+          options.onProgressMessage?.(statusMessage);
+        }
       },
       onProjectFilesWillChange: importHooks
         ? (filePaths) => importHooks.beforeProjectFilesChanged?.(filePaths)
@@ -735,4 +737,19 @@ function trimStatusMessage(text: string): string {
     return oneLine;
   }
   return `${oneLine.slice(0, 77)}...`;
+}
+
+function getAgentStatusMessage(message: string): string | undefined {
+  const text = trimStatusMessage(message);
+  if (isRawAgentCommandMessage(text)) {
+    return undefined;
+  }
+  return text;
+}
+
+function isRawAgentCommandMessage(message: string): boolean {
+  const normalized = message.replace(/\s+/g, ' ').trim().toLowerCase();
+  return /^(common|config|options|infobase-tools)\s+/.test(normalized) ||
+    /^выполнено:\s*(common|config|options|infobase-tools)\s+/.test(normalized) ||
+    /^the operation is completed:\s*(common|config|options|infobase-tools)\s+/.test(normalized);
 }

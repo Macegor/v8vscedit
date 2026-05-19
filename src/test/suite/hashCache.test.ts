@@ -9,7 +9,7 @@ import {
   loadHashCache,
   saveHashCache,
 } from '../../infra/cache/HashCache';
-import { collectConfigFilesForLoad } from '../../infra/agent/ConfigLoadFileCollector';
+import { collectConfigFilesForLoad, detectPotentialRename } from '../../infra/agent/ConfigLoadFileCollector';
 
 suite('HashCache', () => {
   test('diffHashSnapshots корректно определяет added/modified/deleted', () => {
@@ -100,7 +100,28 @@ suite('HashCache', () => {
 });
 
 suite('PartialLoadList', () => {
-  test('collectConfigFiles добавляет Object.xml и файлы Ext для BSL', () => {
+  test('collectConfigFiles возвращает пустой список без изменений', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v8-load-empty-'));
+    try {
+      assert.deepStrictEqual(collectConfigFilesForLoad(tempRoot, [], false), []);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('detectPotentialRename распознаёт переименование по совпадающему хешу', () => {
+    assert.strictEqual(
+      detectPotentialRename(
+        { 'Catalogs/Старое.xml': 'same-hash' },
+        { 'Documents/Новое.xml': 'same-hash' },
+        ['Documents/Новое.xml'],
+        ['Catalogs/Старое.xml']
+      ),
+      true
+    );
+  });
+
+  test('collectConfigFiles для BSL оставляет только измененный модуль', () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v8-load-list-'));
     try {
       const objectDir = path.join(tempRoot, 'Documents', 'Заказ');
@@ -108,10 +129,10 @@ suite('PartialLoadList', () => {
       fs.mkdirSync(extDir, { recursive: true });
       fs.writeFileSync(path.join(objectDir, 'Заказ.xml'), '<xml/>', 'utf-8');
       fs.writeFileSync(path.join(extDir, 'ObjectModule.bsl'), 'Процедура Тест() КонецПроцедуры', 'utf-8');
+      fs.writeFileSync(path.join(extDir, 'ManagerModule.bsl'), 'Процедура Менеджер() КонецПроцедуры', 'utf-8');
 
       const list = collectConfigFilesForLoad(tempRoot, ['Documents/Заказ/Ext/ObjectModule.bsl'], false);
-      assert.ok(list.includes('Documents/Заказ/Заказ.xml'));
-      assert.ok(list.includes('Documents/Заказ/Ext/ObjectModule.bsl'));
+      assert.deepStrictEqual(list, ['Documents/Заказ/Ext/ObjectModule.bsl']);
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }

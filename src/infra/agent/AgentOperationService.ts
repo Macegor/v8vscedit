@@ -19,7 +19,12 @@ import {
 import { saveMetadataCacheForEntry } from '../cache/MetadataCache';
 import { AgentWorkspaceService } from './AgentWorkspaceService';
 import { collectConfigFilesForLoad, detectPotentialRename } from './ConfigLoadFileCollector';
-import { collectSnapshotProjectFiles, mirrorDirectorySnapshot, syncDirectorySnapshot } from './DirectorySnapshot';
+import {
+  collectSnapshotProjectFiles,
+  mirrorDirectorySnapshot,
+  syncDirectorySnapshot,
+  syncSelectedSnapshotFiles,
+} from './DirectorySnapshot';
 import type { AgentCommandHooks, DesignerAgentTransport, DesignerAgentTransportFactory } from './AgentTransport';
 
 export interface AgentConfigurationOperationTarget {
@@ -68,7 +73,7 @@ export class AgentOperationService {
 
     const transport = await this.transportFactory.create('default');
     const commandHooks = this.createCommandHooks(hooks);
-    hooks?.onMessage?.('common disconnect-ib');
+    hooks?.onMessage?.('Отключение информационной базы от агента конфигуратора.');
     try {
       await transport.execute('common disconnect-ib', commandHooks);
     } catch (error) {
@@ -120,6 +125,7 @@ export class AgentOperationService {
   }
 
   async updateDatabaseConfiguration(target: AgentConfigurationOperationTarget, hooks?: AgentOperationHooks): Promise<AgentOperationResult> {
+    hooks?.onMessage?.('Обновление конфигурации базы данных.');
     await this.executeAgentCommand(
       buildUpdateDbCfgCommand({ extensionName: target.kind === 'cfe' ? target.extensionName ?? target.name : undefined }),
       hooks
@@ -129,7 +135,9 @@ export class AgentOperationService {
 
   private async loadFull(target: AgentConfigurationOperationTarget, hooks?: AgentOperationHooks): Promise<AgentOperationResult> {
     const workspace = this.workspaceService.ensureWorkspace(buildSessionKey(target), target);
+    hooks?.onMessage?.('Подготовка файлов для полной загрузки.');
     mirrorDirectorySnapshot(target.rootPath, workspace.targetDir);
+    hooks?.onMessage?.('Полная загрузка конфигурации из файлов.');
     await this.executeAgentCommand(
       buildLoadConfigFromFilesCommand(workspace.targetAgentDir, {
         extensionName: target.kind === 'cfe' ? target.extensionName ?? target.name : undefined,
@@ -148,6 +156,7 @@ export class AgentOperationService {
     }
 
     const extensionName = target.kind === 'cfe' ? target.extensionName ?? target.name : '';
+    const commandExtensionName = target.kind === 'cfe' ? extensionName : undefined;
     const scopeKey = buildScopeKey(target.kind, target.rootPath, extensionName);
     const previousSnapshot = loadHashCache(this.projectRoot, scopeKey);
     const currentSnapshot = buildHashSnapshot(scopeKey, target.rootPath);
@@ -158,30 +167,43 @@ export class AgentOperationService {
       return { changedProjectFiles: [], skipped: true };
     }
 
+    if (Object.keys(previousSnapshot.files).length === 0) {
+      hooks?.onMessage?.('Кэш изменений не найден, выполняется полная загрузка.');
+      return this.loadFull(target, hooks);
+    }
+
+    if (diff.deleted.length > 0) {
+      hooks?.onMessage?.('Обнаружено удаление файлов, выполняется полная загрузка.');
+      return this.loadFull(target, hooks);
+    }
+
     const forceFullLoad = detectPotentialRename(previousSnapshot.files, currentSnapshot.files, diff.added, diff.deleted);
     if (forceFullLoad) {
-      hooks?.onMessage?.('обнаружено переименование объектов, выполняется полная загрузка');
+      hooks?.onMessage?.('Обнаружено переименование объектов, выполняется полная загрузка.');
       return this.loadFull(target, hooks);
     }
 
     const filesForLoad = collectConfigFilesForLoad(target.rootPath, changedFiles, false);
-    if (filesForLoad.length === 0 && diff.deleted.length === 0) {
+    if (filesForLoad.length === 0) {
       return { changedProjectFiles: [], skipped: true };
     }
 
     const workspace = this.workspaceService.ensureWorkspace(buildSessionKey(target), target);
-    mirrorDirectorySnapshot(target.rootPath, workspace.targetDir);
+    hooks?.onMessage?.(`Подготовка частичной загрузки: ${String(filesForLoad.length)} файл(ов).`);
+    syncSelectedSnapshotFiles(target.rootPath, workspace.targetDir, filesForLoad);
     const operationId = `${buildSessionKey(target)}-${String(Date.now())}`;
     const listFile = this.workspaceService.writeListFile(operationId, filesForLoad);
     const agentListFile = this.workspaceService.toAgentPath(listFile);
 
+    hooks?.onMessage?.('Частичная загрузка изменённых файлов.');
     await this.executeAgentCommand(
       buildLoadConfigFromFilesCommand(workspace.targetAgentDir, {
-        extensionName,
+        extensionName: commandExtensionName,
         format: 'hierarchical',
         listFile: agentListFile,
         partial: true,
         updateConfigDumpInfo: true,
+        noCheck: true,
       }),
       hooks
     );
@@ -200,7 +222,6 @@ export class AgentOperationService {
   }
 
   private async executeAgentCommand(command: string, hooks?: AgentOperationHooks): Promise<void> {
-    hooks?.onMessage?.(command);
     const transport = await this.transportFactory.create('default');
     const commandHooks = this.createCommandHooks(hooks);
     await this.ensureConnected(transport, commandHooks);
@@ -222,6 +243,7 @@ export class AgentOperationService {
   private async ensureConnected(transport: DesignerAgentTransport, commandHooks: AgentCommandHooks): Promise<void> {
     if (!this.connected) {
       try {
+        commandHooks.onMessage?.({ type: 'log', message: 'Подключение информационной базы к агенту конфигуратора.' });
         await transport.execute('common connect-ib', commandHooks);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

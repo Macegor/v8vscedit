@@ -28,27 +28,7 @@ export function collectConfigFilesForLoad(
       continue;
     }
 
-    const objectXml = resolveObjectXmlFromBsl(configDir, normalized, includeMissingFiles);
-    if (!objectXml) {
-      continue;
-    }
-    addExistingOrAllowed(configDir, objectXml, includeMissingFiles, configFiles);
     addExistingOrAllowed(configDir, normalized, includeMissingFiles, configFiles);
-
-    const [section, objectName] = normalized.split('/');
-    if (!section || !objectName) {
-      continue;
-    }
-    const extDir = path.join(configDir, section, objectName, 'Ext');
-    if (!fs.existsSync(extDir)) {
-      continue;
-    }
-    for (const filePath of walkFiles(extDir)) {
-      const relPath = path.relative(configDir, filePath).replace(/\\/g, '/');
-      if (!configFiles.includes(relPath)) {
-        configFiles.push(relPath);
-      }
-    }
   }
   return configFiles;
 }
@@ -76,10 +56,13 @@ export function detectPotentialRename(
       .map((item) => previousFiles[item])
       .filter((item): item is string => Boolean(item))
   );
-  return added.some((item) => {
+  for (const item of added) {
     const hash = currentFiles[item];
-    return Boolean(hash && deletedHashes.has(hash));
-  });
+    if (hash && deletedHashes.has(hash)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function addTemplateContentLoadFiles(
@@ -136,35 +119,6 @@ function resolveOwnerXmlFromNestedTemplate(relativePath: string): string | null 
   }
 
   return `${section}/${objectName}.xml`;
-}
-
-function resolveObjectXmlFromBsl(configDir: string, relativePath: string, includeMissingFiles: boolean): string | null {
-  const parts = relativePath.split(/[\\/]/);
-  if (parts.length < 2) {
-    return null;
-  }
-
-  const section = parts[0];
-  const objectName = parts[1];
-  const candidates = [
-    `${section}/${objectName}.xml`,
-    `${section}/${objectName}/${objectName}.xml`,
-  ];
-
-  return candidates.find((candidate) => includeMissingFiles || fs.existsSync(path.join(configDir, candidate))) ?? null;
-}
-
-function walkFiles(rootDir: string): string[] {
-  const out: string[] = [];
-  for (const entry of fs.readdirSync(rootDir, { withFileTypes: true })) {
-    const fullPath = path.join(rootDir, entry.name);
-    if (entry.isDirectory()) {
-      out.push(...walkFiles(fullPath));
-    } else {
-      out.push(fullPath);
-    }
-  }
-  return out;
 }
 
 function addExistingOrAllowed(configDir: string, relativePath: string, includeMissingFiles: boolean, configFiles: string[]): void {
