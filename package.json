@@ -324,15 +324,134 @@
         "command": "v8vscedit.repository.setLabel",
         "title": "Установить метку версии",
         "icon": "$(tag)"
+      },
+      {
+        "command": "v8vscedit.bsl.surround.if",
+        "title": "Если"
+      },
+      {
+        "command": "v8vscedit.bsl.surround.ifElse",
+        "title": "Если / Иначе"
+      },
+      {
+        "command": "v8vscedit.bsl.surround.try",
+        "title": "Попытка"
+      },
+      {
+        "command": "v8vscedit.bsl.surround.while",
+        "title": "Пока"
+      },
+      {
+        "command": "v8vscedit.bsl.surround.forEach",
+        "title": "Для каждого"
+      },
+      {
+        "command": "v8vscedit.bsl.surround.procedure",
+        "title": "Процедура"
+      },
+      {
+        "command": "v8vscedit.bsl.surround.function",
+        "title": "Функция"
+      },
+      {
+        "command": "v8vscedit.bsl.surround.region",
+        "title": "Область"
       }
     ],
     "submenus": [
       {
         "id": "v8vscedit.repositoryMenu",
         "label": "Хранилище конфигурации"
+      },
+      {
+        "id": "v8vscedit.bslSurroundMenu",
+        "label": "Окружить"
       }
     ],
     "menus": {
+      "commandPalette": [
+        {
+          "command": "v8vscedit.bsl.surround.if",
+          "when": "false"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.ifElse",
+          "when": "false"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.try",
+          "when": "false"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.while",
+          "when": "false"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.forEach",
+          "when": "false"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.procedure",
+          "when": "false"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.function",
+          "when": "false"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.region",
+          "when": "false"
+        }
+      ],
+      "editor/context": [
+        {
+          "submenu": "v8vscedit.bslSurroundMenu",
+          "when": "editorLangId == bsl && editorHasSelection",
+          "group": "1_modification@1"
+        }
+      ],
+      "v8vscedit.bslSurroundMenu": [
+        {
+          "command": "v8vscedit.bsl.surround.if",
+          "when": "editorLangId == bsl && editorHasSelection",
+          "group": "conditions@1"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.ifElse",
+          "when": "editorLangId == bsl && editorHasSelection",
+          "group": "conditions@2"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.try",
+          "when": "editorLangId == bsl && editorHasSelection",
+          "group": "exceptions@1"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.while",
+          "when": "editorLangId == bsl && editorHasSelection",
+          "group": "loops@1"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.forEach",
+          "when": "editorLangId == bsl && editorHasSelection",
+          "group": "loops@2"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.procedure",
+          "when": "editorLangId == bsl && editorHasSelection",
+          "group": "declarations@1"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.function",
+          "when": "editorLangId == bsl && editorHasSelection",
+          "group": "declarations@2"
+        },
+        {
+          "command": "v8vscedit.bsl.surround.region",
+          "when": "editorLangId == bsl && editorHasSelection",
+          "group": "regions@1"
+        }
+      ],
       "view/title": [
         {
           "command": "v8vscedit.refresh",
@@ -525,6 +644,28 @@
         "language": "bsl",
         "scopeName": "source.bsl",
         "path": "./syntaxes/bsl.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "bsl",
+        "path": "./snippets/bsl/declarations/procedures.json"
+      },
+      {
+        "language": "bsl",
+        "path": "./snippets/bsl/control-flow/conditions.json"
+      },
+      {
+        "language": "bsl",
+        "path": "./snippets/bsl/control-flow/loops.json"
+      },
+      {
+        "language": "bsl",
+        "path": "./snippets/bsl/control-flow/exceptions.json"
+      },
+      {
+        "language": "bsl",
+        "path": "./snippets/bsl/surround/control-flow.json"
       }
     ],
     "languages": [

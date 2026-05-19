@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { Container } from './Container';
+import { registerBslSurroundCommands } from './ui/commands/snippets/BslSurroundCommands';
 
 /**
  * Точка входа VS Code-расширения. Намеренно тонкая: вся логика сборки
@@ -9,6 +10,8 @@ import { Container } from './Container';
 let container: Container | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
+  registerBslSurroundCommands(context);
+
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) {
     return;
