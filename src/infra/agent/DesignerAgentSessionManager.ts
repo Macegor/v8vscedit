@@ -1,10 +1,10 @@
-import type { DesignerAgentTransport, DesignerAgentTransportFactory } from './AgentTransport';
+import type { DesignerAgentTransport, DesignerAgentTransportFactory, ResettableDesignerAgentTransportFactory } from './AgentTransport';
 
 export interface DesignerAgentSessionManagerOptions {
   readonly notifyProgressInterval?: number;
 }
 
-export class DesignerAgentSessionManager implements DesignerAgentTransportFactory {
+export class DesignerAgentSessionManager implements ResettableDesignerAgentTransportFactory {
   private readonly sessions = new Map<string, Promise<DesignerAgentTransport>>();
 
   constructor(
@@ -30,6 +30,20 @@ export class DesignerAgentSessionManager implements DesignerAgentTransportFactor
     const sessions = await Promise.all([...this.sessions.values()]);
     this.sessions.clear();
     await Promise.all(sessions.map((session) => session.dispose()));
+  }
+
+  async reset(sessionKey: string): Promise<void> {
+    const session = this.sessions.get(sessionKey);
+    if (!session) {
+      return;
+    }
+    this.sessions.delete(sessionKey);
+    const transport = await session;
+    if (transport.reset) {
+      await transport.reset();
+    } else {
+      await transport.dispose();
+    }
   }
 
   private async createConfiguredSession(sessionKey: string): Promise<DesignerAgentTransport> {

@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 import { spawn, type ChildProcess } from 'child_process';
 import { launchInteractiveDesignerWithAgentPause } from '../../../infra/agent';
 import { normalizeInfoBasePath, resolveV8ExecutablePath, resolveV8PathHintFromVersion } from '../../../infra/process';
-import { getAgentOperationServiceForInteractiveDesigner } from '../ext/ExtensionCommandRunner';
+import { getAgentOperationServiceForInteractiveDesigner, isAgentConfigurationOperationMode } from '../ext/ExtensionCommandRunner';
 
 interface DbRunConnectionParams {
   infoBasePath?: string;
@@ -35,7 +35,7 @@ export async function runDbClientFromWorkspace(
     const connection = resolveConnectionFromSettings(settingsPath);
     const v8Path = resolveV8ExecutablePath(connection.v8Path ?? '');
     const args = buildLaunchArguments(options, connection);
-    const agentService = options.mode === 'DESIGNER'
+    const agentService = options.mode === 'DESIGNER' && isAgentConfigurationOperationMode()
       ? await getAgentOperationServiceForInteractiveDesigner(workspaceFolder, outputChannel)
       : undefined;
 

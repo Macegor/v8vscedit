@@ -624,6 +624,8 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
     };
 
     if (node.xmlPath && /^configuration-hasXml|^extension-hasXml/.test(ctxValue)) {
+      add('v8vscedit.configuration.info', 'Информация', codicon('info'));
+      add('v8vscedit.configuration.validate', 'Валидировать', codicon('check'));
       add('v8vscedit.showConfigActions', 'Команды конфигурации/расширения', codicon('tools'));
       add('v8vscedit.importConfigurationFromDb', 'Импортировать из базы', codicon('cloud-download'));
       add('v8vscedit.updateConfigurationInDb', 'Обновить в базе', codicon('sync'));
@@ -633,11 +635,48 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
     }
     if (ctxValue.startsWith('extension-hasXml')) {
       add('v8vscedit.compileAndUpdateExtensionInDb', 'Полное обновление расширения в БД', codicon('cloud-upload'));
+      add('v8vscedit.cfe.analyzeExtension', 'Анализ расширения', codicon('inspect'));
+    }
+    if (this.canAddCfeInterceptor(node, ctxValue)) {
+      add('v8vscedit.cfe.addMethodInterceptor', 'Добавить перехватчик', codicon('symbol-method'));
     }
     if (this.canBorrow(node, ctxValue)) {
       add('v8vscedit.borrowToExtension', 'Добавить в расширение', codicon('add'));
     }
     if (node.xmlPath) {
+      if (!/^(configuration|extension)-hasXml/.test(ctxValue)) {
+        add('v8vscedit.metadata.info', 'Структура объекта', codicon('info'));
+        add('v8vscedit.metadata.validate', 'Валидировать объект', codicon('check'));
+      }
+      if (node.nodeKind === 'Role') {
+        add('v8vscedit.role.info', 'Права роли', codicon('shield'));
+        add('v8vscedit.role.validate', 'Валидировать роль', codicon('verified'));
+      }
+      if (node.nodeKind === 'Subsystem') {
+        add('v8vscedit.subsystem.info', 'Информация о подсистеме', codicon('symbol-namespace'));
+        add('v8vscedit.subsystem.validate', 'Валидировать подсистему', codicon('verified'));
+        add('v8vscedit.interface.validate', 'Валидировать командный интерфейс', codicon('list-tree'));
+      }
+      if (node.nodeKind === 'Template' || node.nodeKind === 'CommonTemplate') {
+        add('v8vscedit.mxl.info', 'MXL: структура', codicon('table'));
+        add('v8vscedit.mxl.validate', 'MXL: валидировать', codicon('check'));
+        add('v8vscedit.skd.info', 'СКД: структура', codicon('symbol-structure'));
+        add('v8vscedit.skd.validate', 'СКД: валидировать', codicon('verified'));
+      }
+      if (node.nodeKind === 'Form' || node.nodeKind === 'CommonForm') {
+        add('v8vscedit.form.info', 'Форма: структура', codicon('symbol-structure'));
+        add('v8vscedit.form.validate', 'Форма: валидировать', codicon('verified'));
+      }
+      if (this.canAddHelp(node)) {
+        add('v8vscedit.help.add', 'Добавить справку', codicon('book'));
+      }
+      if (node.nodeKind !== 'Form' && node.nodeKind !== 'CommonForm' && this.canAddForm(node)) {
+        add('v8vscedit.form.add', 'Добавить форму', codicon('window'));
+      }
+      if (node.nodeKind === 'DataProcessor' || node.nodeKind === 'Report') {
+        add('v8vscedit.epf.bspInit', 'БСП: регистрация', codicon('symbol-key'));
+        add('v8vscedit.epf.bspAddCommand', 'БСП: добавить команду', codicon('add'));
+      }
       add('v8vscedit.openXmlFile', 'Открыть XML', codicon('file-code'));
     }
     this.addModuleActions(node, add);
@@ -671,6 +710,14 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
     return actions;
   }
 
+  private canAddHelp(node: MetadataNode): boolean {
+    return Boolean(node.xmlPath && !['configuration', 'extension', 'Role', 'Template', 'CommonTemplate'].includes(node.nodeKind));
+  }
+
+  private canAddForm(node: MetadataNode): boolean {
+    return Boolean(node.xmlPath && ['Document', 'Catalog', 'DataProcessor', 'Report', 'InformationRegister', 'AccumulationRegister', 'ChartOfAccounts', 'ChartOfCharacteristicTypes', 'ExchangePlan', 'BusinessProcess', 'Task'].includes(node.nodeKind));
+  }
+
   private addModuleActions(node: MetadataNode, add: (command: string, title: string, icon: IconDto) => void): void {
     if (!node.xmlPath) {return;}
     if (node.command?.command) {
@@ -691,6 +738,17 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
       !ctxValue.includes('-fromCfe') &&
       !ctxValue.includes('-repoEditRestricted')
     );
+  }
+
+  private canAddCfeInterceptor(node: MetadataNode, ctxValue: string): boolean {
+    if (!node.xmlPath || ctxValue.includes('-repoEditRestricted') || !ctxValue.includes('-fromCfe')) {
+      return false;
+    }
+    if (node.nodeKind === 'Form') {
+      return true;
+    }
+    const def = (META_TYPES as Record<string, { modules?: readonly string[] } | undefined>)[node.nodeKind];
+    return Boolean(def?.modules?.length);
   }
 
   private isMainConf(node: MetadataNode): boolean {

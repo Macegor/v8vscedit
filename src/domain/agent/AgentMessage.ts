@@ -43,6 +43,25 @@ export function isTerminalAgentMessage(message: AgentMessage): boolean {
   return message.type === 'success' || message.type === 'error' || message.type === 'canceled';
 }
 
+/**
+ * Сообщение конфигуратора-агента вида `{type: "error", body: [], error-type: "UnknownError"}`.
+ * Это сигнал внутреннего сбоя процесса конфигуратора: следующая команда любого типа
+ * также будет падать, помогает только перезапуск процесса 1cv8 /AgentMode.
+ */
+export function isEmptyUnknownAgentMessage(message: AgentMessage): boolean {
+  if (message.type !== 'error') {
+    return false;
+  }
+  const errorType = message['error-type'];
+  if (errorType !== 'UnknownError') {
+    return false;
+  }
+  if (Array.isArray(message.body) && message.body.length === 0) {
+    return true;
+  }
+  return message.body === undefined || message.body === null;
+}
+
 export function getAgentMessageText(message: AgentMessage): string {
   if (message.type === 'generation-id') {
     return '';
@@ -75,8 +94,14 @@ export function getAgentMessageText(message: AgentMessage): string {
   if (typeof message.body === 'string' && message.body.trim()) {
     return message.body.trim();
   }
+  if ((message.type === 'error' || message.type === 'canceled') && Array.isArray(message.body) && message.body.length === 0) {
+    return `${message.type === 'error' ? 'Ошибка агента' : 'Операция агента отменена'}: пустой ответ${message['error-type'] ? ` (${message['error-type']})` : ''}`;
+  }
   if (message.body && typeof message.body === 'object') {
     return JSON.stringify(message.body);
+  }
+  if (message.type === 'error' || message.type === 'canceled') {
+    return `${message.type === 'error' ? 'Ошибка агента' : 'Операция агента отменена'}${message['error-type'] ? ` (${message['error-type']})` : ''}`;
   }
   return message.type;
 }

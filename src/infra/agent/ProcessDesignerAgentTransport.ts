@@ -5,6 +5,7 @@ import type { AgentMessage } from '../../domain/agent';
 import { getAgentMessageText, isTerminalAgentMessage } from '../../domain/agent';
 import { DesignerAgentJsonReader } from './DesignerAgentJsonReader';
 import type { AgentCommandHooks, AgentCommandResult, DesignerAgentTransport, DesignerAgentTransportFactory } from './AgentTransport';
+import { AgentCommandError } from './AgentTransport';
 
 export interface DesignerAgentSshClient {
   on(event: 'ready' | 'close', listener: () => void): this;
@@ -137,6 +138,19 @@ export class ProcessDesignerAgentTransport implements DesignerAgentTransport {
     return Promise.resolve();
   }
 
+  reset(): Promise<void> {
+    if (!this.client) {
+      return Promise.resolve();
+    }
+    this.disposed = true;
+    this.reader.reset();
+    this.channel?.end();
+    this.client.end();
+    this.channel = undefined;
+    this.client = undefined;
+    return Promise.resolve();
+  }
+
   private async executeQueued(command: string, hooks?: AgentCommandHooks): Promise<AgentCommandResult> {
     if (this.disposed) {
       throw new Error('Сессия агента уже закрыта.');
@@ -162,7 +176,7 @@ export class ProcessDesignerAgentTransport implements DesignerAgentTransport {
             cleanup();
             const last = messages.at(-1);
             if (last?.type === 'error' || last?.type === 'canceled') {
-              reject(new Error(getAgentMessageText(last)));
+              reject(new AgentCommandError(getAgentMessageText(last), command, last));
               return;
             }
             resolve({ messages });

@@ -22,10 +22,14 @@ import { collectConfigFilesForLoad, detectPotentialRename } from './ConfigLoadFi
 import {
   collectSnapshotProjectFiles,
   mirrorDirectorySnapshot,
-  syncDirectorySnapshot,
   syncSelectedSnapshotFiles,
 } from './DirectorySnapshot';
-import type { AgentCommandHooks, DesignerAgentTransport, DesignerAgentTransportFactory } from './AgentTransport';
+import type {
+  AgentCommandHooks,
+  DesignerAgentTransport,
+  DesignerAgentTransportFactory,
+  ResettableDesignerAgentTransportFactory,
+} from './AgentTransport';
 
 export interface AgentConfigurationOperationTarget {
   readonly kind: 'cf' | 'cfe';
@@ -57,7 +61,7 @@ export class AgentOperationService {
 
   constructor(
     private readonly projectRoot: string,
-    private readonly transportFactory: DesignerAgentTransportFactory
+    private readonly transportFactory: DesignerAgentTransportFactory | ResettableDesignerAgentTransportFactory
   ) {
     this.workspaceService = new AgentWorkspaceService(projectRoot);
   }
@@ -92,39 +96,56 @@ export class AgentOperationService {
   }
 
   async importFromDatabase(target: AgentConfigurationOperationTarget, hooks?: AgentOperationHooks): Promise<AgentOperationResult> {
-    const workspace = this.workspaceService.ensureWorkspace(buildSessionKey(target), target);
-    const command = buildDumpConfigToFilesCommand(workspace.targetAgentDir, {
-      extensionName: target.kind === 'cfe' ? target.extensionName ?? target.name : undefined,
-      format: 'hierarchical',
-      update: fs.existsSync(path.join(workspace.targetDir, 'ConfigDumpInfo.xml')),
-      force: true,
-    });
+    return this.runInfoBaseOperation(hooks, async () => {
+      const workspace = this.workspaceService.ensureWorkspace(buildSessionKey(target), target);
+      const command = buildDumpConfigToFilesCommand(workspace.targetAgentDir, {
+        extensionName: target.kind === 'cfe' ? target.extensionName ?? target.name : undefined,
+        format: 'hierarchical',
+        update: fs.existsSync(path.join(workspace.targetDir, 'ConfigDumpInfo.xml')),
+        force: true,
+      });
 
-    await this.executeAgentCommand(command, hooks);
-    const changedProjectFiles = collectSnapshotProjectFiles(workspace.targetDir, target.rootPath);
-    hooks?.onProjectFilesWillChange?.(changedProjectFiles);
-    syncDirectorySnapshot(workspace.targetDir, target.rootPath);
-    hooks?.onProjectFilesWillChange?.(changedProjectFiles);
-    this.refreshCaches(target);
-    return { changedProjectFiles };
+      await this.executeAgentCommand(command, hooks);
+      const changedProjectFiles = collectSnapshotProjectFiles(workspace.targetDir, target.rootPath);
+      hooks?.onProjectFilesWillChange?.(changedProjectFiles);
+      // Раньше тут стоял `syncDirectorySnapshot`, который через `rename` переносил
+      // workspace в проект и оставлял workspace.targetDir пустым. После этого
+      // первая же `load-config-from-files --partial` валилась с пустым UnknownError,
+      // потому что в `--dir=workspace/...` не было целостной структуры конфигурации
+      // (Configuration.xml, родительских XML для модулей форм и т.п.).
+      // Сейчас зеркалим в проект копированием — workspace остаётся полным
+      // снимком текущего состояния БД и пригоден для последующих частичных загрузок.
+      mirrorDirectorySnapshot(workspace.targetDir, target.rootPath);
+      hooks?.onProjectFilesWillChange?.(changedProjectFiles);
+      this.refreshCaches(target);
+      return { changedProjectFiles };
+    });
   }
 
   async loadFullAndUpdate(target: AgentConfigurationOperationTarget, hooks?: AgentOperationHooks): Promise<AgentOperationResult> {
-    await this.loadFull(target, hooks);
-    return this.updateDatabaseConfiguration(target, hooks);
+    return this.runInfoBaseOperation(hooks, async () => {
+      await this.loadFull(target, hooks);
+      return this.updateDatabaseConfigurationConnected(target, hooks);
+    });
   }
 
   async loadChangedAndUpdate(target: AgentConfigurationOperationTarget, hooks?: AgentOperationHooks): Promise<AgentOperationResult> {
-    const loaded = await this.loadChanged(target, hooks);
-    if (loaded.skipped) {
-      hooks?.onMessage?.('изменений для загрузки нет');
+    return this.runInfoBaseOperation(hooks, async () => {
+      const loaded = await this.loadChanged(target, hooks);
+      if (loaded.skipped) {
+        hooks?.onMessage?.('изменений для загрузки нет');
+        return loaded;
+      }
+      await this.updateDatabaseConfigurationConnected(target, hooks);
       return loaded;
-    }
-    await this.updateDatabaseConfiguration(target, hooks);
-    return loaded;
+    });
   }
 
   async updateDatabaseConfiguration(target: AgentConfigurationOperationTarget, hooks?: AgentOperationHooks): Promise<AgentOperationResult> {
+    return this.runInfoBaseOperation(hooks, () => this.updateDatabaseConfigurationConnected(target, hooks));
+  }
+
+  private async updateDatabaseConfigurationConnected(target: AgentConfigurationOperationTarget, hooks?: AgentOperationHooks): Promise<AgentOperationResult> {
     hooks?.onMessage?.('Обновление конфигурации базы данных.');
     await this.executeAgentCommand(
       buildUpdateDbCfgCommand({ extensionName: target.kind === 'cfe' ? target.extensionName ?? target.name : undefined }),
@@ -146,7 +167,7 @@ export class AgentOperationService {
       }),
       hooks
     );
-    this.refreshCaches(target);
+    this.refreshHashCache(target);
     return { changedProjectFiles: [] };
   }
 
@@ -190,19 +211,28 @@ export class AgentOperationService {
 
     const workspace = this.workspaceService.ensureWorkspace(buildSessionKey(target), target);
     hooks?.onMessage?.(`Подготовка частичной загрузки: ${String(filesForLoad.length)} файл(ов).`);
+    // Конфигуратору на `load-config-from-files --partial` нужен целостный каркас
+    // выгрузки в `--dir`: Configuration.xml, родительские XML для модулей форм и т.д.
+    // Если workspace пуст (например, проект только что заведён или каталог был очищен),
+    // зеркалим проект целиком. Иначе агент валится в пустой UnknownError, не имея
+    // контекста для частичной загрузки.
+    this.ensureWorkspaceMirrored(target.rootPath, workspace.targetDir);
     syncSelectedSnapshotFiles(target.rootPath, workspace.targetDir, filesForLoad);
     const operationId = `${buildSessionKey(target)}-${String(Date.now())}`;
     const listFile = this.workspaceService.writeListFile(operationId, filesForLoad);
     const agentListFile = this.workspaceService.toAgentPath(listFile);
 
     hooks?.onMessage?.('Частичная загрузка изменённых файлов.');
+    // ConfigDumpInfo.xml для расширения/конфигурации поддерживается на стороне `loadFull`.
+    // На частичной загрузке передавать `--update-config-dump-info` нельзя:
+    // конфигуратор перезаписывает файл «срезом» только из переданного списка и при
+    // повторных частичных загрузках уходит во внутреннее `UnknownError` с пустым телом.
     await this.executeAgentCommand(
       buildLoadConfigFromFilesCommand(workspace.targetAgentDir, {
         extensionName: commandExtensionName,
         format: 'hierarchical',
         listFile: agentListFile,
         partial: true,
-        updateConfigDumpInfo: true,
         noCheck: true,
       }),
       hooks
@@ -210,7 +240,6 @@ export class AgentOperationService {
 
     const changedHashes = collectCurrentHashes(target.rootPath, changedFiles);
     saveHashCache(this.projectRoot, patchHashSnapshot(previousSnapshot, changedHashes, diff.deleted));
-    saveMetadataCacheForEntry(this.projectRoot, scopeKey, { kind: target.kind, rootPath: target.rootPath });
     return { changedProjectFiles: [] };
   }
 
@@ -221,11 +250,68 @@ export class AgentOperationService {
     saveMetadataCacheForEntry(this.projectRoot, scopeKey, { kind: target.kind, rootPath: target.rootPath });
   }
 
+  /**
+   * Гарантирует, что в `workspace.targetDir` лежит полный снимок исходников проекта.
+   * Используется перед частичной загрузкой: точечный sync только изменённых файлов
+   * требует, чтобы остальной каркас выгрузки уже присутствовал в воркспейсе.
+   */
+  private ensureWorkspaceMirrored(sourceDir: string, workspaceDir: string): void {
+    if (!fs.existsSync(workspaceDir)) {
+      mirrorDirectorySnapshot(sourceDir, workspaceDir);
+      return;
+    }
+    const entries = fs.readdirSync(workspaceDir);
+    if (entries.length === 0) {
+      mirrorDirectorySnapshot(sourceDir, workspaceDir);
+      return;
+    }
+    if (!fs.existsSync(path.join(workspaceDir, 'Configuration.xml'))) {
+      mirrorDirectorySnapshot(sourceDir, workspaceDir);
+    }
+  }
+
+  private refreshHashCache(target: AgentConfigurationOperationTarget): void {
+    const extensionName = target.kind === 'cfe' ? target.extensionName ?? target.name : '';
+    const scopeKey = buildScopeKey(target.kind, target.rootPath, extensionName);
+    saveHashCache(this.projectRoot, buildHashSnapshot(scopeKey, target.rootPath));
+  }
+
   private async executeAgentCommand(command: string, hooks?: AgentOperationHooks): Promise<void> {
     const transport = await this.transportFactory.create('default');
     const commandHooks = this.createCommandHooks(hooks);
     await this.ensureConnected(transport, commandHooks);
     await transport.execute(command, commandHooks);
+  }
+
+  private async runInfoBaseOperation<T>(hooks: AgentOperationHooks | undefined, operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      try {
+        await this.disconnectInfoBase(hooks);
+      } catch (disconnectError) {
+        const message = disconnectError instanceof Error ? disconnectError.message : String(disconnectError);
+        hooks?.onMessage?.(`Не удалось отключить информационную базу после ошибки операции: ${message}`);
+      }
+      throw error;
+    } finally {
+      if (this.connected) {
+        await this.disconnectInfoBase(hooks);
+      }
+      await this.resetAgentSession(hooks);
+    }
+  }
+
+  private async resetAgentSession(hooks?: AgentOperationHooks): Promise<void> {
+    if (!isResettableTransportFactory(this.transportFactory)) {
+      return;
+    }
+    try {
+      await this.transportFactory.reset('default');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      hooks?.onMessage?.(`Не удалось сбросить SSH-сессию агента: ${message}`);
+    }
   }
 
   private createCommandHooks(hooks?: AgentOperationHooks): AgentCommandHooks {
@@ -262,6 +348,12 @@ function buildSessionKey(target: AgentConfigurationOperationTarget): string {
 
 function normalizeAgentErrorMessage(message: string): string {
   return message.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function isResettableTransportFactory(
+  factory: DesignerAgentTransportFactory | ResettableDesignerAgentTransportFactory
+): factory is ResettableDesignerAgentTransportFactory {
+  return typeof (factory as Partial<ResettableDesignerAgentTransportFactory>).reset === 'function';
 }
 
 export function isInfoBaseAlreadyConnectedMessage(message: string): boolean {

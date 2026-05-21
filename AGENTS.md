@@ -270,6 +270,67 @@ export function deactivate(): Promise<void> | undefined {
 - Для редактирования свойств обязательны два шага: сначала `get_property_contract` для конкретного узла и свойства, затем запись только значения, допустимого контрактом. Enum/boolean/multiEnum/readonly проверяются до изменения XML; свойства со сложными типами получают отдельные специализированные инструменты.
 - Значения enum, boolean/localized-классификация и схемы свойств остаются в `infra/xml/PropertySchema.ts` или специализированном infra-реестре, а MCP только публикует этот контракт.
 
+### MCP-инструменты модификации конфигурации
+
+Все инструменты записи должны идти через TS-сервисы расширения, а не через
+Python-скрипты из `.codex/skills` и не через прямую правку XML в MCP. После
+успешной записи инструмент обязан вызвать единый post-mutation путь:
+`suppressConfigurationReloadForFiles(changedFiles)` →
+`markChangedConfigurationByFiles(changedFiles)` →
+`treeProvider.refresh()` →
+`refreshActionsView()`.
+
+Текущий набор инструментов расширения:
+- `v8vscedit_get_property_contract` — первый шаг перед записью свойства; возвращает контракт значения из `PropertySchema`/сервисов свойств.
+- `v8vscedit_set_property` — меняет простое свойство через `McpPropertyService` и `ConfigurationXmlEditor`; enum/boolean/readonly проверяются до записи.
+- `v8vscedit_configuration_info` — возвращает отчёт по CF/CFE: свойства, счётчики ChildObjects, роли по умолчанию.
+- `v8vscedit_validate_configuration` — валидирует `Configuration.xml`, `DefaultLanguage`, `ChildObjects` и базовые enum-значения.
+- `v8vscedit_metadata_info` — возвращает структуру объекта метаданных: реквизиты, табличные части, формы, команды, макеты и drill-down по имени элемента.
+- `v8vscedit_validate_metadata` — валидирует XML объекта метаданных: тип из `META_TYPES`, имя, UUID, допустимые дочерние элементы и связанные файлы.
+- `v8vscedit_subsystem_info` — возвращает структуру подсистемы: свойства, Content, дочерние подсистемы, дерево и CommandInterface.xml.
+- `v8vscedit_validate_subsystem` — валидирует XML подсистемы: обязательные свойства, UUID, Content, ChildObjects, дочерние файлы и CommandInterface.xml.
+- `v8vscedit_compile_subsystem` — создаёт подсистему из JSON DSL через `SubsystemToolsService`, пишет `Subsystems/<Имя>.xml` и регистрирует её в `Configuration.xml` или родительской подсистеме.
+- `v8vscedit_edit_command_interface` — редактирует `CommandInterface.xml` через `CommandInterfaceService`: hide/show/place/order/subsystem-order/group-order.
+- `v8vscedit_validate_command_interface` — валидирует `CommandInterface.xml`: разделы, порядок, дубли, ссылки команд и списки подсистем/групп.
+- `v8vscedit_mxl_info` — возвращает сводку табличного документа: области, параметры, текст, объединения и статистику через `MxlTemplateService`.
+- `v8vscedit_validate_mxl` — валидирует `Template.xml` табличного документа: строки, колонки, палитры форматов, области и объединения.
+- `v8vscedit_compile_mxl` — создаёт `Template.xml` табличного документа из JSON DSL через `MxlTemplateService`.
+- `v8vscedit_decompile_mxl` — возвращает редактируемый JSON DSL по существующему `Template.xml` табличного документа.
+- `v8vscedit_skd_info` — возвращает сводку СКД: наборы, запросы, поля, параметры, итоги и варианты через `DataCompositionSchemaService`.
+- `v8vscedit_validate_skd` — валидирует `Template.xml` схемы компоновки данных: XML, корень, дубли наборов, полей, параметров и вариантов.
+- `v8vscedit_compile_skd` — создаёт `Template.xml` СКД из JSON DSL через `DataCompositionSchemaService`.
+- `v8vscedit_edit_skd` — точечно редактирует СКД: поля, итоги, вычисляемые поля, параметры, запрос, выборку, фильтры и варианты.
+- `v8vscedit_add_help` — создаёт встроенную справку объекта (`Ext/Help.xml`, `Ext/Help/<lang>.html`) через `ExternalObjectService` и дописывает `IncludeHelpInContents` в формы при отсутствии.
+- `v8vscedit_create_epf` — создаёт XML-исходники внешней обработки EPF: корневой XML, каталог объекта и `Ext/ObjectModule.bsl`.
+- `v8vscedit_create_erf` — создаёт XML-исходники внешнего отчёта ERF; опционально добавляет основную СКД и `MainDataCompositionSchema`.
+- `v8vscedit_validate_external_object` — валидирует XML-исходники EPF/ERF: `InternalInfo`, `Properties`, `ChildObjects`, ссылки и связанные файлы.
+- `v8vscedit_epf_bsp_init` — добавляет функцию `СведенияОВнешнейОбработке()` и базовый обработчик команды БСП в `ObjectModule.bsl`.
+- `v8vscedit_epf_bsp_add_command` — добавляет команду в регистрацию БСП и создаёт/дополняет серверный, клиентский или печатный обработчик.
+- `v8vscedit_form_info` — возвращает структуру управляемой формы: элементы, реквизиты, команды, события и BaseForm.
+- `v8vscedit_validate_form` — валидирует `Form.xml`: `AutoCommandBar`, уникальность ID, `DataPath`, команды, события, `callType` и типы.
+- `v8vscedit_add_form` — создаёт форму объекта: `Forms/<Имя>.xml`, `Forms/<Имя>/Ext/Form.xml`, `Module.bsl` и регистрацию в `ChildObjects`.
+- `v8vscedit_remove_form` — удаляет форму, каталог формы, регистрацию в `ChildObjects` и очищает default-ссылки.
+- `v8vscedit_compile_form` — создаёт `Form.xml` из JSON DSL или по метаданным объекта через `FormToolsService`.
+- `v8vscedit_edit_form` — точечно добавляет элементы, реквизиты, команды и события в существующий `Form.xml`.
+- `v8vscedit_role_info` — возвращает сводку `Rights.xml`: разрешённые/запрещённые права, RLS и шаблоны ограничений.
+- `v8vscedit_validate_role` — валидирует `Rights.xml`, метаданные роли и регистрацию роли в `Configuration.xml`.
+- `v8vscedit_compile_role` — создаёт роль из JSON DSL через `RoleRightsService`, пишет `Roles/<Имя>.xml`, `Roles/<Имя>/Ext/Rights.xml` и регистрирует роль в `Configuration.xml`.
+- `v8vscedit_create_configuration` — создаёт scaffold CF (`Configuration.xml`, `Languages/Русский.xml`) через `ConfigurationScaffoldService`.
+- `v8vscedit_create_extension` — создаёт scaffold CFE (`Configuration.xml`, язык, опциональная роль) через `ConfigurationScaffoldService`.
+- `v8vscedit_add_metadata` — создаёт корневой объект или дочерний элемент через `MetadataMutationService` и `MetadataXmlCreator`.
+- `v8vscedit_remove_metadata` — удаляет объект или дочерний элемент через `MetadataXmlRemover`; для корневых объектов блокирует удаление при найденных ссылках.
+- `v8vscedit_cfe_borrow` — заимствует объект, форму или дочерний элемент из CF в CFE через `CfeBorrowService`.
+- `v8vscedit_cfe_patch_method` — добавляет BSL-перехватчик метода в CFE через `CfePatchMethodService`; модуль задаётся `ModulePath` (`Catalog.Товары.ObjectModule`, `Document.Заказ.Form.ФормаДокумента`, `CommonModule.ОбщийМодуль`).
+- `v8vscedit_cfe_diff` — читает состав CFE и перехватчики через `CfeDiffService`; в режиме `transfer` проверяет, перенесены ли блоки `#Вставка` в CF.
+- `v8vscedit_execute_command` — только allowlist из безопасных команд: `refresh`, `importConfigurations`, `updateChangedConfigurations`; новые произвольные команды сюда не добавлять без отдельного обоснования.
+
+Для новой функции из `.codex/skills` порядок переноса такой:
+1. Перенести бизнес-логику в `infra/<область>/<Service>.ts` без `vscode` и без shell.
+2. Добавить тест на реальных XML-фикстурах или временной структуре выгрузки.
+3. Если функция нужна человеку в UI — зарегистрировать команду в `ui/commands/**` и действие в `UniversalPanelViewProvider.getNodeActions()`.
+4. Если функция меняет конфигурацию/расширение — добавить MCP-инструмент в `V8McpServer.registerTools()` и запись в `EXTENSION_MCP_TOOLS`.
+5. Обновить кэш/дерево/статус изменённости через общий post-mutation путь.
+
 ---
 
 ## Инвариант изменений — как добавлять функциональность

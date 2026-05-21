@@ -4,7 +4,13 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { ClientChannel, ConnectConfig } from 'ssh2';
-import { buildSshConnectConfig, ProcessDesignerAgentTransport, type DesignerAgentSshClient } from '../../infra/agent';
+import {
+  AgentCommandError,
+  buildSshConnectConfig,
+  ProcessDesignerAgentTransport,
+  type DesignerAgentSshClient,
+} from '../../infra/agent';
+import { isEmptyUnknownAgentMessage } from '../../domain/agent';
 
 suite('ProcessDesignerAgentTransport', () => {
   test('строит параметры подключения без системного ssh', () => {
@@ -121,12 +127,44 @@ suite('ProcessDesignerAgentTransport', () => {
     assert.strictEqual(fake.ended, true);
   });
 
+  test('сбрасывает SSH-сессию без остановки агента', async () => {
+    const fake = new FakeSshClient();
+    const transport = new ProcessDesignerAgentTransport(baseOptions(), () => fake);
+    await transport.connect();
+
+    await transport.reset();
+
+    assert.ok(!fake.channel.writes.includes('common shutdown\n'));
+    assert.strictEqual(fake.channel.ended, true);
+    assert.strictEqual(fake.ended, true);
+  });
+
   test('пробрасывает ошибку открытия shell-канала', async () => {
     const fake = new FakeSshClient();
     fake.shellError = new Error('shell denied');
     const transport = new ProcessDesignerAgentTransport(baseOptions(), () => fake);
 
     await assert.rejects(transport.connect(), /shell denied/);
+  });
+
+  test('ошибка содержит команду и финальное сообщение конфигуратора', async () => {
+    const fake = new FakeSshClient();
+    fake.channel.replyMode = 'empty-unknown';
+    const transport = new ProcessDesignerAgentTransport(baseOptions(), () => fake);
+
+    const command = 'config load-config-from-files --dir=workspace/test --partial';
+    let captured: unknown;
+    try {
+      await transport.execute(command);
+    } catch (error) {
+      captured = error;
+    }
+
+    assert.ok(captured instanceof AgentCommandError, 'ожидается AgentCommandError');
+    assert.strictEqual(captured.command, command);
+    const finalMessage = captured.finalMessage;
+    assert.ok(finalMessage, 'финальное сообщение должно быть установлено');
+    assert.strictEqual(isEmptyUnknownAgentMessage(finalMessage), true);
   });
 });
 
@@ -140,7 +178,7 @@ function baseOptions() {
   };
 }
 
-type FakeReplyMode = 'success' | 'question' | 'error' | 'error-once' | 'close';
+type FakeReplyMode = 'success' | 'question' | 'error' | 'error-once' | 'close' | 'empty-unknown';
 
 class FakeSshClient extends EventEmitter implements DesignerAgentSshClient {
   readonly channel = new FakeChannel();
@@ -195,6 +233,10 @@ class FakeChannel extends EventEmitter {
     }
     if (this.replyMode === 'error') {
       this.emit('data', Buffer.from('[{"type":"error","message":"Ошибка загрузки"}]'));
+      return;
+    }
+    if (this.replyMode === 'empty-unknown') {
+      this.emit('data', Buffer.from('[{"type":"error","body":[],"error-type":"UnknownError"}]'));
       return;
     }
     if (this.replyMode === 'error-once') {

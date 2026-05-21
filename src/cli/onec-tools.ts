@@ -46,8 +46,9 @@ async function main(): Promise<void> {
 
 function printUsage(): void {
   console.log('Usage: node dist/cli/onec-tools.js <command>');
-  console.log('Commands: refresh-hash-cache');
+  console.log('Commands: export-configuration, import-configuration, sync-configuration-partial, sync-configuration-full, update-configuration, import-git-changes, refresh-hash-cache');
   console.log('Repository: repository-create, repository-bind, repository-unbind, repository-lock, repository-unlock, repository-commit, repository-update, repository-add-user, repository-copy-users, repository-dump, repository-report, repository-set-label');
+  console.log('Aliases: db-dump-xml, db-load-xml, db-load-git, db-update, update-partial, update-full');
 }
 
 void main();

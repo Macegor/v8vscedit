@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { getAgentMessageText } from '../../domain/agent';
+import { getAgentMessageText, isEmptyUnknownAgentMessage } from '../../domain/agent';
 
 suite('AgentMessage', () => {
   test('форматирует прогресс без сырого JSON', () => {
@@ -33,5 +33,44 @@ suite('AgentMessage', () => {
     });
 
     assert.strictEqual(text, '');
+  });
+
+  test('показывает понятный текст для пустой ошибки агента', () => {
+    const text = getAgentMessageText({
+      type: 'error',
+      body: [],
+    });
+
+    assert.strictEqual(text, 'Ошибка агента: пустой ответ');
+  });
+
+  test('распознаёт пустой UnknownError как сигнал перезапуска процесса', () => {
+    assert.strictEqual(
+      isEmptyUnknownAgentMessage({ type: 'error', body: [], 'error-type': 'UnknownError' }),
+      true
+    );
+    assert.strictEqual(
+      isEmptyUnknownAgentMessage({ type: 'error', 'error-type': 'UnknownError' }),
+      true
+    );
+  });
+
+  test('не считает обычную ошибку или UnknownError с телом сигналом перезапуска', () => {
+    assert.strictEqual(
+      isEmptyUnknownAgentMessage({ type: 'error', body: [], 'error-type': 'ConfigFilesError' }),
+      false
+    );
+    assert.strictEqual(
+      isEmptyUnknownAgentMessage({
+        type: 'error',
+        body: [{ type: 'log', message: 'детали' }],
+        'error-type': 'UnknownError',
+      }),
+      false
+    );
+    assert.strictEqual(
+      isEmptyUnknownAgentMessage({ type: 'success', body: [] }),
+      false
+    );
   });
 });

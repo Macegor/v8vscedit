@@ -2,7 +2,7 @@
   "name": "v8vscedit",
   "displayName": "Редактор конфигураций 1С",
   "description": "Редактор конфигураций и расширений 1С:Предприятие — навигация по метаданным, LSP для BSL, работа с XML-выгрузкой",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "repository": {
     "type": "git",
     "url": "https://github.com/Macegor/v8vscedit.git"
@@ -82,6 +82,121 @@
         "icon": "$(tools)"
       },
       {
+        "command": "v8vscedit.configuration.info",
+        "title": "Конфигурация: информация",
+        "icon": "$(info)"
+      },
+      {
+        "command": "v8vscedit.configuration.validate",
+        "title": "Конфигурация: валидировать",
+        "icon": "$(check)"
+      },
+      {
+        "command": "v8vscedit.metadata.info",
+        "title": "Метаданные: структура объекта",
+        "icon": "$(info)"
+      },
+      {
+        "command": "v8vscedit.metadata.validate",
+        "title": "Метаданные: валидировать объект",
+        "icon": "$(check)"
+      },
+      {
+        "command": "v8vscedit.role.info",
+        "title": "Роль: права",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "v8vscedit.role.validate",
+        "title": "Роль: валидировать",
+        "icon": "$(verified)"
+      },
+      {
+        "command": "v8vscedit.subsystem.info",
+        "title": "Подсистема: информация",
+        "icon": "$(symbol-namespace)"
+      },
+      {
+        "command": "v8vscedit.subsystem.validate",
+        "title": "Подсистема: валидировать",
+        "icon": "$(verified)"
+      },
+      {
+        "command": "v8vscedit.interface.validate",
+        "title": "Командный интерфейс: валидировать",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "v8vscedit.mxl.info",
+        "title": "MXL: структура макета",
+        "icon": "$(table)"
+      },
+      {
+        "command": "v8vscedit.mxl.validate",
+        "title": "MXL: валидировать макет",
+        "icon": "$(check)"
+      },
+      {
+        "command": "v8vscedit.skd.info",
+        "title": "СКД: структура схемы",
+        "icon": "$(symbol-structure)"
+      },
+      {
+        "command": "v8vscedit.skd.validate",
+        "title": "СКД: валидировать схему",
+        "icon": "$(verified)"
+      },
+      {
+        "command": "v8vscedit.help.add",
+        "title": "Справка: добавить к объекту",
+        "icon": "$(book)"
+      },
+      {
+        "command": "v8vscedit.epf.create",
+        "title": "EPF: создать внешнюю обработку",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "v8vscedit.erf.create",
+        "title": "ERF: создать внешний отчёт",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "v8vscedit.externalObject.validate",
+        "title": "EPF/ERF: валидировать XML-исходники",
+        "icon": "$(verified)"
+      },
+      {
+        "command": "v8vscedit.epf.bspInit",
+        "title": "EPF: добавить регистрацию БСП",
+        "icon": "$(symbol-key)"
+      },
+      {
+        "command": "v8vscedit.epf.bspAddCommand",
+        "title": "EPF: добавить команду БСП",
+        "icon": "$(add)"
+      },
+      {
+        "command": "v8vscedit.form.info",
+        "title": "Форма: структура",
+        "icon": "$(symbol-structure)"
+      },
+      {
+        "command": "v8vscedit.form.validate",
+        "title": "Форма: валидировать",
+        "icon": "$(verified)"
+      },
+      {
+        "command": "v8vscedit.form.add",
+        "title": "Форма: добавить",
+        "icon": "$(window)"
+      },
+      {
+        "command": "v8vscedit.form.remove",
+        "title": "Форма: удалить",
+        "icon": "$(trash)"
+      },
+      {
         "command": "v8vscedit.configureEnvironment",
         "title": "Настройки проекта",
         "icon": "$(settings-gear)"
@@ -142,6 +257,16 @@
       {
         "command": "v8vscedit.borrowToExtension",
         "title": "Добавить в расширение"
+      },
+      {
+        "command": "v8vscedit.cfe.addMethodInterceptor",
+        "title": "CFE: Добавить перехватчик метода",
+        "icon": "$(symbol-method)"
+      },
+      {
+        "command": "v8vscedit.cfe.analyzeExtension",
+        "title": "CFE: Анализ расширения",
+        "icon": "$(inspect)"
       },
       {
         "command": "v8vscedit.openXmlFile",
@@ -799,6 +924,19 @@
           "type": "string",
           "default": "",
           "description": "Пароль 1С для live-инструментов MCP bsl-analyzer"
+        },
+        "v8vscedit.configuration.operationMode": {
+          "type": "string",
+          "enum": [
+            "batch",
+            "agent"
+          ],
+          "enumDescriptions": [
+            "Пакетный режим конфигуратора: запуск отдельных команд DESIGNER для выгрузки, загрузки и обновления.",
+            "Режим агента конфигуратора: операции выполняются через SSH-сессию /AgentMode."
+          ],
+          "default": "batch",
+          "description": "Режим выполнения операций с конфигурацией. По умолчанию используется пакетный режим из версии 0.3.5; агентский режим доступен как дополнительный."
         },
         "v8vscedit.agent.host": {
           "type": "string",

@@ -15,12 +15,26 @@ import { TreeSearchViewProvider } from './ui/views/search/TreeSearchViewProvider
 import { SupportInfoService } from './infra/support/SupportInfoService';
 import {
   BasedOnXmlService,
+  ConfigurationInfoService,
+  ConfigurationScaffoldService,
+  ConfigurationValidationService,
   ConfigurationXmlEditor,
+  CommandInterfaceService,
+  DataCompositionSchemaService,
   ExchangePlanContentService,
+  ExternalObjectService,
+  FormToolsService,
+  MetadataInfoService,
+  MetadataValidationService,
   MetadataXmlCreator,
   MetadataXmlRemover,
+  MxlTemplateService,
+  SubsystemToolsService,
 } from './infra/xml';
 import { CfeBorrowService } from './infra/cfe/CfeBorrowService';
+import { CfeDiffService } from './infra/cfe/CfeDiffService';
+import { CfePatchMethodService } from './infra/cfe/CfePatchMethodService';
+import { RoleRightsService } from './infra/role';
 import { SubsystemXmlService } from './infra/xml/SubsystemXmlService';
 import { RepositoryService } from './infra/repository/RepositoryService';
 import { GitMetadataStatusService } from './infra/git/GitMetadataStatusService';
@@ -78,12 +92,26 @@ export class Container {
   readonly aiSkillsInstaller: AiSkillsInstaller;
   readonly metadataXmlCreator: MetadataXmlCreator;
   readonly metadataXmlRemover: MetadataXmlRemover;
+  readonly configurationInfoService: ConfigurationInfoService;
+  readonly configurationScaffoldService: ConfigurationScaffoldService;
+  readonly configurationValidationService: ConfigurationValidationService;
+  readonly metadataInfoService: MetadataInfoService;
+  readonly metadataValidationService: MetadataValidationService;
+  readonly subsystemToolsService: SubsystemToolsService;
+  readonly commandInterfaceService: CommandInterfaceService;
+  readonly mxlTemplateService: MxlTemplateService;
+  readonly dataCompositionSchemaService: DataCompositionSchemaService;
+  readonly externalObjectService: ExternalObjectService;
+  readonly formToolsService: FormToolsService;
   readonly exchangePlanContentService: ExchangePlanContentService;
   readonly subsystemXmlService: SubsystemXmlService;
   readonly typeRegistryService: TypeRegistryService;
   readonly configurationXmlEditor: ConfigurationXmlEditor;
   readonly basedOnXmlService: BasedOnXmlService;
   readonly cfeBorrowService: CfeBorrowService;
+  readonly cfeDiffService: CfeDiffService;
+  readonly cfePatchMethodService: CfePatchMethodService;
+  readonly roleRightsService: RoleRightsService;
   readonly treeSearchViewProvider: TreeSearchViewProvider;
   readonly universalPanelViewProvider: UniversalPanelViewProvider;
   readonly mcpServer: V8McpServer;
@@ -143,6 +171,9 @@ export class Container {
     this.configurationXmlEditor = new ConfigurationXmlEditor();
     this.basedOnXmlService = new BasedOnXmlService();
     this.cfeBorrowService = new CfeBorrowService();
+    this.cfeDiffService = new CfeDiffService();
+    this.cfePatchMethodService = new CfePatchMethodService();
+    this.roleRightsService = new RoleRightsService();
 
     // Mutable ref: PropertiesViewProvider зависит от контроллера,
     // а колбэки контроллера — от провайдера.
@@ -196,6 +227,17 @@ export class Container {
     this.aiSkillsInstaller = new AiSkillsInstaller(this.outputChannel);
     this.metadataXmlCreator = new MetadataXmlCreator();
     this.metadataXmlRemover = new MetadataXmlRemover();
+    this.configurationInfoService = new ConfigurationInfoService();
+    this.configurationScaffoldService = new ConfigurationScaffoldService();
+    this.configurationValidationService = new ConfigurationValidationService();
+    this.metadataInfoService = new MetadataInfoService();
+    this.metadataValidationService = new MetadataValidationService();
+    this.subsystemToolsService = new SubsystemToolsService();
+    this.commandInterfaceService = new CommandInterfaceService();
+    this.mxlTemplateService = new MxlTemplateService();
+    this.dataCompositionSchemaService = new DataCompositionSchemaService();
+    this.externalObjectService = new ExternalObjectService();
+    this.formToolsService = new FormToolsService();
     context.subscriptions.push(
       this.propertiesProvider,
       this.subsystemEditorViewProvider,
@@ -330,7 +372,21 @@ export class Container {
       workspaceFolder: this.workspaceFolder,
       metadataXmlCreator: this.metadataXmlCreator,
       metadataXmlRemover: this.metadataXmlRemover,
+      configurationInfoService: this.configurationInfoService,
+      configurationScaffoldService: this.configurationScaffoldService,
+      configurationValidationService: this.configurationValidationService,
+      metadataInfoService: this.metadataInfoService,
+      metadataValidationService: this.metadataValidationService,
+      subsystemToolsService: this.subsystemToolsService,
+      commandInterfaceService: this.commandInterfaceService,
+      mxlTemplateService: this.mxlTemplateService,
+      dataCompositionSchemaService: this.dataCompositionSchemaService,
+      externalObjectService: this.externalObjectService,
+      formToolsService: this.formToolsService,
       cfeBorrowService: this.cfeBorrowService,
+      cfeDiffService: this.cfeDiffService,
+      cfePatchMethodService: this.cfePatchMethodService,
+      roleRightsService: this.roleRightsService,
       reloadEntries: () => this.reloadEntries(),
       propertiesViewProvider: this.propertiesProvider,
       subsystemEditorViewProvider: this.subsystemEditorViewProvider,

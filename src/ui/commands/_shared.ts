@@ -1,11 +1,28 @@
 import type * as vscode from 'vscode';
 import type { ChangedConfiguration } from '../../infra/fs/ConfigurationChangeDetector';
 import type { CfeBorrowService } from '../../infra/cfe/CfeBorrowService';
+import type { CfeDiffService } from '../../infra/cfe/CfeDiffService';
+import type { CfePatchMethodService } from '../../infra/cfe/CfePatchMethodService';
 import type { RepositoryService } from '../../infra/repository/RepositoryService';
+import type { RoleRightsService } from '../../infra/role';
 import type { AiSkillsInstaller } from '../../infra/skills/AiSkillsInstaller';
 import type { StandaloneServerService } from '../../infra/standalone';
 import type { SupportInfoService } from '../../infra/support/SupportInfoService';
-import type { MetadataXmlCreator, MetadataXmlRemover } from '../../infra/xml';
+import type {
+  ConfigurationInfoService,
+  ConfigurationScaffoldService,
+  ConfigurationValidationService,
+  CommandInterfaceService,
+  DataCompositionSchemaService,
+  ExternalObjectService,
+  FormToolsService,
+  MetadataInfoService,
+  MetadataValidationService,
+  MetadataXmlCreator,
+  MetadataXmlRemover,
+  MxlTemplateService,
+  SubsystemToolsService,
+} from '../../infra/xml';
 import type { BslAnalyzerConfigService } from '../../infra/environment';
 import type { MetadataTreeProvider } from '../tree/MetadataTreeProvider';
 import type { MetadataNode } from '../tree/TreeNode';
@@ -25,7 +42,21 @@ export interface CommandServices {
   workspaceFolder: vscode.WorkspaceFolder;
   metadataXmlCreator: MetadataXmlCreator;
   metadataXmlRemover: MetadataXmlRemover;
+  configurationInfoService: ConfigurationInfoService;
+  configurationScaffoldService: ConfigurationScaffoldService;
+  configurationValidationService: ConfigurationValidationService;
+  metadataInfoService: MetadataInfoService;
+  metadataValidationService: MetadataValidationService;
+  subsystemToolsService: SubsystemToolsService;
+  commandInterfaceService: CommandInterfaceService;
+  mxlTemplateService: MxlTemplateService;
+  dataCompositionSchemaService: DataCompositionSchemaService;
+  externalObjectService: ExternalObjectService;
+  formToolsService: FormToolsService;
   cfeBorrowService: CfeBorrowService;
+  cfeDiffService: CfeDiffService;
+  cfePatchMethodService: CfePatchMethodService;
+  roleRightsService: RoleRightsService;
   reloadEntries: () => void | Promise<void>;
   propertiesViewProvider: PropertiesViewProvider;
   subsystemEditorViewProvider: SubsystemEditorViewProvider;

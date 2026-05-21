@@ -121,18 +121,39 @@ suite('PartialLoadList', () => {
     );
   });
 
-  test('collectConfigFiles для BSL оставляет только измененный модуль', () => {
+  test('collectConfigFiles для BSL возвращает только сам модуль', () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v8-load-list-'));
     try {
       const objectDir = path.join(tempRoot, 'Documents', 'Заказ');
       const extDir = path.join(objectDir, 'Ext');
       fs.mkdirSync(extDir, { recursive: true });
-      fs.writeFileSync(path.join(objectDir, 'Заказ.xml'), '<xml/>', 'utf-8');
+      fs.writeFileSync(path.join(tempRoot, 'Documents', 'Заказ.xml'), '<xml/>', 'utf-8');
       fs.writeFileSync(path.join(extDir, 'ObjectModule.bsl'), 'Процедура Тест() КонецПроцедуры', 'utf-8');
       fs.writeFileSync(path.join(extDir, 'ManagerModule.bsl'), 'Процедура Менеджер() КонецПроцедуры', 'utf-8');
 
       const list = collectConfigFilesForLoad(tempRoot, ['Documents/Заказ/Ext/ObjectModule.bsl'], false);
-      assert.deepStrictEqual(list, ['Documents/Заказ/Ext/ObjectModule.bsl']);
+      assert.deepStrictEqual(list, [
+        'Documents/Заказ/Ext/ObjectModule.bsl',
+      ]);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('collectConfigFiles для модуля формы возвращает только сам модуль', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v8-load-form-module-'));
+    try {
+      const formDir = path.join(tempRoot, 'Documents', 'Заказ', 'Forms', 'ФормаДокумента');
+      fs.mkdirSync(path.join(formDir, 'Ext', 'Form'), { recursive: true });
+      fs.writeFileSync(path.join(tempRoot, 'Documents', 'Заказ.xml'), '<xml/>', 'utf-8');
+      fs.writeFileSync(path.join(tempRoot, 'Documents', 'Заказ', 'Forms', 'ФормаДокумента.xml'), '<xml/>', 'utf-8');
+      fs.writeFileSync(path.join(formDir, 'Ext', 'Form.xml'), '<form/>', 'utf-8');
+      fs.writeFileSync(path.join(formDir, 'Ext', 'Form', 'Module.bsl'), 'Процедура Тест() КонецПроцедуры', 'utf-8');
+
+      const list = collectConfigFilesForLoad(tempRoot, ['Documents/Заказ/Forms/ФормаДокумента/Ext/Form/Module.bsl'], false);
+      assert.deepStrictEqual(list, [
+        'Documents/Заказ/Forms/ФормаДокумента/Ext/Form/Module.bsl',
+      ]);
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
