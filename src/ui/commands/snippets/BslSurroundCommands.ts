@@ -5,6 +5,14 @@ interface BslSurroundCommand {
   readonly snippetName: string;
 }
 
+interface BslRangeFormatter {
+  formatRange(
+    document: vscode.TextDocument,
+    range: vscode.Range,
+    options?: vscode.FormattingOptions,
+  ): Promise<boolean>;
+}
+
 const BSL_LANGUAGE_ID = 'bsl';
 
 const BSL_SURROUND_COMMANDS: readonly BslSurroundCommand[] = [
@@ -42,15 +50,61 @@ const BSL_SURROUND_COMMANDS: readonly BslSurroundCommand[] = [
   }
 ];
 
-export function registerBslSurroundCommands(context: vscode.ExtensionContext): void {
+export function registerBslSurroundCommands(
+  context: vscode.ExtensionContext,
+  getFormatter: () => BslRangeFormatter | undefined = () => undefined
+): void {
   for (const command of BSL_SURROUND_COMMANDS) {
     context.subscriptions.push(
       vscode.commands.registerCommand(command.id, async () => {
+        const beforeEditor = vscode.window.activeTextEditor;
+        const beforeDocument = beforeEditor?.document;
+        const beforeSelection = beforeEditor?.selection;
+        const beforeLineCount = beforeDocument?.lineCount ?? 0;
+
         await vscode.commands.executeCommand('editor.action.insertSnippet', {
           langId: BSL_LANGUAGE_ID,
           name: command.snippetName
         });
+
+        const afterEditor = vscode.window.activeTextEditor;
+        if (!beforeDocument || !beforeSelection || afterEditor?.document.uri.toString() !== beforeDocument.uri.toString()) {
+          return;
+        }
+
+        await waitForEditorUpdate();
+        const range = getChangedLineRange(beforeDocument, beforeSelection, beforeLineCount);
+        await getFormatter()?.formatRange(beforeDocument, range, getFormattingOptions(afterEditor));
       })
     );
   }
+}
+
+function getChangedLineRange(
+  document: vscode.TextDocument,
+  selection: vscode.Selection,
+  beforeLineCount: number
+): vscode.Range {
+  const addedLines = Math.max(0, document.lineCount - beforeLineCount);
+  const startLine = clampLine(document, selection.start.line);
+  const endLine = clampLine(document, Math.max(selection.end.line + addedLines, startLine));
+  return new vscode.Range(
+    new vscode.Position(startLine, 0),
+    document.lineAt(endLine).range.end
+  );
+}
+
+function clampLine(document: vscode.TextDocument, line: number): number {
+  return Math.max(0, Math.min(line, document.lineCount - 1));
+}
+
+function getFormattingOptions(editor: vscode.TextEditor): vscode.FormattingOptions {
+  return {
+    tabSize: typeof editor.options.tabSize === 'number' ? editor.options.tabSize : 4,
+    insertSpaces: typeof editor.options.insertSpaces === 'boolean' ? editor.options.insertSpaces : true,
+  };
+}
+
+function waitForEditorUpdate(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }

@@ -10,7 +10,7 @@ import { registerBslSurroundCommands } from './ui/commands/snippets/BslSurroundC
 let container: Container | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
-  registerBslSurroundCommands(context);
+  registerBslSurroundCommands(context, () => container?.lspManager);
 
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) {

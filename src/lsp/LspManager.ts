@@ -1,12 +1,19 @@
 import * as vscode from 'vscode';
 import {
   LanguageClient, type LanguageClientOptions, type ServerOptions,
-  ErrorAction, CloseAction, Trace,
+  ErrorAction, CloseAction, Trace, State,
+  DocumentFormattingRequest,
+  DocumentRangeFormattingRequest,
+  type TextEdit as LspTextEdit,
 } from 'vscode-languageclient/node';
 import { BslAnalyzerService } from './analyzer/BslAnalyzerService';
 import { BslAnalyzerStatusBar } from './analyzer/BslAnalyzerStatusBar';
 
 export type LspMode = 'bsl-analyzer' | 'off';
+
+const BSL_DOCUMENT_SELECTOR: { scheme: string; language: string }[] = [
+  { scheme: 'file', language: 'bsl' },
+];
 
 /**
  * Управляет жизненным циклом LSP-клиента.
@@ -140,7 +147,88 @@ export class LspManager implements vscode.Disposable {
     void this.stopClient();
   }
 
+  async formatRange(
+    document: vscode.TextDocument,
+    range: vscode.Range,
+    options?: vscode.FormattingOptions,
+  ): Promise<boolean> {
+    const tokenSource = new vscode.CancellationTokenSource();
+    try {
+      const edits = await this.provideDocumentRangeFormattingEdits(
+        document,
+        range,
+        options ?? getFormattingOptions(vscode.window.activeTextEditor),
+        tokenSource.token
+      );
+      if (edits.length === 0) {
+        return false;
+      }
+      const workspaceEdit = new vscode.WorkspaceEdit();
+      for (const edit of edits) {
+        workspaceEdit.replace(document.uri, edit.range, edit.newText);
+      }
+      return await vscode.workspace.applyEdit(workspaceEdit);
+    } finally {
+      tokenSource.dispose();
+    }
+  }
+
   // ── Приватные методы ────────────────────────────────────────────────────
+
+  private async provideDocumentFormattingEdits(
+    document: vscode.TextDocument,
+    options: vscode.FormattingOptions,
+    token: vscode.CancellationToken
+  ): Promise<vscode.TextEdit[]> {
+    const client = this.getRunningClient();
+    if (!client) {
+      return [];
+    }
+    try {
+      const result = await client.sendRequest(DocumentFormattingRequest.type, {
+        textDocument: { uri: document.uri.toString() },
+        options: toLspFormattingOptions(options),
+      }, token);
+      return toVscodeTextEdits(result ?? []);
+    } catch (err) {
+      this.logFormattingError('formatting', err);
+      return [];
+    }
+  }
+
+  private async provideDocumentRangeFormattingEdits(
+    document: vscode.TextDocument,
+    range: vscode.Range,
+    options: vscode.FormattingOptions,
+    token: vscode.CancellationToken
+  ): Promise<vscode.TextEdit[]> {
+    const client = this.getRunningClient();
+    if (!client) {
+      return [];
+    }
+    try {
+      const result = await client.sendRequest(DocumentRangeFormattingRequest.type, {
+        textDocument: { uri: document.uri.toString() },
+        range: toLspRange(range),
+        options: toLspFormattingOptions(options),
+      }, token);
+      return toVscodeTextEdits(result ?? []);
+    } catch (err) {
+      this.logFormattingError('rangeFormatting', err);
+      return [];
+    }
+  }
+
+  private getRunningClient(): LanguageClient | undefined {
+    return this.client?.state === State.Running && this.client.isRunning()
+      ? this.client
+      : undefined;
+  }
+
+  private logFormattingError(method: string, err: unknown): void {
+    const msg = err instanceof Error ? err.message : String(err);
+    this.outputChannel.appendLine(`[lsp] Ошибка ${method}: ${msg}`);
+  }
 
   private enqueueLifecycle(action: () => Promise<void>): Promise<void> {
     const next = this.lifecycleQueue.then(action, action);
@@ -180,9 +268,7 @@ export class LspManager implements vscode.Disposable {
     const MAX_CRASHES = 3;
 
     const clientOptions: LanguageClientOptions = {
-      documentSelector: [
-        { scheme: 'file', language: 'bsl' },
-      ],
+      documentSelector: BSL_DOCUMENT_SELECTOR,
       synchronize: {
         fileEvents: vscode.workspace.createFileSystemWatcher('**/*.bsl'),
       },
@@ -248,4 +334,48 @@ export class LspManager implements vscode.Disposable {
       this.outputChannel.show();
     }
   }
+}
+
+function getFormattingOptions(editor: vscode.TextEditor | undefined): vscode.FormattingOptions {
+  return {
+    tabSize: asNumber(editor?.options.tabSize, 4),
+    insertSpaces: asBoolean(editor?.options.insertSpaces, true),
+  };
+}
+
+function asNumber(value: string | number | undefined, fallback: number): number {
+  return typeof value === 'number' ? value : fallback;
+}
+
+function asBoolean(value: string | boolean | undefined, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function toLspFormattingOptions(options: vscode.FormattingOptions): { tabSize: number; insertSpaces: boolean } {
+  return {
+    tabSize: asNumber(options.tabSize, 4),
+    insertSpaces: options.insertSpaces,
+  };
+}
+
+function toLspRange(range: vscode.Range): {
+  start: { line: number; character: number };
+  end: { line: number; character: number };
+} {
+  return {
+    start: { line: range.start.line, character: range.start.character },
+    end: { line: range.end.line, character: range.end.character },
+  };
+}
+
+function toVscodeTextEdits(edits: readonly LspTextEdit[]): vscode.TextEdit[] {
+  return edits.map((edit) => vscode.TextEdit.replace(
+    new vscode.Range(
+      edit.range.start.line,
+      edit.range.start.character,
+      edit.range.end.line,
+      edit.range.end.character
+    ),
+    edit.newText
+  ));
 }
