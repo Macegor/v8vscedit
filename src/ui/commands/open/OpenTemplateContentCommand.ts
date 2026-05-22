@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { readTemplateTypeFromXml, resolveTextTemplateContentPath } from '../../../infra/xml';
+import { ensureTextTemplateContentPath, readTemplateTypeFromXml, resolveTextTemplateContentPath } from '../../../infra/xml';
 import { MetadataNode } from '../../tree/TreeNode';
 import type { CommandServices, NodeArg } from '../_shared';
 import { setEditorReadonly } from './OpenXmlCommand';
@@ -20,10 +20,13 @@ export function registerOpenTemplateContentCommand(
         return;
       }
 
-      const contentPath = resolveTextTemplateContentPath(node.xmlPath, getNodeLabel(node));
-      if (!contentPath) {
-        await vscode.window.showWarningMessage('Не найден файл содержимого текстового макета: Ext/Template.txt.');
-        return;
+      const templateName = getNodeLabel(node);
+      const existingContentPath = resolveTextTemplateContentPath(node.xmlPath, templateName);
+      const contentPath = existingContentPath ?? ensureTextTemplateContentPath(node.xmlPath, templateName);
+      if (!existingContentPath) {
+        services.suppressConfigurationReloadForFiles([contentPath]);
+        services.markChangedConfigurationByFiles([contentPath]);
+        services.refreshActionsView();
       }
 
       const editor = await vscode.window.showTextDocument(vscode.Uri.file(contentPath), {

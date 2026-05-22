@@ -291,7 +291,7 @@ function removeNamedChildFromObjectXml(
   childTag: ChildTag,
   name: string
 ): { changed: true; xml: string } | { changed: false; error: string } {
-  const block = findNamedChildBlock(xml, childTag, name);
+  const block = findNamedChildBlock(xml, childTag, name) ?? findSimpleChildReference(xml, childTag, name);
   if (!block) {
     return { changed: false, error: `Элемент "${name}" не найден.` };
   }
@@ -328,6 +328,12 @@ function findNamedChildBlock(xml: string, tag: string, name: string): { start: n
     }
   }
   return null;
+}
+
+function findSimpleChildReference(xml: string, tag: string, name: string): { start: number; end: number } | null {
+  const re = new RegExp(`<${tag}>\\s*${escapeRegExp(name)}\\s*<\\/${tag}>`, 'g');
+  const match = re.exec(xml);
+  return match ? { start: match.index, end: match.index + match[0].length } : null;
 }
 
 function hasOwnName(blockXml: string, name: string): boolean {

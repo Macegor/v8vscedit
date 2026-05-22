@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from 'vue';
+import { computed, nextTick, ref, watch, onUnmounted } from 'vue';
 import type { TreeNodeActionDto } from '@ui-shared/types/tree';
 
 const props = defineProps<{
@@ -15,6 +15,13 @@ const emit = defineEmits<{
 }>();
 
 const menuRef = ref<HTMLElement | null>(null);
+const menuPosition = ref({ x: 0, y: 0 });
+const maxHeight = ref<number | null>(null);
+
+const menuItems = computed(() => props.actions.map((action) => ({
+  label: action.label,
+  value: action.id,
+})));
 
 function onDocumentClick(event: MouseEvent): void {
   if (menuRef.value && !menuRef.value.contains(event.target as Node)) {
@@ -28,19 +35,73 @@ function onEscape(event: KeyboardEvent): void {
   }
 }
 
+function onSelect(event: CustomEvent<{ value: string }>): void {
+  const action = props.actions.find((item) => item.id === event.detail.value);
+  if (action && action.enabled !== false) {
+    emit('action', action);
+  }
+}
+
+async function updateMenuPosition(): Promise<void> {
+  menuPosition.value = { x: props.x, y: props.y };
+  maxHeight.value = null;
+  await nextTick();
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+
+  const menu = menuRef.value;
+  if (!menu) {
+    return;
+  }
+
+  const margin = 6;
+  const rect = menu.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const availableHeight = Math.max(48, viewportHeight - margin * 2);
+  let x = props.x;
+  let y = props.y;
+
+  if (rect.width > viewportWidth - margin * 2) {
+    x = margin;
+  } else if (x + rect.width > viewportWidth - margin) {
+    x = viewportWidth - rect.width - margin;
+  }
+  if (rect.height > availableHeight) {
+    maxHeight.value = availableHeight;
+    y = margin;
+  } else if (y + rect.height > viewportHeight - margin) {
+    y = viewportHeight - rect.height - margin;
+  }
+
+  menuPosition.value = {
+    x: Math.max(margin, x),
+    y: Math.max(margin, y),
+  };
+}
+
 watch(() => props.visible, (visible) => {
   if (visible) {
     document.addEventListener('click', onDocumentClick, true);
     document.addEventListener('keydown', onEscape);
+    window.addEventListener('resize', updateMenuPosition);
+    void updateMenuPosition();
   } else {
     document.removeEventListener('click', onDocumentClick, true);
     document.removeEventListener('keydown', onEscape);
+    window.removeEventListener('resize', updateMenuPosition);
+  }
+});
+
+watch(() => [props.x, props.y, props.actions.length], () => {
+  if (props.visible) {
+    void updateMenuPosition();
   }
 });
 
 onUnmounted(() => {
   document.removeEventListener('click', onDocumentClick, true);
   document.removeEventListener('keydown', onEscape);
+  window.removeEventListener('resize', updateMenuPosition);
 });
 </script>
 
@@ -49,54 +110,48 @@ onUnmounted(() => {
     <div
       v-if="visible"
       ref="menuRef"
-      class="context-menu"
-      :style="{ left: x + 'px', top: y + 'px' }"
-      role="menu"
+      class="context-menu-shell"
+      :style="{
+        left: menuPosition.x + 'px',
+        top: menuPosition.y + 'px',
+        maxHeight: maxHeight ? maxHeight + 'px' : undefined,
+      }"
     >
-      <button
-        v-for="action in actions"
-        :key="action.id"
-        class="context-menu-item"
-        role="menuitem"
-        :disabled="action.enabled === false"
-        @click="emit('action', action)"
-      >
-        <span class="context-menu-label">{{ action.label }}</span>
-      </button>
+      <vscode-context-menu
+        class="context-menu"
+        :data="menuItems"
+        :show="visible"
+        @vsc-context-menu-select="onSelect"
+      />
     </div>
   </Teleport>
 </template>
 
 <style scoped>
-.context-menu {
+.context-menu-shell {
   position: fixed;
-  background: var(--vscode-menu-background);
-  color: var(--vscode-menu-foreground);
-  border: 1px solid var(--vscode-menu-border);
-  border-radius: 4px;
-  padding: 4px 0;
-  min-width: 150px;
-  z-index: 1000;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 10000;
+  min-width: 180px;
+  max-width: min(360px, calc(100vw - 12px));
+  overflow: auto;
+  color-scheme: dark light;
 }
-.context-menu-item {
-  display: block;
-  width: 100%;
-  padding: 4px 16px;
-  background: transparent;
-  border: none;
-  color: var(--vscode-menu-foreground);
-  font-family: var(--vscode-font-family);
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
+
+.context-menu {
+  min-width: 100%;
+  --vscode-menu-border: var(--vscode-menu-border, var(--vscode-widget-border, var(--vscode-panel-border)));
+  --vscode-widget-shadow: rgba(0, 0, 0, 0.36);
 }
-.context-menu-item:hover {
-  background: var(--vscode-menu-selectionBackground);
-  color: var(--vscode-menu-selectionForeground);
+
+.context-menu-shell::-webkit-scrollbar {
+  width: 10px;
 }
-.context-menu-item:disabled {
-  opacity: 0.4;
-  cursor: default;
+
+.context-menu-shell::-webkit-scrollbar-thumb {
+  background: var(--vscode-scrollbarSlider-background);
+}
+
+.context-menu-shell::-webkit-scrollbar-thumb:hover {
+  background: var(--vscode-scrollbarSlider-hoverBackground);
 }
 </style>

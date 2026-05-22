@@ -89,6 +89,28 @@ suite('metadataXmlRemover', () => {
     assert.ok(!fs.existsSync(commandDir));
   });
 
+  test('удаляет макет с простой регистрацией в ChildObjects', () => {
+    const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-remove-cf-'));
+    fs.writeFileSync(path.join(configRoot, 'Configuration.xml'), buildConfigXml(), 'utf-8');
+    const creator = new MetadataXmlCreator();
+    assert.strictEqual(creator.addRootObject({ configRoot, kind: 'Catalog', name: 'Товары' }).success, true);
+    const xmlPath = path.join(configRoot, 'Catalogs', 'Товары.xml');
+    assert.strictEqual(creator.addChildElement({ ownerObjectXmlPath: xmlPath, childTag: 'Template', name: 'Печать' }).success, true);
+
+    const templateXml = path.join(configRoot, 'Catalogs', 'Товары', 'Templates', 'Печать.xml');
+    const templateDir = path.join(configRoot, 'Catalogs', 'Товары', 'Templates', 'Печать');
+    assert.ok(fs.existsSync(templateXml));
+    assert.ok(fs.existsSync(templateDir));
+
+    const remover = new MetadataXmlRemover();
+    const result = remover.removeChildElement({ ownerObjectXmlPath: xmlPath, childTag: 'Template', name: 'Печать' });
+
+    assert.strictEqual(result.success, true);
+    assert.ok(!fs.readFileSync(xmlPath, 'utf-8').includes('<Template>Печать</Template>'));
+    assert.ok(!fs.existsSync(templateXml));
+    assert.ok(!fs.existsSync(templateDir));
+  });
+
   test('удаляет только выбранный реквизит из нескольких однотипных элементов', () => {
     const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-remove-cf-'));
     fs.writeFileSync(path.join(configRoot, 'Configuration.xml'), buildConfigXml(), 'utf-8');

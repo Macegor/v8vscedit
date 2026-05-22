@@ -5,6 +5,7 @@ import * as path from 'path';
 import { ConfigurationChangeDetector } from '../../infra/fs/ConfigurationChangeDetector';
 import { MetadataXmlCreator } from '../../infra/xml/MetadataXmlCreator';
 import { ObjectXmlReader } from '../../infra/xml/ObjectXmlReader';
+import { ensureTextTemplateContentPath, resolveTextTemplateContentPath } from '../../infra/xml/TemplateXml';
 import {
   buildRootMetaObjectProperties,
   buildTypedFieldProperties,
@@ -93,10 +94,17 @@ suite('metadataXmlCreator', () => {
       name: 'Файл',
       templateType: 'BinaryData',
     });
+    const text = creator.addChildElement({
+      ownerObjectXmlPath: ownerXmlPath,
+      childTag: 'Template',
+      name: 'Текст',
+      templateType: 'TextDocument',
+    });
 
     assert.strictEqual(spreadsheet.success, true);
     assert.strictEqual(html.success, true);
     assert.strictEqual(binary.success, true);
+    assert.strictEqual(text.success, true);
 
     const templatesDir = path.join(configRoot, 'DataProcessors', 'Обработка', 'Templates');
     const ownerXml = fs.readFileSync(ownerXmlPath, 'utf-8');
@@ -110,6 +118,8 @@ suite('metadataXmlCreator', () => {
     assert.ok(fs.existsSync(path.join(templatesDir, 'Описание', 'Ext', 'Template.xml')));
     assert.ok(fs.existsSync(path.join(templatesDir, 'Описание', 'Ext', 'Template', 'ru.html')));
     assert.ok(fs.existsSync(path.join(templatesDir, 'Файл', 'Ext', 'Template.bin')));
+    assert.ok(fs.existsSync(path.join(templatesDir, 'Текст', 'Ext', 'Template.txt')));
+    assert.ok(fs.readFileSync(path.join(templatesDir, 'Текст.xml'), 'utf-8').includes('<TemplateType>TextDocument</TemplateType>'));
   });
 
   test('создаёт общий макет с выбранным типом', () => {
@@ -129,6 +139,31 @@ suite('metadataXmlCreator', () => {
     assert.ok(fs.readFileSync(xmlPath, 'utf-8').includes('<CommonTemplate'));
     assert.ok(fs.readFileSync(xmlPath, 'utf-8').includes('<TemplateType>TextDocument</TemplateType>'));
     assert.ok(fs.existsSync(path.join(configRoot, 'CommonTemplates', 'ФорматОбмена', 'Ext', 'Template.txt')));
+  });
+
+  test('создаёт файл текстового макета при ленивом открытии', () => {
+    const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-open-text-template-'));
+    fs.writeFileSync(path.join(configRoot, 'Configuration.xml'), buildConfigXml('2.21'), 'utf-8');
+
+    const creator = new MetadataXmlCreator();
+    assert.strictEqual(creator.addRootObject({ configRoot, kind: 'DataProcessor', name: 'Обработка' }).success, true);
+    const ownerXmlPath = path.join(configRoot, 'DataProcessors', 'Обработка.xml');
+    assert.strictEqual(creator.addChildElement({
+      ownerObjectXmlPath: ownerXmlPath,
+      childTag: 'Template',
+      name: 'Текст',
+      templateType: 'TextDocument',
+    }).success, true);
+
+    const templateXmlPath = path.join(configRoot, 'DataProcessors', 'Обработка', 'Templates', 'Текст.xml');
+    const templateDir = path.join(configRoot, 'DataProcessors', 'Обработка', 'Templates', 'Текст');
+    fs.rmSync(templateDir, { recursive: true, force: true });
+
+    assert.strictEqual(resolveTextTemplateContentPath(templateXmlPath, 'Текст'), null);
+    const contentPath = ensureTextTemplateContentPath(templateXmlPath, 'Текст');
+
+    assert.strictEqual(contentPath, path.join(templateDir, 'Ext', 'Template.txt'));
+    assert.ok(fs.existsSync(contentPath));
   });
 
   test('заполняет основной макет СКД отчёта при создании схемы компоновки', () => {

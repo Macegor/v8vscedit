@@ -26,13 +26,37 @@ export function readTemplateTypeFromXml(xmlPath: string): TemplateType | null {
 
 /** Находит реальный файл содержимого текстового макета без его создания. */
 export function resolveTextTemplateContentPath(templateXmlPath: string, templateName?: string): string | null {
+  return getTextTemplateContentCandidates(templateXmlPath, templateName)
+    .find((candidate) => fs.existsSync(candidate)) ?? null;
+}
+
+/** Возвращает существующий `Template.txt` или создаёт его в штатном каталоге макета. */
+export function ensureTextTemplateContentPath(templateXmlPath: string, templateName?: string): string {
+  const existing = resolveTextTemplateContentPath(templateXmlPath, templateName);
+  if (existing) {
+    return existing;
+  }
+
+  const contentPath = getDefaultTextTemplateContentPath(templateXmlPath, templateName);
+  fs.mkdirSync(path.dirname(contentPath), { recursive: true });
+  fs.writeFileSync(contentPath, '', 'utf-8');
+  return contentPath;
+}
+
+function getTextTemplateContentCandidates(templateXmlPath: string, templateName?: string): string[] {
   const templateDir = path.dirname(templateXmlPath);
   const baseName = path.basename(templateXmlPath, '.xml');
   const name = templateName && templateName.length > 0 ? templateName : baseName;
-  const candidates = [
+  return [
     path.join(templateDir, name, 'Ext', 'Template.txt'),
     path.join(templateDir, 'Ext', 'Template.txt'),
   ];
+}
 
-  return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
+function getDefaultTextTemplateContentPath(templateXmlPath: string, templateName?: string): string {
+  const candidates = getTextTemplateContentCandidates(templateXmlPath, templateName);
+  const templateDir = path.dirname(templateXmlPath);
+  const baseName = path.basename(templateXmlPath, '.xml');
+  const name = templateName && templateName.length > 0 ? templateName : baseName;
+  return path.basename(templateDir) === name && candidates[1] ? candidates[1] : candidates[0];
 }
