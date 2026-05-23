@@ -113,6 +113,40 @@ export const sessionParameterHandler: ObjectHandler = {
       });
     }
 
+    const byKey = new Set(props.map((property) => property.key));
+    if (!byKey.has('Name')) {
+      props.push({
+        key: 'Name',
+        title: 'Имя',
+        kind: 'string',
+        value: node.textLabel,
+      });
+    }
+    if (!byKey.has('Synonym')) {
+      props.push({
+        key: 'Synonym',
+        title: 'Синоним',
+        kind: 'localizedString',
+        value: { presentation: '', values: [] },
+      });
+    }
+    if (!byKey.has('Comment')) {
+      props.push({
+        key: 'Comment',
+        title: 'Комментарий',
+        kind: 'string',
+        value: '',
+      });
+    }
+    if (!byKey.has('Type')) {
+      props.push({
+        key: 'Type',
+        title: 'Тип',
+        kind: 'metadataType',
+        value: parseMetadataType(''),
+      });
+    }
+
     return props;
   },
 };

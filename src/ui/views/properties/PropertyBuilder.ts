@@ -74,8 +74,33 @@ const BOOLEAN_PROPERTY_TAGS = new Set([
   'IncludeHelpInContents',
   'Modality',
   'ModifiesData',
+  'Use',
+  'Predefined',
+  'Global',
+  'ClientManagedApplication',
+  'Server',
+  'ExternalConnection',
+  'ClientOrdinaryApplication',
+  'ServerCall',
+  'Privileged',
+  'SetForNewObjects',
+  'SetForAttributesByDefault',
+  'IndependentRightsOfChildObjects',
   'CheckUnique',
   'Autonumbering',
+  'Hierarchical',
+  'LimitLevelCount',
+  'FoldersOnTop',
+  'IncludeConfigurationExtensions',
+  'MainFilterOnPeriod',
+  'EnableTotalsSliceFirst',
+  'EnableTotalsSliceLast',
+  'EnableTotalsSplitting',
+  'Correspondence',
+  'CreateTaskInPrivilegedMode',
+  'Addressing',
+  'TaskNumberAutoPrefix',
+  'AutoOrderByCode',
   'DistributedInfoBase',
   'ThisNodeBelongsToExchangePlan',
   'SendData',
@@ -92,6 +117,41 @@ const BOOLEAN_PROPERTY_TAGS = new Set([
   'UpdateDataHistoryImmediatelyAfterWrite',
   'ExecuteAfterWriteDataHistoryVersionProcessing',
 ]);
+
+const ALWAYS_VISIBLE_STRING_PROPERTY_TAGS = new Set([
+  'MethodName',
+]);
+
+const DEFAULT_ENUM_PROPERTY_VALUES: Readonly<Record<string, string>> = {
+  CodeAllowedLength: 'Variable',
+  NumberAllowedLength: 'Variable',
+  CodeType: 'String',
+  NumberType: 'String',
+  CodeSeries: 'WholeCatalog',
+  NumberPeriodicity: 'Nonperiodical',
+  DefaultPresentation: 'AsDescription',
+  EditType: 'InDialog',
+  Posting: 'Allow',
+  RealTimePosting: 'Deny',
+  RegisterRecordsDeletion: 'AutoDelete',
+  RegisterRecordsWritingOnPost: 'WriteSelected',
+  SequenceFilling: 'AutoFill',
+  ChoiceMode: 'FromForm',
+  FormType: 'Managed',
+  Representation: 'Auto',
+  TemplateType: 'SpreadsheetDocument',
+  RegisterType: 'Balance',
+  InformationRegisterPeriodicity: 'Nonperiodical',
+  WriteMode: 'Independent',
+  ReturnValuesReuse: 'DontUse',
+  ReuseSessions: 'DontUse',
+  ParameterUseMode: 'Single',
+  OnMainServerUnavalableBehavior: 'Auto',
+  HierarchyType: 'HierarchyFoldersAndItems',
+  SubordinationUse: 'ToItems',
+  AutoUse: 'DontUse',
+  PredefinedDataUpdate: 'Auto',
+};
 
 const FILL_CHECKING_OPTIONS: EnumPropertyOption[] = [
   { value: 'DontCheck', label: 'Не проверять' },
@@ -631,6 +691,8 @@ const PROPERTY_TITLE_RU: Record<string, string> = {
   IncludeConfigurationExtensions: 'Включать расширения конфигурации',
   PredefinedDataUpdate: 'Обновление предопределённых данных',
   Predefined: 'Предопределённый',
+  Use: 'Использовать',
+  MethodName: 'Имя метода',
   ModifiesData: 'Изменяет данные',
   OnMainServerUnavalableBehavior: 'Поведение при недоступности основного сервера',
   Shortcut: 'Сочетание клавиш',
@@ -816,6 +878,269 @@ const ENUM_ROOT_META_PROPERTY_KEYS: string[] = [
   'ExtendedListPresentation',
   'Explanation',
   'ChoiceHistoryOnInput',
+];
+
+const DOCUMENT_NUMERATOR_ROOT_META_PROPERTY_KEYS: string[] = [
+  'Name',
+  'Synonym',
+  'Comment',
+  'NumberType',
+  'NumberLength',
+  'NumberAllowedLength',
+  'NumberPeriodicity',
+  'CheckUnique',
+];
+
+const REPORT_ROOT_META_PROPERTY_KEYS: string[] = [
+  'Name',
+  'Synonym',
+  'Comment',
+  'UseStandardCommands',
+  'DefaultForm',
+  'AuxiliaryForm',
+  'MainDataCompositionSchema',
+  'DefaultSettingsForm',
+  'AuxiliarySettingsForm',
+  'DefaultVariantForm',
+  'AuxiliaryVariantForm',
+  'VariantsStorage',
+  'SettingsStorage',
+  'IncludeHelpInContents',
+  'ExtendedPresentation',
+  'Explanation',
+];
+
+const DATA_PROCESSOR_ROOT_META_PROPERTY_KEYS: string[] = [
+  'Name',
+  'Synonym',
+  'Comment',
+  'UseStandardCommands',
+  'DefaultForm',
+  'AuxiliaryForm',
+  'IncludeHelpInContents',
+  'ExtendedPresentation',
+  'Explanation',
+];
+
+const DOCUMENT_JOURNAL_ROOT_META_PROPERTY_KEYS: string[] = [
+  'Name',
+  'Synonym',
+  'Comment',
+  'DefaultForm',
+  'AuxiliaryForm',
+  'UseStandardCommands',
+  'RegisteredDocuments',
+  'IncludeHelpInContents',
+  'ListPresentation',
+  'ExtendedListPresentation',
+  'Explanation',
+];
+
+const FILTER_CRITERION_ROOT_META_PROPERTY_KEYS: string[] = [
+  'Name',
+  'Synonym',
+  'Comment',
+  'Type',
+  'UseStandardCommands',
+  'Content',
+  'DefaultForm',
+  'AuxiliaryForm',
+  'ListPresentation',
+  'ExtendedListPresentation',
+  'Explanation',
+];
+
+/** Поля корня «Регламентное задание» */
+const SCHEDULED_JOB_ROOT_META_PROPERTY_KEYS: string[] = [
+  'Name',
+  'Synonym',
+  'Comment',
+  'MethodName',
+  'Description',
+  'Key',
+  'Use',
+  'Predefined',
+  'RestartCountOnFailure',
+  'RestartIntervalOnFailure',
+];
+
+const FUNCTIONAL_OPTION_ROOT_META_PROPERTY_KEYS: string[] = [
+  'Name',
+  'Synonym',
+  'Comment',
+  'Location',
+  'PrivilegedGetMode',
+  'Content',
+];
+
+const FUNCTIONAL_OPTIONS_PARAMETER_ROOT_META_PROPERTY_KEYS: string[] = [
+  'Name',
+  'Synonym',
+  'Comment',
+  'Use',
+];
+
+const SETTINGS_STORAGE_ROOT_META_PROPERTY_KEYS: string[] = [
+  'Name',
+  'Synonym',
+  'Comment',
+  'DefaultSaveForm',
+  'DefaultLoadForm',
+  'AuxiliarySaveForm',
+  'AuxiliaryLoadForm',
+];
+
+const COMMAND_GROUP_ROOT_META_PROPERTY_KEYS: string[] = [
+  'Name',
+  'Synonym',
+  'Comment',
+  'Representation',
+  'ToolTip',
+  'Picture',
+  'Category',
+];
+
+const COMMON_FORM_ROOT_META_PROPERTY_KEYS: string[] = [
+  'Name',
+  'Synonym',
+  'Comment',
+  'FormType',
+  'IncludeHelpInContents',
+  'UsePurposes',
+  'UseInInterfaceCompatibilityMode',
+  'UseStandardCommands',
+  'ExtendedPresentation',
+  'Explanation',
+];
+
+const COMMON_PICTURE_ROOT_META_PROPERTY_KEYS: string[] = [
+  'Name',
+  'Synonym',
+  'Comment',
+  'AvailabilityForChoice',
+  'AvailabilityForAppearance',
+];
+
+const XDTO_PACKAGE_ROOT_META_PROPERTY_KEYS: string[] = [
+  'Name',
+  'Synonym',
+  'Comment',
+  'Namespace',
+];
+
+const WEB_SERVICE_ROOT_META_PROPERTY_KEYS: string[] = [
+  'Name',
+  'Synonym',
+  'Comment',
+  'Namespace',
+  'XDTOPackages',
+  'DescriptorFileName',
+  'ReuseSessions',
+  'SessionMaxAge',
+];
+
+const HTTP_SERVICE_ROOT_META_PROPERTY_KEYS: string[] = [
+  'Name',
+  'Synonym',
+  'Comment',
+  'RootURL',
+  'ReuseSessions',
+  'SessionMaxAge',
+];
+
+const WS_REFERENCE_ROOT_META_PROPERTY_KEYS: string[] = [
+  'Name',
+  'Synonym',
+  'Comment',
+  'LocationURL',
+];
+
+const INTEGRATION_SERVICE_ROOT_META_PROPERTY_KEYS: string[] = [
+  'Name',
+  'Synonym',
+  'Comment',
+  'ExternalIntegrationServiceAddress',
+];
+
+const STYLE_ROOT_META_PROPERTY_KEYS: string[] = ['Name', 'Synonym', 'Comment'];
+
+const LANGUAGE_ROOT_META_PROPERTY_KEYS: string[] = [
+  'Name',
+  'Synonym',
+  'Comment',
+  'LanguageCode',
+];
+
+const STYLE_ITEM_ROOT_META_PROPERTY_KEYS: string[] = [
+  'Name',
+  'Synonym',
+  'Comment',
+  'Type',
+  'Value',
+];
+
+const INFORMATION_REGISTER_ROOT_META_PROPERTY_KEYS: string[] = [
+  'Name',
+  'Synonym',
+  'Comment',
+  'UseStandardCommands',
+  'EditType',
+  'DefaultRecordForm',
+  'DefaultListForm',
+  'AuxiliaryRecordForm',
+  'AuxiliaryListForm',
+  'InformationRegisterPeriodicity',
+  'WriteMode',
+  'MainFilterOnPeriod',
+  'IncludeHelpInContents',
+  'DataLockControlMode',
+  'FullTextSearch',
+  'EnableTotalsSliceFirst',
+  'EnableTotalsSliceLast',
+  'RecordPresentation',
+  'ExtendedRecordPresentation',
+  'ListPresentation',
+  'ExtendedListPresentation',
+  'Explanation',
+  'DataHistory',
+  'UpdateDataHistoryImmediatelyAfterWrite',
+  'ExecuteAfterWriteDataHistoryVersionProcessing',
+];
+
+const ACCUMULATION_REGISTER_ROOT_META_PROPERTY_KEYS: string[] = [
+  'Name',
+  'Synonym',
+  'Comment',
+  'UseStandardCommands',
+  'DefaultListForm',
+  'AuxiliaryListForm',
+  'RegisterType',
+  'IncludeHelpInContents',
+  'DataLockControlMode',
+  'FullTextSearch',
+  'EnableTotalsSplitting',
+  'ListPresentation',
+  'ExtendedListPresentation',
+  'Explanation',
+];
+
+const ACCOUNTING_REGISTER_ROOT_META_PROPERTY_KEYS: string[] = [
+  'Name',
+  'Synonym',
+  'Comment',
+  'UseStandardCommands',
+  'IncludeHelpInContents',
+  'ChartOfAccounts',
+  'Correspondence',
+  'PeriodAdjustmentLength',
+  'DefaultListForm',
+  'AuxiliaryListForm',
+  'DataLockControlMode',
+  'EnableTotalsSplitting',
+  'FullTextSearch',
+  'ListPresentation',
+  'ExtendedListPresentation',
+  'Explanation',
 ];
 
 /** Дополнительные поля корня «План обмена» */
@@ -1030,6 +1355,109 @@ export function getRootPropertyKeyOrder(rootMetaKind: NodeKind): string[] {
   if (rootMetaKind === 'CommonCommand') {
     return COMMAND_PROPERTY_KEYS;
   }
+  if (rootMetaKind === 'ScheduledJob') {
+    return SCHEDULED_JOB_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'DocumentNumerator' || rootMetaKind === 'Sequence') {
+    return DOCUMENT_NUMERATOR_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'Report') {
+    return REPORT_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'DataProcessor') {
+    return DATA_PROCESSOR_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'DocumentJournal') {
+    return DOCUMENT_JOURNAL_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'FilterCriterion') {
+    return FILTER_CRITERION_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'FunctionalOption') {
+    return FUNCTIONAL_OPTION_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'FunctionalOptionsParameter') {
+    return FUNCTIONAL_OPTIONS_PARAMETER_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'SettingsStorage') {
+    return SETTINGS_STORAGE_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'CommandGroup') {
+    return COMMAND_GROUP_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'CommonForm') {
+    return COMMON_FORM_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'CommonPicture') {
+    return COMMON_PICTURE_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'CommonTemplate') {
+    return TEMPLATE_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'XDTOPackage') {
+    return XDTO_PACKAGE_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'WebService') {
+    return WEB_SERVICE_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'HTTPService') {
+    return HTTP_SERVICE_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'WSReference' || rootMetaKind === 'WebSocketClient') {
+    return WS_REFERENCE_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'IntegrationService') {
+    return INTEGRATION_SERVICE_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'Style') {
+    return STYLE_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'Language') {
+    return LANGUAGE_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'StyleItem' || rootMetaKind === 'PaletteColor') {
+    return STYLE_ITEM_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'InformationRegister' || rootMetaKind === 'CalculationRegister') {
+    return INFORMATION_REGISTER_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'AccumulationRegister') {
+    return ACCUMULATION_REGISTER_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'AccountingRegister') {
+    return ACCOUNTING_REGISTER_ROOT_META_PROPERTY_KEYS;
+  }
+  if (rootMetaKind === 'BusinessProcess') {
+    return mergePropertyKeys(COMMON_ROOT_META_PROPERTY_KEYS, DOCUMENT_ROOT_EXTRA_KEYS, ['Task', 'CreateTaskInPrivilegedMode']);
+  }
+  if (rootMetaKind === 'Task') {
+    return mergePropertyKeys(COMMON_ROOT_META_PROPERTY_KEYS, DOCUMENT_ROOT_EXTRA_KEYS, [
+      'TaskNumberAutoPrefix',
+      'DescriptionLength',
+      'Addressing',
+      'MainAddressingAttribute',
+      'CurrentPerformer',
+    ]);
+  }
+  if (rootMetaKind === 'ChartOfCharacteristicTypes') {
+    return mergePropertyKeys(CATALOG_ROOT_META_PROPERTY_KEYS, ['CharacteristicExtValues', 'Type']);
+  }
+  if (rootMetaKind === 'ChartOfAccounts') {
+    return mergePropertyKeys(CATALOG_ROOT_META_PROPERTY_KEYS, [
+      'ExtDimensionTypes',
+      'MaxExtDimensionCount',
+      'CodeMask',
+      'AutoOrderByCode',
+      'OrderLength',
+    ]);
+  }
+  if (rootMetaKind === 'ChartOfCalculationTypes') {
+    return mergePropertyKeys(CATALOG_ROOT_META_PROPERTY_KEYS, [
+      'DependenceOnCalculationTypes',
+      'BaseCalculationTypes',
+      'ActionPeriodUse',
+    ]);
+  }
   return COMMON_ROOT_META_PROPERTY_KEYS;
 }
 
@@ -1131,9 +1559,16 @@ function tryBuildScalarStringPropertyItem(params: {
   propsInner: string;
   simple: string | undefined;
   complexInner: string | undefined;
+  showMissing?: boolean;
 }): ObjectPropertyItem | null {
-  const { key, propsInner, simple, complexInner } = params;
-  if (simple === undefined && complexInner === undefined && !hasSelfClosingProperty(propsInner, key)) {
+  const { key, propsInner, simple, complexInner, showMissing } = params;
+  if (
+    simple === undefined &&
+    complexInner === undefined &&
+    !hasSelfClosingProperty(propsInner, key) &&
+    !ALWAYS_VISIBLE_STRING_PROPERTY_TAGS.has(key) &&
+    showMissing !== true
+  ) {
     return null;
   }
   return {
@@ -1156,7 +1591,7 @@ function tryBuildScalarStringPropertyItem(params: {
 export function buildPropertyItemsForKeys(
   xmlOrPropertiesInner: string,
   orderedKeys: string[],
-  options?: { elementXmlForType?: string }
+  options?: { elementXmlForType?: string; showMissingKeys?: boolean }
 ): ObjectPropertiesCollection {
   const propsInner = extractPropertiesInnerFromElement(xmlOrPropertiesInner) ?? xmlOrPropertiesInner;
   const typeSource = options?.elementXmlForType ?? xmlOrPropertiesInner;
@@ -1168,7 +1603,7 @@ export function buildPropertyItemsForKeys(
   for (const key of orderedKeys) {
     if (TYPE_PROPERTY_TAGS.has(key)) {
       const typeInner = extractTypePropertyInner(typeSource.includes('<Properties>') ? typeSource : propsInner, key);
-      if (!typeInner && !propsInner.includes(`<${key}`)) {
+      if (!typeInner && !propsInner.includes(`<${key}`) && options?.showMissingKeys !== true) {
         continue;
       }
       items.push({
@@ -1195,7 +1630,7 @@ export function buildPropertyItemsForKeys(
 
     if (LOCALIZED_PROPERTY_TAGS.has(key)) {
       const loc = extractLocalizedStringValue(propsInner, key);
-      if (!loc.presentation && loc.values.length === 0 && !propsInner.includes(`<${key}`)) {
+      if (!loc.presentation && loc.values.length === 0 && !propsInner.includes(`<${key}`) && options?.showMissingKeys !== true) {
         continue;
       }
       items.push({
@@ -1220,7 +1655,7 @@ export function buildPropertyItemsForKeys(
     }
 
     if (key === 'InputByString' || key === 'DataLockFields') {
-      if (!propsInner.includes(`<${key}`)) {
+      if (!propsInner.includes(`<${key}`) && options?.showMissingKeys !== true) {
         continue;
       }
       items.push({
@@ -1233,7 +1668,7 @@ export function buildPropertyItemsForKeys(
     }
 
     if (key === 'BasedOn') {
-      if (!propsInner.includes('<BasedOn')) {
+      if (!propsInner.includes('<BasedOn') && options?.showMissingKeys !== true) {
         continue;
       }
       items.push({
@@ -1261,10 +1696,10 @@ export function buildPropertyItemsForKeys(
 
     const enumOptions = ENUM_PROPERTY_OPTIONS[key] as readonly EnumPropertyOption[] | undefined;
     if (enumOptions) {
-      if (!propsInner.includes(`<${key}>`)) {
+      if (!propsInner.includes(`<${key}>`) && options?.showMissingKeys !== true) {
         continue;
       }
-      const current = coalesceSimpleTagText(rawSimpleValue);
+      const current = coalesceSimpleTagText(rawSimpleValue) || DEFAULT_ENUM_PROPERTY_VALUES[key] || enumOptions[0]?.value || '';
       items.push({
         key,
         title: propertyTitle(key),
@@ -1279,6 +1714,7 @@ export function buildPropertyItemsForKeys(
       propsInner,
       simple: rawSimpleValue,
       complexInner: childrenByTag.get(key),
+      showMissing: options?.showMissingKeys === true,
     });
     if (!scalarString) {
       continue;
@@ -1302,6 +1738,7 @@ export function buildEffectivePropertyItemsForKeys(
     inheritedElementXmlForType?: string;
     includeExtraKeys?: boolean;
     excludeExtraKey?: (key: string) => boolean;
+    showMissingKeys?: boolean;
   }
 ): ObjectPropertiesCollection {
   const localEffectiveKeys = options?.includeExtraKeys
@@ -1311,6 +1748,7 @@ export function buildEffectivePropertyItemsForKeys(
   if (!inheritedXmlOrPropertiesInner) {
     return buildPropertyItemsForKeys(localXmlOrPropertiesInner, localEffectiveKeys, {
       elementXmlForType: options?.elementXmlForType,
+      showMissingKeys: options?.showMissingKeys,
     }).map(markLocal);
   }
 
@@ -1324,9 +1762,11 @@ export function buildEffectivePropertyItemsForKeys(
 
   const localItems = buildPropertyItemsForKeys(localXmlOrPropertiesInner, effectiveKeys, {
     elementXmlForType: options?.elementXmlForType,
+    showMissingKeys: options?.showMissingKeys,
   });
   const inheritedItems = buildPropertyItemsForKeys(inheritedXmlOrPropertiesInner, effectiveKeys, {
     elementXmlForType: options?.inheritedElementXmlForType ?? inheritedXmlOrPropertiesInner,
+    showMissingKeys: options?.showMissingKeys,
   });
 
   const localByKey = new Map(localItems.map((item) => [item.key, item]));
@@ -1375,8 +1815,23 @@ export function buildRootMetaObjectProperties(
     : null;
   const properties = buildEffectivePropertyItemsForKeys(inner, inheritedInner, getRootPropertyKeyOrder(rootMetaKind), {
     includeExtraKeys: true,
+    showMissingKeys: hasExplicitRootPropertyContract(rootMetaKind),
   });
   return rootMetaKind === 'Catalog' ? applyCatalogPropertySections(properties) : properties;
+}
+
+function hasExplicitRootPropertyContract(rootMetaKind: NodeKind): boolean {
+  return rootMetaKind !== 'Subsystem'
+    && rootMetaKind !== 'CommonModule'
+    && rootMetaKind !== 'Role'
+    && rootMetaKind !== 'EventSubscription'
+    && rootMetaKind !== 'configuration'
+    && rootMetaKind !== 'extension'
+    && rootMetaKind !== 'extensions-root'
+    && rootMetaKind !== 'group-common'
+    && rootMetaKind !== 'group-type'
+    && rootMetaKind !== 'NumeratorsBranch'
+    && rootMetaKind !== 'SequencesBranch';
 }
 
 function applyCatalogPropertySections(properties: ObjectPropertiesCollection): ObjectPropertiesCollection {
@@ -1411,6 +1866,7 @@ export function buildTypeAwareRootProperties(
       inheritedElementXmlForType: inheritedElementFullXml ?? undefined,
       includeExtraKeys: true,
       excludeExtraKey: isTypedFieldControlledPropertyKey,
+      showMissingKeys: true,
     }
   );
 }
@@ -1520,6 +1976,7 @@ export function buildTypedFieldProperties(
     inheritedElementXmlForType: inheritedElementFullXml ?? undefined,
     includeExtraKeys: true,
     excludeExtraKey: isTypedFieldControlledPropertyKey,
+    showMissingKeys: true,
   });
 }
 
@@ -1582,6 +2039,7 @@ export function buildStandardAttributeProperties(
   const inherited = inheritedElementXml ? normalizeStandardAttributeElementXml(inheritedElementXml) : null;
   return buildEffectivePropertyItemsForKeys(local, inherited, STANDARD_ATTRIBUTE_PROPERTY_KEYS, {
     includeExtraKeys: true,
+    showMissingKeys: true,
   });
 }
 
@@ -1604,15 +2062,25 @@ function escapeXmlText(value: string): string {
 }
 
 function getTypedFieldPropertyKeyOrder(elementFullXml: string): string[] {
-  const tag = extractOpeningTagName(elementFullXml);
+  const openingTag = extractOpeningTagName(elementFullXml);
+  const tag = openingTag ? stripXmlTagNamespacePrefix(openingTag) : '';
   const typeInner = summarizeTypeBlock(elementFullXml);
   if (
     typeInner &&
-    (tag === 'Attribute' || tag === 'AddressingAttribute' || tag === 'Dimension' || tag === 'Resource')
+    (tag === 'Attribute' || tag === 'AddressingAttribute' || tag === 'Dimension' || tag === 'Resource' || tag === 'Column')
   ) {
-    return ['Name', 'Synonym', 'Comment', 'Type', ...getTypedFieldPropertyKeys(tag, typeInner)];
+    return ['Name', 'Synonym', 'Comment', 'Type', ...getTypedFieldPropertyKeys(toTypedFieldOwnerKind(tag), typeInner)];
   }
   return TYPED_FIELD_PROPERTY_KEYS;
+}
+
+function stripXmlTagNamespacePrefix(tagName: string): string {
+  const colon = tagName.indexOf(':');
+  return colon >= 0 ? tagName.slice(colon + 1) : tagName;
+}
+
+function toTypedFieldOwnerKind(tagName: 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column'): TypeAwarePropertyOwnerKind {
+  return tagName === 'Column' ? 'Attribute' : tagName;
 }
 
 function getTypeAwarePropertyKeyOrder(elementFullXml: string, kind: TypeAwarePropertyOwnerKind): string[] {
@@ -1629,24 +2097,28 @@ export function buildTabularSectionProperties(
 ): ObjectPropertiesCollection {
   return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, TABULAR_SECTION_PROPERTY_KEYS, {
     includeExtraKeys: true,
+    showMissingKeys: true,
   });
 }
 
 export function buildFormLikeProperties(elementFullXml: string, inheritedElementFullXml?: string | null): ObjectPropertiesCollection {
   return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, FORM_PROPERTY_KEYS, {
     includeExtraKeys: true,
+    showMissingKeys: true,
   });
 }
 
 export function buildCommandProperties(elementFullXml: string, inheritedElementFullXml?: string | null): ObjectPropertiesCollection {
   return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, COMMAND_PROPERTY_KEYS, {
     includeExtraKeys: true,
+    showMissingKeys: true,
   });
 }
 
 export function buildEnumValueProperties(elementFullXml: string, inheritedElementFullXml?: string | null): ObjectPropertiesCollection {
   return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, ENUM_VALUE_PROPERTY_KEYS, {
     includeExtraKeys: true,
+    showMissingKeys: true,
   });
 }
 
@@ -1656,6 +2128,7 @@ const TEMPLATE_META_PROPERTY_KEYS: string[] = ['Name', 'Synonym', 'Comment', 'Te
 export function buildTemplateMetaProperties(elementFullXml: string, inheritedElementFullXml?: string | null): ObjectPropertiesCollection {
   return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, TEMPLATE_META_PROPERTY_KEYS, {
     includeExtraKeys: true,
+    showMissingKeys: true,
   });
 }
 

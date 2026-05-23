@@ -297,6 +297,7 @@ Python-скрипты из `.codex/skills` и не через прямую пр�
 - `v8vscedit_subsystem_info` — возвращает структуру подсистемы: свойства, Content, дочерние подсистемы, дерево и CommandInterface.xml.
 - `v8vscedit_validate_subsystem` — валидирует XML подсистемы: обязательные свойства, UUID, Content, ChildObjects, дочерние файлы и CommandInterface.xml.
 - `v8vscedit_compile_subsystem` — создаёт подсистему из JSON DSL через `SubsystemToolsService`, пишет `Subsystems/<Имя>.xml` и регистрирует её в `Configuration.xml` или родительской подсистеме.
+- `v8vscedit_edit_subsystem_content` — точечно добавляет и удаляет объекты из `Content` подсистемы по предметному пути подсистемы; принимает ссылки или предметные пути объектов.
 - `v8vscedit_edit_command_interface` — редактирует `CommandInterface.xml` через `CommandInterfaceService`: hide/show/place/order/subsystem-order/group-order.
 - `v8vscedit_validate_command_interface` — валидирует `CommandInterface.xml`: разделы, порядок, дубли, ссылки команд и списки подсистем/групп.
 - `v8vscedit_mxl_info` — возвращает сводку табличного документа: области, параметры, текст, объединения и статистику через `MxlTemplateService`.

@@ -1,4 +1,4 @@
-import type { ConfigurationXmlEditor } from '../../infra/xml';
+import type { ConfigurationXmlEditor, SubsystemPropertyKey, SubsystemXmlService } from '../../infra/xml';
 import type {
   EnumPropertyOption,
   EnumPropertyValue,
@@ -72,6 +72,12 @@ export interface McpTypeGroup {
   readonly items: readonly McpTypeOption[];
 }
 
+const SPECIALIZED_PROPERTY_KEYS = new Set([
+  'FillValue',
+  'MinValue',
+  'MaxValue',
+]);
+
 /**
  * Контракт и запись простых свойств для MCP.
  * Перед изменением всегда строится фактическое свойство выбранного узла,
@@ -81,7 +87,10 @@ export interface McpTypeGroup {
 export class McpPropertyService {
   private readonly typeRegistry = new TypeRegistryService();
 
-  constructor(private readonly xmlEditor: ConfigurationXmlEditor) {}
+  constructor(
+    private readonly xmlEditor: ConfigurationXmlEditor,
+    private readonly subsystemXmlService?: SubsystemXmlService
+  ) {}
 
   getPropertyContracts(node: MetadataNode): McpPropertyContract[] {
     return this.getEditableProperties(node).map((property) => this.buildPropertyContract(node, property));
@@ -146,7 +155,7 @@ export class McpPropertyService {
         ? (property.value as MultiEnumPropertyValue).allowedValues
         : undefined;
 
-    const supportedBySetProperty = (
+    const supportedBySetProperty = !SPECIALIZED_PROPERTY_KEYS.has(property.key) && (
       property.kind === 'string' ||
       property.kind === 'boolean' ||
       property.kind === 'enum' ||
@@ -156,6 +165,8 @@ export class McpPropertyService {
 
     const notes = supportedBySetProperty
       ? []
+      : SPECIALIZED_PROPERTY_KEYS.has(property.key)
+        ? ['Свойство хранит типизированное XML-значение; запись простой строкой через set_property запрещена.']
       : property.key === 'Name' && this.isRootRename(node)
         ? ['Переименование корневого объекта выполняется отдельным инструментом, чтобы обновить файл, ссылки и кэш дерева.']
         : ['Для этого свойства нужен специализированный инструмент с дополнительным контрактом значения.'];
@@ -181,11 +192,26 @@ export class McpPropertyService {
     if (property.readonly) {
       throw new Error(`Свойство "${propertyKey}" доступно только для чтения.`);
     }
+    if (SPECIALIZED_PROPERTY_KEYS.has(property.key)) {
+      throw new Error(`Свойство "${propertyKey}" требует специализированного инструмента.`);
+    }
     if (property.key === 'Name' && this.isRootRename(node)) {
       throw new Error('Переименование корневого объекта через set_property запрещено: нужен отдельный инструмент.');
     }
 
     const normalized = this.normalizeInput(property, value);
+    if (node.nodeKind === 'Subsystem') {
+      if (!node.xmlPath || !this.subsystemXmlService) {
+        throw new Error(`Для узла "${node.textLabel}" изменение свойств не поддерживается.`);
+      }
+      const changed = this.subsystemXmlService.updateProperty(
+        node.xmlPath,
+        property.key as SubsystemPropertyKey,
+        Array.isArray(normalized) ? normalized.join(', ') : normalized
+      );
+      return this.toMutationResult(true, changed, property.key, changed ? [node.xmlPath] : [], []);
+    }
+
     if (node.nodeKind === 'configuration' || node.nodeKind === 'extension') {
       if (property.kind === 'multiEnum' && !Array.isArray(normalized)) {
         throw new Error(`Свойство "${propertyKey}" ожидает массив строк.`);
@@ -229,7 +255,7 @@ export class McpPropertyService {
       tabularSectionName: target.tabularSectionName,
       propertyKey: property.key,
       valueKind,
-      value: typeof normalized === 'string' ? toCanonicalPropertyInput(normalized) : normalized,
+      value: typeof normalized === 'string' ? this.toCanonicalObjectPropertyInput(property.key, normalized) : normalized,
     });
     return this.toMutationResult(saved.success, saved.changed, property.key, saved.changedFiles, saved.errors);
   }
@@ -381,6 +407,13 @@ export class McpPropertyService {
     return Boolean(target && isRootObjectNode(node, target));
   }
 
+  private toCanonicalObjectPropertyInput(propertyKey: string, value: string): string {
+    if (propertyKey === 'MethodName') {
+      return normalizeMethodName(value);
+    }
+    return toCanonicalPropertyInput(value);
+  }
+
   private toMutationResult(
     success: boolean,
     changed: boolean,
@@ -473,6 +506,27 @@ function normalizePropertyKey(value: string): string {
     [normalizeForCompare('Тип параметра команды')]: 'CommandParameterType',
   };
   return known[normalized] ?? value;
+}
+
+function normalizeMethodName(value: string): string {
+  const trimmed = value.trim();
+  const segments = trimmed.split('.').map((segment) => segment.trim()).filter((segment) => segment.length > 0);
+  if (segments.length === 2) {
+    return `CommonModule.${segments[0]}.${segments[1]}`;
+  }
+  if (segments.length !== 3) {
+    return trimmed;
+  }
+  const normalizedType = normalizeForCompare(segments[0]);
+  if (
+    normalizedType === normalizeForCompare('CommonModule') ||
+    normalizedType === normalizeForCompare('CommonModules') ||
+    normalizedType === normalizeForCompare('ОбщийМодуль') ||
+    normalizedType === normalizeForCompare('ОбщиеМодули')
+  ) {
+    return `CommonModule.${segments[1]}.${segments[2]}`;
+  }
+  return toCanonicalPropertyInput(trimmed);
 }
 
 function toRussianTypeAlias(canonical: string): string {

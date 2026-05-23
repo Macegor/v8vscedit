@@ -169,32 +169,27 @@ export function buildEventSubscriptionProperties(
     }
   }
 
-  if (childrenByTag.has('Source')) {
-    result.push({
-      key: 'Source',
-      title: 'Источник',
-      kind: 'metadataType',
-      value: sourceType,
-    });
-  }
+  result.push({
+    key: 'Source',
+    title: 'Источник',
+    kind: 'metadataType',
+    value: sourceType,
+  });
 
-  if (childrenByTag.has('Event')) {
-    result.push({
-      key: 'Event',
-      title: propertyTitle('Event'),
-      kind: 'enum',
-      value: buildEventValue(event, getEventOptionsForSource(sourceType, sourceXmlPath)),
-    });
-  }
+  result.push({
+    key: 'Event',
+    title: propertyTitle('Event'),
+    kind: 'enum',
+    value: buildEventValue(event, getEventOptionsForSource(sourceType, sourceXmlPath)),
+  });
 
-  if (childrenByTag.has('Handler') || childrenByTag.has('ProcedureName')) {
-    result.push({
-      key: childrenByTag.has('Handler') ? 'Handler' : 'ProcedureName',
-      title: propertyTitle(childrenByTag.has('Handler') ? 'Handler' : 'ProcedureName'),
-      kind: 'string',
-      value: handler,
-    });
-  }
+  const handlerKey = childrenByTag.has('ProcedureName') && !childrenByTag.has('Handler') ? 'ProcedureName' : 'Handler';
+  result.push({
+    key: handlerKey,
+    title: propertyTitle(handlerKey),
+    kind: 'string',
+    value: handler,
+  });
 
   if (childrenByTag.has('SuppressObject')) {
     const suppressObject = stripXmlText(childrenByTag.get('SuppressObject') ?? '');

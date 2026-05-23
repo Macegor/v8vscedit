@@ -359,6 +359,8 @@ function buildRootProperties(kind: MetaKind, name: string, templateType?: Templa
       return [...base, buildStringType('\t\t\t')].join('\n');
     case 'CommonModule':
       return [...base, '\t\t\t<Global>false</Global>', '\t\t\t<ClientManagedApplication>true</ClientManagedApplication>', '\t\t\t<Server>true</Server>'].join('\n');
+    case 'ScheduledJob':
+      return [...base, '\t\t\t<MethodName/>', '\t\t\t<Use>false</Use>', '\t\t\t<Predefined>false</Predefined>'].join('\n');
     case 'InformationRegister':
       return [...base, '\t\t\t<Periodicity>Nonperiodical</Periodicity>', '\t\t\t<WriteMode>Independent</WriteMode>'].join('\n');
     case 'AccumulationRegister':

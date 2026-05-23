@@ -541,6 +541,29 @@ export class McpMetadataPathService {
     objectAliases: readonly string[],
     result: IndexedNode[]
   ): void {
+    if (objectNode.nodeKind === 'Subsystem') {
+      for (const child of objectNode.childrenLoader?.() ?? []) {
+        if (child.nodeKind !== 'Subsystem' || !child.xmlPath) {
+          continue;
+        }
+        const childPath = `${objectPath}.${child.textLabel}`;
+        const childAliases = uniqueNonEmpty([
+          childPath,
+          `${objectPath}.Subsystem.${child.textLabel}`,
+          ...objectAliases.map((alias) => `${alias}.${child.textLabel}`),
+          ...objectAliases.map((alias) => `${alias}.Subsystem.${child.textLabel}`),
+        ]);
+        result.push({
+          node: child,
+          root,
+          logicalPath: childPath,
+          aliases: childAliases,
+        });
+        this.collectObjectChildren(root, child, childPath, childAliases, result);
+      }
+      return;
+    }
+
     for (const group of objectNode.childrenLoader?.() ?? []) {
       const rawGroupTag = group.addMetadataTarget?.kind === 'child'
         ? group.addMetadataTarget.childTag

@@ -86,7 +86,7 @@ const ROLE_DEFINITIONS: readonly AiRoleDefinition[] = [
       '- `form-*` -> `v8vscedit_form_info`, `v8vscedit_validate_form`, `v8vscedit_add_form`, `v8vscedit_remove_form`, `v8vscedit_compile_form`, `v8vscedit_edit_form`.',
       '- `skd-*` -> `v8vscedit_skd_info`, `v8vscedit_validate_skd`, `v8vscedit_compile_skd`, `v8vscedit_edit_skd`.',
       '- `mxl-*`, `template-*` -> `v8vscedit_mxl_info`, `v8vscedit_validate_mxl`, `v8vscedit_compile_mxl`, `v8vscedit_decompile_mxl`.',
-      '- `subsystem-*`, `interface-*` -> `v8vscedit_subsystem_info`, `v8vscedit_validate_subsystem`, `v8vscedit_compile_subsystem`, `v8vscedit_edit_command_interface`, `v8vscedit_validate_command_interface`.',
+      '- `subsystem-*`, `interface-*` -> `v8vscedit_subsystem_info`, `v8vscedit_validate_subsystem`, `v8vscedit_compile_subsystem`, `v8vscedit_get_properties`, `v8vscedit_set_property_by_path`, `v8vscedit_edit_subsystem_content`, `v8vscedit_edit_command_interface`, `v8vscedit_validate_command_interface`.',
       '- `role-*` -> `v8vscedit_role_info`, `v8vscedit_validate_role`, `v8vscedit_compile_role`.',
       '- `epf-*`, `erf-*`, `help-add` -> `v8vscedit_create_epf`, `v8vscedit_create_erf`, `v8vscedit_validate_external_object`, `v8vscedit_add_help`.',
       '- `cfe-*` -> `v8vscedit_cfe_borrow`, `v8vscedit_cfe_patch_method`, `v8vscedit_cfe_diff`, `v8vscedit_validate_configuration`.',

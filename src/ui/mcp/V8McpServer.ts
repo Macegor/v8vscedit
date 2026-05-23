@@ -11,6 +11,7 @@ import { getObjectLocationFromXml } from '../../infra/fs/MetaPathResolver';
 import type { ConfigurationXmlEditor } from '../../infra/xml';
 import { MetadataMutationService } from '../commands/metadata/MetadataMutationService';
 import type { CommandServices } from '../commands/_shared';
+import type { MetadataNode } from '../tree/TreeNode';
 import { McpMetadataPathService } from './McpMetadataPathService';
 import { McpPropertyService } from './McpPropertyService';
 
@@ -140,7 +141,7 @@ export class V8McpServer implements vscode.Disposable {
 
   private registerTools(server: McpServer): void {
     const paths = new McpMetadataPathService(this.services.treeProvider);
-    const properties = new McpPropertyService(this.xmlEditor);
+    const properties = new McpPropertyService(this.xmlEditor, this.services.subsystemXmlService);
     const mutations = new MetadataMutationService(this.services);
 
     server.registerTool(
@@ -725,6 +726,35 @@ export class V8McpServer implements vscode.Disposable {
       (args) => this.wrap(() => {
         const result = this.services.subsystemToolsService.compile(args);
         this.afterMutation([...result.changedFiles]);
+        return result;
+      })
+    );
+
+    server.registerTool(
+      'v8vscedit_edit_subsystem_content',
+      {
+        title: 'Изменить состав подсистемы',
+        description: 'Добавляет или убирает объекты из Content подсистемы по предметным путям или ссылкам вида Catalog.Товары. Для свойств подсистемы используй v8vscedit_get_properties и v8vscedit_set_property_by_path.',
+        inputSchema: z.object({
+          metadataPath: z.string(),
+          configuration: z.string().optional(),
+          add: z.array(z.string()).optional(),
+          remove: z.array(z.string()).optional(),
+        }),
+        annotations: {
+          destructiveHint: true,
+        },
+      },
+      ({ metadataPath, configuration, add, remove }) => this.wrap(() => {
+        const subsystemNode = paths.resolveNode(metadataPath, configuration);
+        if (subsystemNode.nodeKind !== 'Subsystem' || !subsystemNode.xmlPath) {
+          throw new Error(`Путь "${metadataPath}" должен указывать на подсистему.`);
+        }
+        const result = this.services.subsystemXmlService.editContentRefs(subsystemNode.xmlPath, {
+          add: resolveSubsystemContentRefs(paths, add ?? [], configuration),
+          remove: resolveSubsystemContentRefs(paths, remove ?? [], configuration),
+        });
+        this.afterMutation(result.changedFiles);
         return result;
       })
     );
@@ -1320,6 +1350,38 @@ export class V8McpServer implements vscode.Disposable {
 
 function formatHostForUrl(host: string): string {
   return host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
+}
+
+function resolveSubsystemContentRefs(
+  paths: McpMetadataPathService,
+  values: readonly string[],
+  configuration?: string
+): string[] {
+  return uniqueStrings(values.map((value) => resolveSubsystemContentRef(paths, value, configuration)));
+}
+
+function resolveSubsystemContentRef(paths: McpMetadataPathService, value: string, configuration?: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error('Пустая ссылка на объект состава подсистемы.');
+  }
+  const node = paths.resolveNode(trimmed, configuration);
+  return metadataNodeToObjectRef(node, trimmed);
+}
+
+function metadataNodeToObjectRef(node: MetadataNode, source: string): string {
+  if (node.metaContext || !node.xmlPath) {
+    throw new Error(`В Content подсистемы можно добавлять только корневые объекты метаданных: ${source}.`);
+  }
+  const def = META_TYPES[node.nodeKind];
+  if (!def?.folder || def.group === 'service' || def.group === 'root' || def.group === 'child' || node.nodeKind === 'Subsystem') {
+    throw new Error(`Тип узла не поддерживается в Content подсистемы: ${node.nodeKind}.`);
+  }
+  return `${node.nodeKind}.${node.textLabel}`;
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return [...new Set(values)];
 }
 
 function acceptsEventStream(req: http.IncomingMessage): boolean {

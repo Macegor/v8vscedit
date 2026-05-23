@@ -79,6 +79,15 @@ export interface SubsystemMembershipSnapshot {
   tree: SubsystemMembershipTreeNode[];
 }
 
+export interface SubsystemContentEditResult {
+  subsystemPath: string;
+  changed: boolean;
+  added: string[];
+  removed: string[];
+  contentRefs: string[];
+  changedFiles: string[];
+}
+
 /**
  * Читает и меняет XML подсистемы. UI получает готовые снимки и не знает
  * о структуре тегов `Content`, `ChildObjects` и `Picture`.
@@ -178,6 +187,39 @@ export class SubsystemXmlService {
   removeContentRefs(xmlPath: string, refs: string[]): boolean {
     const remove = new Set(refs);
     return this.updateContentRefs(xmlPath, (current) => current.filter((ref) => !remove.has(ref)));
+  }
+
+  editContentRefs(xmlPath: string, options: { add?: readonly string[]; remove?: readonly string[] }): SubsystemContentEditResult {
+    const before = this.readSubsystem(xmlPath).contentRefs;
+    const add = normalizeContentRefs(options.add ?? []);
+    const remove = normalizeContentRefs(options.remove ?? []);
+    const knownRefs = this.readAvailableContent(this.readSubsystem(xmlPath).configRoot)
+      .flatMap((group) => group.items.map((item) => item.ref));
+    const known = new Set(knownRefs);
+    const unknown = [...add, ...remove].filter((ref) => !known.has(ref));
+    if (unknown.length > 0) {
+      throw new Error(`Объекты не найдены в ChildObjects конфигурации: ${unknown.join(', ')}.`);
+    }
+
+    const removeSet = new Set(remove);
+    const changed = this.updateContentRefs(xmlPath, (current) => {
+      const next = current.filter((ref) => !removeSet.has(ref));
+      for (const ref of add) {
+        if (!next.includes(ref)) {
+          next.push(ref);
+        }
+      }
+      return next;
+    });
+    const after = this.readSubsystem(xmlPath).contentRefs;
+    return {
+      subsystemPath: xmlPath,
+      changed,
+      added: after.filter((ref) => !before.includes(ref)),
+      removed: before.filter((ref) => !after.includes(ref)),
+      contentRefs: after,
+      changedFiles: changed ? [xmlPath] : [],
+    };
   }
 
   setObjectSubsystemMembership(configRoot: string, objectRef: string, selectedXmlPaths: string[]): boolean {
@@ -591,6 +633,10 @@ function uniqueStrings(values: string[]): string[] {
     }
   }
   return result;
+}
+
+function normalizeContentRefs(values: readonly string[]): string[] {
+  return uniqueStrings(values.map((value) => value.trim()).filter(Boolean));
 }
 
 function escapeXmlText(value: string): string {

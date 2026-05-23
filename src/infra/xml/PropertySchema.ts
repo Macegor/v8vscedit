@@ -56,6 +56,8 @@ export const BOOLEAN_PROPERTY_TAGS: ReadonlySet<string> = new Set([
   'UseStandardCommands',
   'IncludeHelpInContents',
   'Modality',
+  'Use',
+  'Predefined',
   'CheckUnique',
   'Autonumbering',
   'DistributedInfoBase',
@@ -174,6 +176,9 @@ export const PROPERTY_TITLE_RU: Readonly<Record<string, string>> = {
   Representation: 'Представление',
   Modality: 'Модальность',
   IncludeHelpInContents: 'Включать справку в содержимое',
+  MethodName: 'Имя метода',
+  Use: 'Использовать',
+  Predefined: 'Предопределённый',
   FormType: 'Тип формы',
   UseStandardCommands: 'Использовать стандартные команды',
   ChoiceMode: 'Режим выбора',
@@ -325,6 +330,7 @@ const COMMAND_KEYS = [
 ] as const;
 const ENUM_VALUE_KEYS = ['Name', 'Synonym', 'Comment', 'Color'] as const;
 const TEMPLATE_KEYS = ['Name', 'Synonym', 'Comment', 'TemplateType'] as const;
+const SCHEDULED_JOB_KEYS = ['Name', 'Synonym', 'Comment', 'MethodName', 'Use', 'Predefined'] as const;
 
 /** Реестр схем по ключу `META_TYPES.propertySchema` */
 export const PROPERTY_SCHEMAS: Readonly<Record<string, PropertySchema>> = {
@@ -344,6 +350,7 @@ export const PROPERTY_SCHEMAS: Readonly<Record<string, PropertySchema>> = {
   command: { id: 'command', keys: COMMAND_KEYS, source: 'element' },
   enumValue: { id: 'enumValue', keys: ENUM_VALUE_KEYS, source: 'element' },
   template: { id: 'template', keys: TEMPLATE_KEYS, source: 'element' },
+  scheduledJob: { id: 'scheduledJob', keys: SCHEDULED_JOB_KEYS, source: 'propertiesInner' },
 
   // схемы для корневых «общих» объектов — включают сравнительно небольшой набор полей
   constant: {

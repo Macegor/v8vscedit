@@ -378,6 +378,7 @@ export class Container {
       metadataInfoService: this.metadataInfoService,
       metadataValidationService: this.metadataValidationService,
       subsystemToolsService: this.subsystemToolsService,
+      subsystemXmlService: this.subsystemXmlService,
       commandInterfaceService: this.commandInterfaceService,
       mxlTemplateService: this.mxlTemplateService,
       dataCompositionSchemaService: this.dataCompositionSchemaService,

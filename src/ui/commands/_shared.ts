@@ -22,6 +22,7 @@ import type {
   MetadataXmlRemover,
   MxlTemplateService,
   SubsystemToolsService,
+  SubsystemXmlService,
 } from '../../infra/xml';
 import type { BslAnalyzerConfigService } from '../../infra/environment';
 import type { MetadataTreeProvider } from '../tree/MetadataTreeProvider';
@@ -48,6 +49,7 @@ export interface CommandServices {
   metadataInfoService: MetadataInfoService;
   metadataValidationService: MetadataValidationService;
   subsystemToolsService: SubsystemToolsService;
+  subsystemXmlService: SubsystemXmlService;
   commandInterfaceService: CommandInterfaceService;
   mxlTemplateService: MxlTemplateService;
   dataCompositionSchemaService: DataCompositionSchemaService;

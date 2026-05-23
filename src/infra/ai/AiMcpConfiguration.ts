@@ -100,6 +100,12 @@ export const EXTENSION_MCP_TOOLS: readonly AiMcpToolInfo[] = [
   },
   {
     profile: 'extension',
+    name: 'v8vscedit_edit_subsystem_content',
+    description: 'Точечное добавление и удаление объектов из состава подсистемы (Content).',
+    requirement: 'metadataPath подсистемы и add/remove со ссылками или предметными путями объектов',
+  },
+  {
+    profile: 'extension',
     name: 'v8vscedit_mxl_info',
     description: 'Анализ MXL-макета: области, параметры, текст, объединения и статистика.',
     requirement: 'Путь к Template.xml, каталогу макета или XML-описателю макета',

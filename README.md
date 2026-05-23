@@ -244,7 +244,8 @@ http://127.0.0.1:38481/mcp
 2. Найти объект через `v8vscedit_search_metadata` или получить список через `v8vscedit_list_metadata`.
 3. Для чтения и изменения простых свойств использовать `v8vscedit_get_properties` и `v8vscedit_set_property_by_path`.
 4. Для ссылочного типа сначала вызвать `v8vscedit_list_available_types` с тем же `metadataPath` и брать значение из поля `value`; затем вызвать `v8vscedit_set_type`. Для числа сразу указывать `length`/`digits` и `precision`/`fractionDigits`.
-5. Для создания использовать `v8vscedit_add_metadata_by_path`, для переименования — `v8vscedit_rename_metadata`.
+5. Для состава подсистем использовать `v8vscedit_edit_subsystem_content`: свойства подсистемы меняются обычными `get_properties`/`set_property_by_path`, а объекты в `Content` добавляются и удаляются отдельной точечной операцией.
+6. Для создания использовать `v8vscedit_add_metadata_by_path`, для переименования — `v8vscedit_rename_metadata`.
 
 Такой порядок не заставляет агента ориентироваться по внутренним `nodeId` и английским enum-именам, но сохраняет проверки пользовательского режима: enum, boolean, `readonly`, допустимые типы и переименование корневых объектов проходят через те же сервисы, что панель свойств.
 

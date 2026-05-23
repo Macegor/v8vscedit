@@ -132,10 +132,17 @@ export const structuredMetaChildHandler: ObjectHandler = {
           const inheritedFormPath = inheritedObjectXml
             ? resolveInheritedDefinitionXmlPath(objectMainXmlPath, 'Forms', label)
             : null;
-          if (!formPath && !inheritedFormPath) {
+          const inlineFormXml = extractChildMetaElementXml(objectXml, 'Form', label);
+          const inheritedInlineFormXml = inheritedObjectXml
+            ? extractChildMetaElementXml(inheritedObjectXml, 'Form', label)
+            : null;
+          if (!formPath && !inheritedFormPath && !inlineFormXml && !inheritedInlineFormXml) {
             return notFoundProps('Файл описания формы не найден');
           }
-          return buildFormLikeProperties(readXmlOrEmpty(formPath), readXmlOrEmpty(inheritedFormPath));
+          return buildFormLikeProperties(
+            formPath ? readXmlOrEmpty(formPath) : inlineFormXml ?? '',
+            inheritedFormPath ? readXmlOrEmpty(inheritedFormPath) : inheritedInlineFormXml
+          );
         }
         case 'Command': {
           const commandXml = extractChildMetaElementXml(objectXml, 'Command', label);
