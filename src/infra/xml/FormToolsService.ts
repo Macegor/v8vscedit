@@ -1,7 +1,7 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { writeTextFilePreservingBomAndEol } from './XmlUtils';
+import { findNestingAwareElementRange, writeTextFilePreservingBomAndEol } from './XmlUtils';
 
 export type FormPurpose = 'Object' | 'List' | 'Choice' | 'Record';
 
@@ -811,19 +811,20 @@ function registerFormInObjectXml(xml: string, formName: string): string {
     return xml;
   }
   const formLine = `\t\t\t<Form>${escapeXml(formName)}</Form>`;
-  if (/<ChildObjects\s*\/>/.test(xml)) {
-    return xml.replace(/<ChildObjects\s*\/>/, `<ChildObjects>\n${formLine}\n\t\t</ChildObjects>`);
-  }
-  const childObjects = /<ChildObjects>([\s\S]*?)<\/ChildObjects>/.exec(xml);
+  const childObjects = findNestingAwareElementRange(xml, 'ChildObjects');
   if (!childObjects) {
     throw new Error('Не найден ChildObjects в XML объекта.');
   }
-  const inner = childObjects[1];
+  const openTag = xml.slice(childObjects.start, childObjects.openEnd);
+  if (/\/>\s*$/.test(openTag)) {
+    return `${xml.slice(0, childObjects.start)}<ChildObjects>\n${formLine}\n\t\t</ChildObjects>${xml.slice(childObjects.end)}`;
+  }
+  const inner = xml.slice(childObjects.openEnd, childObjects.closeStart);
   const insertBefore = /(\n\s*<(?:Template|TabularSection)>)/.exec(inner);
   const nextInner = insertBefore
     ? `${inner.slice(0, insertBefore.index)}\n${formLine}${inner.slice(insertBefore.index)}`
     : `${inner.trimEnd()}\n${formLine}\n\t\t`;
-  return xml.slice(0, childObjects.index) + `<ChildObjects>${nextInner}</ChildObjects>` + xml.slice(childObjects.index + childObjects[0].length);
+  return `${xml.slice(0, childObjects.openEnd)}${nextInner}${xml.slice(childObjects.closeStart)}`;
 }
 
 function removeFormFromObjectXml(xml: string, formName: string): string {

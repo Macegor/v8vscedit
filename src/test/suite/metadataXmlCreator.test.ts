@@ -122,6 +122,68 @@ suite('metadataXmlCreator', () => {
     assert.ok(fs.readFileSync(path.join(templatesDir, 'Текст.xml'), 'utf-8').includes('<TemplateType>TextDocument</TemplateType>'));
   });
 
+  test('добавляет макет в корневый ChildObjects объекта после табличных частей', () => {
+    const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-template-after-ts-'));
+    fs.writeFileSync(path.join(configRoot, 'Configuration.xml'), buildConfigXml('2.21'), 'utf-8');
+
+    const creator = new MetadataXmlCreator();
+    assert.strictEqual(creator.addRootObject({ configRoot, kind: 'Catalog', name: 'Товары' }).success, true);
+    const ownerXmlPath = path.join(configRoot, 'Catalogs', 'Товары.xml');
+    assert.strictEqual(creator.addChildElement({ ownerObjectXmlPath: ownerXmlPath, childTag: 'TabularSection', name: 'Состав' }).success, true);
+    assert.strictEqual(creator.addChildElement({
+      ownerObjectXmlPath: ownerXmlPath,
+      childTag: 'Column',
+      tabularSectionName: 'Состав',
+      name: 'Количество',
+    }).success, true);
+    assert.strictEqual(creator.addChildElement({
+      ownerObjectXmlPath: ownerXmlPath,
+      childTag: 'Template',
+      name: 'Печать',
+      templateType: 'TextDocument',
+    }).success, true);
+
+    const xml = fs.readFileSync(ownerXmlPath, 'utf-8');
+    assert.ok(xml.indexOf('<Template>Печать</Template>') > xml.indexOf('</TabularSection>'));
+    const object = new ObjectXmlReader().read(ownerXmlPath);
+    assert.ok(object?.children.some((child) => child.tag === 'Template' && child.name === 'Печать'));
+    assert.ok(object?.children.some((child) => child.tag === 'TabularSection' && child.name === 'Состав'));
+  });
+
+  test('повторная регистрация макета чинит вложенную запись и не перетирает содержимое', () => {
+    const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-template-repair-'));
+    fs.writeFileSync(path.join(configRoot, 'Configuration.xml'), buildConfigXml('2.21'), 'utf-8');
+
+    const creator = new MetadataXmlCreator();
+    assert.strictEqual(creator.addRootObject({ configRoot, kind: 'Catalog', name: 'Товары' }).success, true);
+    const ownerXmlPath = path.join(configRoot, 'Catalogs', 'Товары.xml');
+    assert.strictEqual(creator.addChildElement({ ownerObjectXmlPath: ownerXmlPath, childTag: 'TabularSection', name: 'Состав' }).success, true);
+
+    const templateXmlPath = path.join(configRoot, 'Catalogs', 'Товары', 'Templates', 'Печать.xml');
+    const templateContentPath = path.join(configRoot, 'Catalogs', 'Товары', 'Templates', 'Печать', 'Ext', 'Template.txt');
+    fs.mkdirSync(path.dirname(templateXmlPath), { recursive: true });
+    fs.mkdirSync(path.dirname(templateContentPath), { recursive: true });
+    fs.writeFileSync(templateXmlPath, '<MetaDataObject><Template><Properties><Name>Печать</Name><TemplateType>TextDocument</TemplateType></Properties></Template></MetaDataObject>', 'utf-8');
+    fs.writeFileSync(templateContentPath, 'уже заполнено', 'utf-8');
+
+    const brokenXml = fs.readFileSync(ownerXmlPath, 'utf-8')
+      .replace('</TabularSection>', '\t\t\t<Template>Печать</Template>\n\t\t\t</TabularSection>');
+    fs.writeFileSync(ownerXmlPath, brokenXml, 'utf-8');
+
+    const result = creator.addChildElement({
+      ownerObjectXmlPath: ownerXmlPath,
+      childTag: 'Template',
+      name: 'Печать',
+      templateType: 'TextDocument',
+    });
+
+    assert.strictEqual(result.success, true);
+    const xml = fs.readFileSync(ownerXmlPath, 'utf-8');
+    assert.ok(!xml.includes('\t\t\t<Template>Печать</Template>\n\t\t\t</TabularSection>'));
+    assert.ok(xml.indexOf('<Template>Печать</Template>') > xml.indexOf('</TabularSection>'));
+    assert.strictEqual(fs.readFileSync(templateContentPath, 'utf-8'), 'уже заполнено');
+  });
+
   test('создаёт общий макет с выбранным типом', () => {
     const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-common-template-'));
     fs.writeFileSync(path.join(configRoot, 'Configuration.xml'), buildConfigXml('2.21'), 'utf-8');

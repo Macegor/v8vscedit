@@ -6,6 +6,11 @@ import { getMetaFolder, type MetaKind } from '../../domain/MetaTypes';
 import { ConfigurationXmlEditor, type EditResult } from './ConfigurationXmlEditor';
 import { getObjectLocationFromXml } from '../fs/MetaPathResolver';
 import { buildTypedFieldPropertyBlocks } from './TypedFieldPropertyRules';
+import {
+  findDirectElementRanges,
+  findNestingAwareElementRange,
+  hasDirectChildElementNameInBlock,
+} from './XmlUtils';
 
 const DEFAULT_FORMAT_VERSION = '2.18';
 const DEFAULT_TEMPLATE_TYPE: TemplateType = 'SpreadsheetDocument';
@@ -282,10 +287,11 @@ function addChildToObjectXml(xml: string, options: AddChildMetadataOptions): { c
     return { changed: false, error: `Элемент "${options.name}" уже существует.` };
   }
 
-  const indent = detectChildIndent(childObjects.inner, '\t\t\t');
+  const childObjectsInner = removeNestedSimpleChildReference(childObjects.inner, options.childTag, options.name);
+  const indent = detectChildIndent(childObjectsInner, '\t\t\t');
   const ownerName = extractObjectName(xml);
   const fragment = buildChildFragment(options.childTag, options.name, indent, ownerKind, ownerName);
-  const replacement = buildChildObjectsReplacement(childObjects, fragment, indent);
+  const replacement = buildChildObjectsReplacement({ ...childObjects, inner: childObjectsInner }, fragment, indent);
   const nextXml = `${xml.slice(0, childObjects.start)}${replacement}${xml.slice(childObjects.end)}`;
   return {
     changed: true,
@@ -478,17 +484,21 @@ function buildSimpleChildFragment(tag: 'Form' | 'Command' | 'Template' | 'EnumVa
 }
 
 function getChildObjectsBlock(xml: string): { inner: string; start: number; end: number; selfClosing: boolean } | null {
-  const openClose = /<ChildObjects\b[^>]*\/>/.exec(xml);
-  if (openClose) {
-    const pos = openClose.index;
-    return { inner: '', start: pos, end: pos + openClose[0].length, selfClosing: true };
-  }
-  const match = /<ChildObjects\b[^>]*>([\s\S]*?)<\/ChildObjects>/.exec(xml);
-  if (match?.index === undefined) {
+  const range = findNestingAwareElementRange(xml, 'ChildObjects');
+  if (!range) {
     return null;
   }
-  const innerStart = match.index + match[0].indexOf('>') + 1;
-  return { inner: match[1], start: innerStart, end: innerStart + match[1].length, selfClosing: false };
+  const openTag = xml.slice(range.start, range.openEnd);
+  const selfClosing = /\/>\s*$/.test(openTag);
+  if (selfClosing) {
+    return { inner: '', start: range.start, end: range.end, selfClosing: true };
+  }
+  return {
+    inner: xml.slice(range.openEnd, range.closeStart),
+    start: range.openEnd,
+    end: range.closeStart,
+    selfClosing: false,
+  };
 }
 
 function buildChildObjectsReplacement(
@@ -519,9 +529,21 @@ function findNamedChildBlock(xml: string, tag: string, name: string): { start: n
 }
 
 function hasChildName(inner: string, tag: string, name: string): boolean {
-  const escapedName = escapeRegExp(name);
-  return new RegExp(`<${tag}>\\s*${escapedName}\\s*<\\/${tag}>`).test(inner)
-    || new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?<Name>${escapedName}<\\/Name>[\\s\\S]*?<\\/${tag}>`).test(inner);
+  return hasDirectChildElementNameInBlock(inner, tag, name);
+}
+
+function removeNestedSimpleChildReference(inner: string, tag: ChildTag, name: string): string {
+  if (tag !== 'Form' && tag !== 'Command' && tag !== 'Template') {
+    return inner;
+  }
+  const directRanges = findDirectElementRanges(inner, tag);
+  const re = new RegExp(`\\n?\\s*<${tag}>\\s*${escapeRegExp(name)}\\s*<\\/${tag}>`, 'g');
+  return inner.replace(re, (match, offset: number) => {
+    const tagOffset = match.indexOf(`<${tag}>`);
+    const tagStart = tagOffset >= 0 ? offset + tagOffset : offset;
+    const isDirect = directRanges.some((range) => tagStart >= range.start && tagStart < range.end);
+    return isDirect ? match : '';
+  });
 }
 
 function extractObjectName(xml: string): string | undefined {
@@ -579,9 +601,14 @@ function ensureAuxiliaryChildFiles(options: AddChildMetadataOptions, formatVersi
     const templateXml = path.join(loc.objectDir, 'Templates', `${options.name}.xml`);
     const templateDir = path.join(loc.objectDir, 'Templates', options.name);
     const templateType = resolveTemplateType(options.templateType);
+    const changedFiles: string[] = [];
     fs.mkdirSync(path.dirname(templateXml), { recursive: true });
-    fs.writeFileSync(templateXml, buildTemplateXml(options.name, formatVersion, templateType), 'utf-8');
-    return [templateXml, ...ensureTemplateContentFiles(templateDir, templateType, formatVersion)];
+    if (!fs.existsSync(templateXml)) {
+      fs.writeFileSync(templateXml, buildTemplateXml(options.name, formatVersion, templateType), 'utf-8');
+      changedFiles.push(templateXml);
+    }
+    changedFiles.push(...ensureTemplateContentFiles(templateDir, templateType, formatVersion));
+    return changedFiles;
   }
   return [];
 }
@@ -592,42 +619,41 @@ function ensureTemplateContentFiles(templateDir: string, templateType: TemplateT
   switch (templateType) {
     case 'TextDocument': {
       const filePath = path.join(extDir, 'Template.txt');
-      writeTextFile(filePath, '');
-      return [filePath];
+      return writeTextFile(filePath, '') ? [filePath] : [];
     }
     case 'HTMLDocument': {
       const descriptorPath = path.join(extDir, 'Template.xml');
       const htmlPath = path.join(extDir, 'Template', 'ru.html');
-      writeTextFile(descriptorPath, buildHtmlTemplateDescriptorXml(formatVersion));
-      writeTextFile(htmlPath, buildHtmlDocumentTemplate());
-      return [descriptorPath, htmlPath];
+      return [
+        writeTextFile(descriptorPath, buildHtmlTemplateDescriptorXml(formatVersion)) ? descriptorPath : undefined,
+        writeTextFile(htmlPath, buildHtmlDocumentTemplate()) ? htmlPath : undefined,
+      ].filter((item): item is string => Boolean(item));
     }
     case 'BinaryData':
     case 'AddIn': {
       const filePath = path.join(extDir, 'Template.bin');
+      if (fs.existsSync(filePath)) {
+        return [];
+      }
       fs.writeFileSync(filePath, Buffer.alloc(0));
       return [filePath];
     }
     case 'DataCompositionSchema': {
       const filePath = path.join(extDir, 'Template.xml');
-      writeTextFile(filePath, buildDataCompositionSchemaTemplateXml());
-      return [filePath];
+      return writeTextFile(filePath, buildDataCompositionSchemaTemplateXml()) ? [filePath] : [];
     }
     case 'DataCompositionAppearanceTemplate': {
       const filePath = path.join(extDir, 'Template.xml');
-      writeTextFile(filePath, buildDataCompositionAppearanceTemplateXml());
-      return [filePath];
+      return writeTextFile(filePath, buildDataCompositionAppearanceTemplateXml()) ? [filePath] : [];
     }
     case 'GraphicalSchema': {
       const filePath = path.join(extDir, 'Template.xml');
-      writeTextFile(filePath, buildGraphicalSchemaTemplateXml(formatVersion));
-      return [filePath];
+      return writeTextFile(filePath, buildGraphicalSchemaTemplateXml(formatVersion)) ? [filePath] : [];
     }
     case 'SpreadsheetDocument':
     default: {
       const filePath = path.join(extDir, 'Template.xml');
-      writeTextFile(filePath, buildSpreadsheetDocumentTemplateXml());
-      return [filePath];
+      return writeTextFile(filePath, buildSpreadsheetDocumentTemplateXml()) ? [filePath] : [];
     }
   }
 }
@@ -840,9 +866,13 @@ function buildGraphicalSchemaTemplateXml(formatVersion: string): string {
   ].join('\n');
 }
 
-function writeTextFile(filePath: string, content: string): void {
+function writeTextFile(filePath: string, content: string): boolean {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  if (fs.existsSync(filePath)) {
+    return false;
+  }
   fs.writeFileSync(filePath, content, 'utf-8');
+  return true;
 }
 
 function resolveTemplateType(templateType: TemplateType | undefined): TemplateType {

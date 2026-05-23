@@ -145,7 +145,7 @@
     <div class="buttons footer">
       <vscode-button :disabled="saving" @click="save">{{ saving ? 'Сохранение...' : 'Сохранить' }}</vscode-button>
       <vscode-button appearance="secondary" :disabled="saving" @click="refresh">Обновить</vscode-button>
-      <vscode-button appearance="secondary" :disabled="saving" @click="send('installAiSkills')">Установить скилы</vscode-button>
+      <vscode-button appearance="secondary" :disabled="saving" @click="send('installAiSkills')">Установить роли</vscode-button>
     </div>
   </div>
 </template>

@@ -11,6 +11,7 @@
     "vscode": "^1.85.0"
   },
   "activationEvents": [
+    "workspaceContains:**/Configuration.xml",
     "onView:v8vsceditUniversal",
     "onLanguage:bsl",
     "onCommand:v8vscedit.openAiSettings",
@@ -213,7 +214,7 @@
       },
       {
         "command": "v8vscedit.installAiSkills",
-        "title": "Установить ИИ-скилы 1С",
+        "title": "Установить ИИ-роли 1С",
         "icon": "$(extensions)"
       },
       {

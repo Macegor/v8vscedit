@@ -267,7 +267,7 @@ export function deactivate(): Promise<void> | undefined {
 - Для новых и будущих команд, меняющих конфигурацию или базу (импорт, обновление, создание/удаление/редактирование метаданных), добавлять MCP-инструмент или явно документировать, почему команда не должна быть доступна агенту.
 - Нельзя делать MCP-инструмент, который исполняет произвольную строку команды, произвольный `vscode.commands.executeCommand` или пишет XML напрямую в обход существующего сервиса.
 - Любой инструмент записи сначала валидирует входные данные и права редактирования, возвращает список изменённых файлов и маркирует конфигурацию изменённой тем же механизмом, что UI.
-- Для редактирования свойств обязательны два шага: сначала `get_property_contract` для конкретного узла и свойства, затем запись только значения, допустимого контрактом. Enum/boolean/multiEnum/readonly проверяются до изменения XML; свойства со сложными типами получают отдельные специализированные инструменты.
+- Для редактирования свойств использовать path-инструменты: `v8vscedit_get_properties`, затем `v8vscedit_set_property_by_path`; типы менять через `v8vscedit_set_type`. Enum/boolean/multiEnum/readonly проверяются до изменения XML; свойства со сложными типами получают отдельные специализированные инструменты.
 - Значения enum, boolean/localized-классификация и схемы свойств остаются в `infra/xml/PropertySchema.ts` или специализированном infra-реестре, а MCP только публикует этот контракт.
 
 ### MCP-инструменты модификации конфигурации
@@ -281,8 +281,15 @@ Python-скрипты из `.codex/skills` и не через прямую пр�
 `refreshActionsView()`.
 
 Текущий набор инструментов расширения:
-- `v8vscedit_get_property_contract` — первый шаг перед записью свойства; возвращает контракт значения из `PropertySchema`/сервисов свойств.
-- `v8vscedit_set_property` — меняет простое свойство через `McpPropertyService` и `ConfigurationXmlEditor`; enum/boolean/readonly проверяются до записи.
+- `v8vscedit_workspace_overview` — возвращает основную конфигурацию и расширения: имена, корни, версии и счётчики объектов.
+- `v8vscedit_search_metadata` — ищет метаданные по части строки в предметных путях выбранной конфигурации; при нескольких корнях требует `configuration`.
+- `v8vscedit_list_metadata` — возвращает список объектов группы или дочерних элементов по предметному пути без `nodeId`; при нескольких корнях требует `configuration`.
+- `v8vscedit_get_properties` — возвращает все свойства объекта по предметному пути: значения, readonly и допустимые enum/multiEnum-значения.
+- `v8vscedit_set_property_by_path` — меняет простое свойство по предметному пути через `McpPropertyService` и `ConfigurationXmlEditor`; enum/boolean/readonly проверяются до записи.
+- `v8vscedit_list_available_types` — возвращает стандартные и конфигурационные типы для `Тип`, `Источник`, `Тип параметра команды`; основное значение для агента — русское поле `value`; для CFE возвращает только собственные и заимствованные объекты.
+- `v8vscedit_set_type` — меняет тип через тот же реестр и `ConfigurationXmlEditor.modifyObjectType`, что пользовательская панель свойств; принимает русские значения типа, длину строки/числа и точность числа.
+- `v8vscedit_rename_metadata` — переименовывает объект или дочерний элемент; корневые объекты проходят через `ConfigurationXmlEditor.renameMetadataObject`.
+- `v8vscedit_add_metadata_by_path` — создаёт корневой объект или дочерний элемент по предметному пути через `MetadataMutationService` и `MetadataXmlCreator`; для табличной части использовать сегмент `ТабличныеЧасти`.
 - `v8vscedit_configuration_info` — возвращает отчёт по CF/CFE: свойства, счётчики ChildObjects, роли по умолчанию.
 - `v8vscedit_validate_configuration` — валидирует `Configuration.xml`, `DefaultLanguage`, `ChildObjects` и базовые enum-значения.
 - `v8vscedit_metadata_info` — возвращает структуру объекта метаданных: реквизиты, табличные части, формы, команды, макеты и drill-down по имени элемента.
@@ -317,8 +324,7 @@ Python-скрипты из `.codex/skills` и не через прямую пр�
 - `v8vscedit_compile_role` — создаёт роль из JSON DSL через `RoleRightsService`, пишет `Roles/<Имя>.xml`, `Roles/<Имя>/Ext/Rights.xml` и регистрирует роль в `Configuration.xml`.
 - `v8vscedit_create_configuration` — создаёт scaffold CF (`Configuration.xml`, `Languages/Русский.xml`) через `ConfigurationScaffoldService`.
 - `v8vscedit_create_extension` — создаёт scaffold CFE (`Configuration.xml`, язык, опциональная роль) через `ConfigurationScaffoldService`.
-- `v8vscedit_add_metadata` — создаёт корневой объект или дочерний элемент через `MetadataMutationService` и `MetadataXmlCreator`.
-- `v8vscedit_remove_metadata` — удаляет объект или дочерний элемент через `MetadataXmlRemover`; для корневых объектов блокирует удаление при найденных ссылках.
+- `v8vscedit_remove_metadata` — удаляет объект или дочерний элемент по предметному пути через `MetadataXmlRemover`; для корневых объектов блокирует удаление при найденных ссылках.
 - `v8vscedit_cfe_borrow` — заимствует объект, форму или дочерний элемент из CF в CFE через `CfeBorrowService`.
 - `v8vscedit_cfe_patch_method` — добавляет BSL-перехватчик метода в CFE через `CfePatchMethodService`; модуль задаётся `ModulePath` (`Catalog.Товары.ObjectModule`, `Document.Заказ.Form.ФормаДокумента`, `CommonModule.ОбщийМодуль`).
 - `v8vscedit_cfe_diff` — читает состав CFE и перехватчики через `CfeDiffService`; в режиме `transfer` проверяет, перенесены ли блоки `#Вставка` в CF.

@@ -1,40 +1,35 @@
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
-import { runProcess } from '../process';
 import type { Logger } from '../support/Logger';
 
-export const AI_SKILLS_REPOSITORY_URL = 'https://github.com/Nikolay-Shirokov/cc-1c-skills.git';
-
-export type AiSkillsRuntime = 'python' | 'powershell';
+export type AiRolePlatformFormat = 'skill' | 'cursor-rule' | 'copilot-instruction' | 'opencode-instruction';
 
 export interface AiSkillsPlatform {
   readonly id: string;
   readonly label: string;
   readonly targetPrefix: string;
+  readonly format: AiRolePlatformFormat;
 }
 
 export const AI_SKILLS_PLATFORMS: readonly AiSkillsPlatform[] = [
-  { id: 'claude-code', label: 'Claude Code', targetPrefix: '.claude/skills' },
-  { id: 'augment', label: 'Augment', targetPrefix: '.augment/skills' },
-  { id: 'cline', label: 'Cline', targetPrefix: '.cline/skills' },
-  { id: 'cursor', label: 'Cursor', targetPrefix: '.cursor/skills' },
-  { id: 'copilot', label: 'GitHub Copilot', targetPrefix: '.github/skills' },
-  { id: 'kilo', label: 'Kilo Code', targetPrefix: '.kilocode/skills' },
-  { id: 'kiro', label: 'Kiro', targetPrefix: '.kiro/skills' },
-  { id: 'codex', label: 'Codex', targetPrefix: '.codex/skills' },
-  { id: 'gemini', label: 'Gemini CLI', targetPrefix: '.gemini/skills' },
-  { id: 'opencode', label: 'OpenCode', targetPrefix: '.opencode/skills' },
-  { id: 'roo', label: 'Roo Code', targetPrefix: '.roo/skills' },
-  { id: 'windsurf', label: 'Windsurf', targetPrefix: '.windsurf/skills' },
-  { id: 'agents', label: 'Agent Skills', targetPrefix: '.agents/skills' },
+  { id: 'claude-code', label: 'Claude Code', targetPrefix: '.claude/skills', format: 'skill' },
+  { id: 'augment', label: 'Augment', targetPrefix: '.augment/skills', format: 'skill' },
+  { id: 'cline', label: 'Cline', targetPrefix: '.cline/skills', format: 'skill' },
+  { id: 'cursor', label: 'Cursor', targetPrefix: '.cursor/rules', format: 'cursor-rule' },
+  { id: 'copilot', label: 'GitHub Copilot', targetPrefix: '.github/instructions', format: 'copilot-instruction' },
+  { id: 'kilo', label: 'Kilo Code', targetPrefix: '.kilocode/skills', format: 'skill' },
+  { id: 'kiro', label: 'Kiro', targetPrefix: '.kiro/skills', format: 'skill' },
+  { id: 'codex', label: 'Codex', targetPrefix: '.codex/skills', format: 'skill' },
+  { id: 'gemini', label: 'Gemini CLI', targetPrefix: '.gemini/skills', format: 'skill' },
+  { id: 'opencode', label: 'OpenCode', targetPrefix: '.opencode/instructions', format: 'opencode-instruction' },
+  { id: 'roo', label: 'Roo Code', targetPrefix: '.roo/skills', format: 'skill' },
+  { id: 'windsurf', label: 'Windsurf', targetPrefix: '.windsurf/rules', format: 'skill' },
+  { id: 'agents', label: 'Agent Skills', targetPrefix: '.agents/skills', format: 'skill' },
 ] as const;
 
 export interface AiSkillsInstallOptions {
   readonly projectRoot: string;
   readonly platform: AiSkillsPlatform;
-  readonly runtime: AiSkillsRuntime;
-  readonly repositoryUrl?: string;
 }
 
 export interface AiSkillsInstallResult {
@@ -45,83 +40,192 @@ export interface AiSkillsInstallResult {
   readonly warnings: readonly string[];
 }
 
-type SkillRuntime = 'ps' | 'py' | 'both' | 'none';
+interface AiRoleDefinition {
+  readonly id: string;
+  readonly title: string;
+  readonly description: string;
+  readonly alwaysApply: boolean;
+  readonly globs?: readonly string[];
+  readonly body: string;
+}
 
-const SOURCE_PREFIX = '.claude/skills';
-const RX_PS = /powershell\.exe\s+(?:-NoProfile\s+)?-File\s+(.+?)\.ps1/g;
-const RX_PY = /python\s+('?[\w./_-]+?)\.py/g;
+interface AiRoleFile {
+  readonly relativePath: string;
+  readonly content: string;
+}
+
+const GENERATED_MARKER = '<!-- v8vscedit:generated-role -->';
+const DEFAULT_OPENCODE_MCP_URL = 'http://127.0.0.1:38481/mcp';
+
+const ROLE_DEFINITIONS: readonly AiRoleDefinition[] = [
+  {
+    id: 'v8vscedit-mcp-required',
+    title: 'v8vscedit: обязательная работа через MCP',
+    description: 'Обязательное правило: любые операции с XML-выгрузкой 1С выполнять через MCP-инструменты v8vscedit.',
+    alwaysApply: true,
+    body: [
+      '# v8vscedit: обязательная работа через MCP',
+      '',
+      'Эта роль применяется всегда, когда агент работает с конфигурацией или расширением 1С в XML-выгрузке.',
+      '',
+      '## Жесткие правила',
+      '',
+      '- Не редактируй XML-файлы 1С напрямую. Все изменения структуры конфигурации, расширения, форм, макетов, СКД, ролей, подсистем и командного интерфейса выполняй только через MCP-инструменты `v8vscedit_*`.',
+      '- Не создавай вручную каталоги и файлы `Forms`, `Commands`, `Templates`, `Ext/Template.*`, `Ext/Form.xml`, `Ext/Rights.xml`, `CommandInterface.xml` и записи `ChildObjects`, если для операции есть MCP-инструмент.',
+      '- Не запускай Python/PowerShell-скрипты из `.codex/skills`, `.cursor/skills`, `.claude/skills` и похожих каталогов для изменения конфигурации.',
+      '- Для навигации сначала используй предметные path-инструменты: `v8vscedit_workspace_overview`, `v8vscedit_search_metadata`, `v8vscedit_list_metadata`. В поиске всегда передавай `configuration` из overview, если корней больше одного.',
+      '- Для добавления объекта или дочернего элемента используй `v8vscedit_add_metadata_by_path`: `Справочники.Пользователи.Фамилия`, `Справочники.Пользователи.ТабличныеЧасти.Состав`, `Справочники.Пользователи.ТабличныеЧасти.Состав.Реквизиты.Номенклатура`, `Справочники.Пользователи.Формы.ФормаСписка`. `childTag` и `templateType` передавай по-русски.',
+      '- Для записи простых свойств вызывай `v8vscedit_get_properties`, затем `v8vscedit_set_property_by_path`. Для ссылочного типа сначала вызывай `v8vscedit_list_available_types` с тем же `metadataPath` и бери значение из поля `value`; не придумывай ссылочные типы вручную. Для CFE список содержит только собственные и заимствованные объекты. Сам тип меняй через `v8vscedit_set_type`: `Число`, `Строка`, `СправочникСсылка.Пользователи`. Длину и точность числа задавай в этом же вызове через `length`/`digits` и `precision`/`fractionDigits`.',
+      '- После изменений используй validate-инструмент той же области: metadata, form, skd, mxl, subsystem, role, external object или configuration.',
+      '- Если MCP-сервер недоступен, остановись и попроси включить панель `ИИ и MCP`; не обходи это прямой правкой XML.',
+      '',
+      '## Быстрое соответствие старых навыков MCP-инструментам',
+      '',
+      '- `cf-info`, `cf-validate`, `cf-init`, `cfe-init` -> `v8vscedit_configuration_info`, `v8vscedit_validate_configuration`, `v8vscedit_create_configuration`, `v8vscedit_create_extension`.',
+      '- `meta-info`, `meta-validate`, `meta-compile`, `meta-edit`, `meta-remove` -> `v8vscedit_metadata_info`, `v8vscedit_validate_metadata`, `v8vscedit_search_metadata`, `v8vscedit_list_metadata`, `v8vscedit_add_metadata_by_path`, `v8vscedit_remove_metadata`, `v8vscedit_get_properties`, `v8vscedit_set_property_by_path`, `v8vscedit_set_type`, `v8vscedit_rename_metadata`.',
+      '- `form-*` -> `v8vscedit_form_info`, `v8vscedit_validate_form`, `v8vscedit_add_form`, `v8vscedit_remove_form`, `v8vscedit_compile_form`, `v8vscedit_edit_form`.',
+      '- `skd-*` -> `v8vscedit_skd_info`, `v8vscedit_validate_skd`, `v8vscedit_compile_skd`, `v8vscedit_edit_skd`.',
+      '- `mxl-*`, `template-*` -> `v8vscedit_mxl_info`, `v8vscedit_validate_mxl`, `v8vscedit_compile_mxl`, `v8vscedit_decompile_mxl`.',
+      '- `subsystem-*`, `interface-*` -> `v8vscedit_subsystem_info`, `v8vscedit_validate_subsystem`, `v8vscedit_compile_subsystem`, `v8vscedit_edit_command_interface`, `v8vscedit_validate_command_interface`.',
+      '- `role-*` -> `v8vscedit_role_info`, `v8vscedit_validate_role`, `v8vscedit_compile_role`.',
+      '- `epf-*`, `erf-*`, `help-add` -> `v8vscedit_create_epf`, `v8vscedit_create_erf`, `v8vscedit_validate_external_object`, `v8vscedit_add_help`.',
+      '- `cfe-*` -> `v8vscedit_cfe_borrow`, `v8vscedit_cfe_patch_method`, `v8vscedit_cfe_diff`, `v8vscedit_validate_configuration`.',
+    ].join('\n'),
+  },
+  {
+    id: 'v8vscedit-1c-developer',
+    title: 'v8vscedit: senior 1C developer',
+    description: 'Роль senior-разработчика 1С: код BSL, запросы, производительность, проверка через bsl-analyzer.',
+    alwaysApply: true,
+    globs: ['**/*.bsl', '**/*.os'],
+    body: [
+      '# v8vscedit: senior 1C developer',
+      '',
+      'Отвечай на русском языке. Код, идентификаторы, комментарии и пользовательские строки в BSL пиши по-русски.',
+      '',
+      '## Процесс',
+      '',
+      '- Перед написанием кода проверь существующие модули и повторно используй локальные паттерны.',
+      '- Проверяй имена метаданных через MCP-инструменты `v8vscedit_*`, а не по памяти.',
+      '- Для документации платформы и примеров используй доступные инструменты bsl-analyzer MCP: `docsearch`, `templatesearch`, `syntaxcheck`, `check_1c_code`, `codesearch`.',
+      '- После изменения BSL запускай `syntaxcheck`, если инструмент доступен; исправляй ошибки до предупреждений стиля.',
+      '',
+      '## Код',
+      '',
+      '- Не используй `Сообщить`; применяй `ОбщегоНазначения.СообщитьПользователю` или `ОбщегоНазначенияКлиент.СообщитьПользователю`.',
+      '- Не оборачивай чтение и запись БД широкими `Попытка...Исключение`; исключения должны быть узкими и объяснимыми.',
+      '- Не сравнивай булевы значения с `Истина`/`Ложь`, не используй тернарный оператор `?(...)`.',
+      '- Не называй переменные именами глобального контекста: `Документы`, `Справочники`, `Метаданные`, `Регистры`, `Константы`.',
+      '- Для запросов всегда используй параметры, алиасы `КАК`, промежуточную переменную результата и пакетные выборки вместо запросов в цикле.',
+      '- Для чтения реквизитов ссылок предпочитай БСП-методы `ОбщегоНазначения.ЗначениеРеквизитаОбъекта` и родственные функции.',
+    ].join('\n'),
+  },
+  {
+    id: 'v8vscedit-bsp-developer',
+    title: 'v8vscedit: БСП и подключаемые команды',
+    description: 'Роль для разработки с БСП: стандартные подсистемы, дополнительные обработки, команды, сообщения пользователю.',
+    alwaysApply: false,
+    globs: ['**/*.bsl'],
+    body: [
+      '# v8vscedit: БСП и подключаемые команды',
+      '',
+      'Используй эту роль, когда задача связана с БСП, дополнительными отчетами/обработками, подключаемыми командами или стандартными подсистемами.',
+      '',
+      '## Приоритеты БСП',
+      '',
+      '- Перед собственной реализацией ищи готовый программный интерфейс БСП через `ssl_search` или справку проекта.',
+      '- Для сообщений пользователю используй БСП-обертки, а не `Сообщить`.',
+      '- Для доступа к реквизитам ссылок используй функции `ОбщегоНазначения`, чтобы не загружать объект целиком.',
+      '- Для дополнительных обработок сначала добавляй регистрацию через `v8vscedit_epf_bsp_init`, затем команды через `v8vscedit_epf_bsp_add_command`.',
+      '- Идентификаторы команд делай стабильными, без пробелов и локализованных вариантов; представление команды выноси в пользовательский текст.',
+      '- Серверные, клиентские и печатные обработчики команд держи раздельно, не смешивай клиентский UI-код с серверной бизнес-логикой.',
+      '- После изменения EPF/ERF обязательно выполняй `v8vscedit_validate_external_object`.',
+    ].join('\n'),
+  },
+  {
+    id: 'v8vscedit-metadata-manager',
+    title: 'v8vscedit: менеджер метаданных 1С',
+    description: 'Роль для создания, изменения и проверки метаданных CF/CFE только через сервисы v8vscedit.',
+    alwaysApply: false,
+    body: [
+      '# v8vscedit: менеджер метаданных 1С',
+      '',
+      'Используй эту роль для операций с объектами конфигурации, расширениями, формами, СКД, MXL, ролями и подсистемами.',
+      '',
+      '## Алгоритм',
+      '',
+      '1. Найди корни через `v8vscedit_workspace_overview`.',
+      '2. Найди объект или дочерний элемент через `v8vscedit_search_metadata` или `v8vscedit_list_metadata`; всегда передавай `configuration`, если в overview есть несколько корней.',
+      '   Для добавления используй `v8vscedit_add_metadata_by_path`: реквизит `Справочники.Пользователи.Фамилия`, табличная часть `Справочники.Пользователи.ТабличныеЧасти.Состав`, реквизит ТЧ `Справочники.Пользователи.ТабличныеЧасти.Состав.Реквизиты.Номенклатура`, форма `Справочники.Пользователи.Формы.ФормаСписка`.',
+      '3. Прочитай структуру профильным `*_info` инструментом.',
+      '4. Выполни изменение профильным `add`, `compile`, `edit`, `remove`, `borrow` или `patch` инструментом.',
+      '5. Запусти профильный `*_validate` инструмент и устрани ошибки.',
+      '',
+      '## Ограничения',
+      '',
+      '- Для CFE сначала проверяй принадлежность и заимствование; для перехватчиков используй только `v8vscedit_cfe_patch_method`.',
+      '- Для удаления корневых объектов полагайся на `v8vscedit_remove_metadata`, потому что он проверяет ссылки.',
+      '- Для командного интерфейса используй `v8vscedit_edit_command_interface`; не меняй `CommandInterface.xml` вручную.',
+    ].join('\n'),
+  },
+  {
+    id: 'v8vscedit-bsl-module-standards',
+    title: 'v8vscedit: стандарты модулей BSL',
+    description: 'Правила структуры модулей BSL: области, директивы, обработчики, комментарии и форматирование.',
+    alwaysApply: false,
+    globs: ['**/*.bsl'],
+    body: [
+      '# v8vscedit: стандарты модулей BSL',
+      '',
+      '- Соблюдай порядок областей: публичный интерфейс, обработчики событий, служебный интерфейс, служебные процедуры и функции, инициализация.',
+      '- В модулях форм группируй обработчики по назначению формы, а не по директивам клиента/сервера.',
+      '- Используй `&НаСервереБезКонтекста`, когда контекст формы не нужен.',
+      '- Не добавляй пустые области, закомментированный код, отладочные остатки и личные пометки.',
+      '- Комментарии к процедурам и функциям нужны для публичного интерфейса и сложных контрактов; не дублируй очевидный код.',
+      '- Строки запросов форматируй многострочно, с алиасами и параметрами.',
+    ].join('\n'),
+  },
+];
 
 /**
- * Устанавливает скилы 1С из внешнего репозитория в каталог выбранной AI-платформы.
- * Сервис повторяет файловую логику `scripts/switch.py`, но не требует запускать Python.
+ * Устанавливает проектные роли v8vscedit для AI-платформ.
+ * Роли не содержат скриптов: они направляют агента к MCP-инструментам расширения.
  */
 export class AiSkillsInstaller {
   constructor(private readonly logger: Logger) {}
 
-  async installFromRepository(options: AiSkillsInstallOptions): Promise<AiSkillsInstallResult> {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-ai-skills-'));
-    const repoDir = path.join(tempRoot, 'cc-1c-skills');
-
-    try {
-      await this.cloneRepository(options.repositoryUrl ?? AI_SKILLS_REPOSITORY_URL, repoDir);
-      return this.installFromLocalRepository(repoDir, options);
-    } finally {
-      this.removeTempDir(tempRoot);
-    }
-  }
-
-  installFromLocalRepository(
-    repositoryRoot: string,
-    options: Omit<AiSkillsInstallOptions, 'repositoryUrl'>
-  ): AiSkillsInstallResult {
-    const srcDir = path.join(repositoryRoot, '.claude', 'skills');
-    const skills = scanSkills(srcDir);
-    if (skills.length === 0) {
-      throw new Error(`Скилы не найдены в ${srcDir}`);
-    }
-
+  installProjectRoles(options: AiSkillsInstallOptions): AiSkillsInstallResult {
     const targetDir = path.join(options.projectRoot, ...options.platform.targetPrefix.split('/'));
-    if (fs.existsSync(targetDir)) {
-      const existing = scanSkills(targetDir);
-      if (existing.length > 0) {
-        this.logger.appendLine(`[ai-skills] В ${options.platform.targetPrefix}/ уже есть ${String(existing.length)} скилов. Обновляю.`);
-      }
-      fs.rmSync(targetDir, { recursive: true, force: true });
-    }
     fs.mkdirSync(targetDir, { recursive: true });
 
-    copyRootFiles(srcDir, targetDir);
-
+    const files = buildRoleFiles(options.platform);
     const info: string[] = [];
     const warnings: string[] = [];
     let installedCount = 0;
 
-    this.logger.appendLine(`[ai-skills] Копирование ${String(skills.length)} скилов в ${options.platform.targetPrefix}/`);
-    for (const skillName of skills) {
-      const srcSkill = path.join(srcDir, skillName);
-      const dstSkill = path.join(targetDir, skillName);
-      const sourceRuntime = classifySkillRuntime(srcSkill);
-      const missing = checkMissingFiles(srcSkill, options.runtime, repositoryRoot);
-      const skipRuntime = shouldSkipRuntimeSwitch(sourceRuntime, options.runtime, missing);
+    this.logger.appendLine(`[ai-roles] Установка ролей v8vscedit в ${options.platform.targetPrefix}/`);
+    for (const file of files) {
+      const targetPath = path.join(targetDir, ...file.relativePath.split('/'));
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
 
-      copyDirectory(srcSkill, dstSkill);
-      for (const mdPath of collectMdFiles(dstSkill)) {
-        const content = fs.readFileSync(mdPath, 'utf-8');
-        let next = rewritePaths(content, SOURCE_PREFIX, options.platform.targetPrefix);
-        if (!skipRuntime) {
-          next = switchRuntimeContent(next, options.runtime);
-        }
-        if (next !== content) {
-          fs.writeFileSync(mdPath, next, 'utf-8');
-        }
+      if (fs.existsSync(targetPath) && !isGeneratedRoleFile(targetPath)) {
+        warnings.push(`${path.join(options.platform.targetPrefix, file.relativePath)} уже существует и будет перезаписан`);
       }
 
-      const messages = collectRuntimeMessages(skillName, srcSkill, options.runtime, repositoryRoot);
-      info.push(...messages.info);
-      warnings.push(...messages.warnings);
-      this.logger.appendLine(`[ai-skills] [OK] ${skillName}`);
+      fs.writeFileSync(targetPath, file.content, 'utf-8');
+      this.logger.appendLine(`[ai-roles] [OK] ${path.join(options.platform.targetPrefix, file.relativePath)}`);
       installedCount += 1;
     }
+
+    if (options.platform.format === 'opencode-instruction') {
+      const configPath = ensureOpenCodeConfig(options.projectRoot, options.platform);
+      this.logger.appendLine(`[ai-roles] [OK] ${path.relative(options.projectRoot, configPath)}`);
+      info.push('OpenCode подключает роли через opencode.json -> instructions.');
+      info.push('OpenCode MCP v8vscedit включён в opencode.json.');
+    }
+
+    info.push('Установлены проектные роли без внешнего репозитория, Python и PowerShell-скриптов.');
+    info.push('Роль v8vscedit-mcp-required запрещает прямую правку XML при наличии MCP-инструмента.');
 
     return {
       installedCount,
@@ -131,197 +235,253 @@ export class AiSkillsInstaller {
       warnings,
     };
   }
+}
 
-  private async cloneRepository(repositoryUrl: string, targetDir: string): Promise<void> {
-    this.logger.appendLine(`[ai-skills] Клонирование ${repositoryUrl}`);
-    const result = await runProcess({
-      command: 'git',
-      args: ['clone', '--depth', '1', repositoryUrl, targetDir],
-      shell: false,
-      onStdout: (chunk) => this.appendGitOutput(chunk),
-      onStderr: (chunk) => this.appendGitOutput(chunk),
-    });
-
-    if (result.exitCode !== 0) {
-      const details = result.lastStderr || result.lastStdout || `код завершения ${String(result.exitCode)}`;
-      throw new Error(`Не удалось клонировать репозиторий скилов: ${details}`);
+export function buildRoleFiles(platform: AiSkillsPlatform): readonly AiRoleFile[] {
+  return ROLE_DEFINITIONS.map((role) => {
+    if (platform.format === 'cursor-rule') {
+      return {
+        relativePath: `${role.id}.mdc`,
+        content: renderCursorRule(role),
+      };
     }
-  }
 
-  private appendGitOutput(chunk: Buffer): void {
-    const text = chunk.toString('utf-8').trim();
-    if (text.length > 0) {
-      this.logger.appendLine(`[ai-skills][git] ${text}`);
+    if (platform.format === 'copilot-instruction') {
+      return {
+        relativePath: `${role.id}.instructions.md`,
+        content: renderCopilotInstruction(role),
+      };
     }
-  }
 
-  private removeTempDir(tempRoot: string): void {
+    if (platform.format === 'opencode-instruction') {
+      return {
+        relativePath: `${role.id}.md`,
+        content: renderInstruction(role),
+      };
+    }
+
+    return {
+      relativePath: `${role.id}/SKILL.md`,
+      content: renderSkill(role),
+    };
+  });
+}
+
+function renderCursorRule(role: AiRoleDefinition): string {
+  const globs = role.globs && role.globs.length > 0
+    ? `globs:\n${role.globs.map((glob) => `  - "${glob}"`).join('\n')}\n`
+    : '';
+
+  return [
+    '---',
+    `description: ${role.description}`,
+    globs.trimEnd(),
+    `alwaysApply: ${String(role.alwaysApply)}`,
+    '---',
+    GENERATED_MARKER,
+    '',
+    role.body,
+    '',
+  ].filter((line) => line !== '').join('\n');
+}
+
+function renderCopilotInstruction(role: AiRoleDefinition): string {
+  const applyTo = role.globs && role.globs.length > 0 ? role.globs.join(',') : '**';
+
+  return [
+    '---',
+    `applyTo: "${applyTo}"`,
+    '---',
+    GENERATED_MARKER,
+    '',
+    role.body,
+    '',
+  ].join('\n');
+}
+
+function renderInstruction(role: AiRoleDefinition): string {
+  return [
+    GENERATED_MARKER,
+    '',
+    role.body,
+    '',
+  ].join('\n');
+}
+
+function renderSkill(role: AiRoleDefinition): string {
+  return [
+    '---',
+    `name: ${role.id}`,
+    `description: ${role.description}`,
+    '---',
+    GENERATED_MARKER,
+    '',
+    role.body,
+    '',
+  ].join('\n');
+}
+
+function ensureOpenCodeConfig(
+  projectRoot: string,
+  platform: AiSkillsPlatform
+): string {
+  const configPath = path.join(projectRoot, 'opencode.json');
+  const instructionGlob = path.posix.join(platform.targetPrefix, '*.md');
+
+  let config: Record<string, unknown> = {};
+  if (fs.existsSync(configPath)) {
     try {
-      fs.rmSync(tempRoot, { recursive: true, force: true });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.appendLine(`[ai-skills][warn] Не удалось удалить временный каталог ${tempRoot}: ${message}`);
-    }
-  }
-}
-
-function scanSkills(skillsDir: string): string[] {
-  if (!fs.existsSync(skillsDir)) {
-    return [];
-  }
-
-  return fs.readdirSync(skillsDir)
-    .filter((entry) => {
-      const skillPath = path.join(skillsDir, entry);
-      return fs.statSync(skillPath).isDirectory() && fs.existsSync(path.join(skillPath, 'SKILL.md'));
-    })
-    .sort((left, right) => left.localeCompare(right));
-}
-
-function collectMdFiles(skillDir: string): string[] {
-  return fs.readdirSync(skillDir)
-    .filter((name) => name.toLowerCase().endsWith('.md'))
-    .map((name) => path.join(skillDir, name))
-    .sort((left, right) => left.localeCompare(right));
-}
-
-function classifySkillRuntime(skillDir: string): SkillRuntime {
-  let hasPs = false;
-  let hasPy = false;
-
-  for (const mdPath of collectMdFiles(skillDir)) {
-    const content = fs.readFileSync(mdPath, 'utf-8');
-    hasPs = hasPs || containsPsInvocation(content);
-    hasPy = hasPy || containsPyInvocation(content);
-    if (hasPs && hasPy) {
-      return 'both';
+      const parsed = parseJsonObjectConfig(fs.readFileSync(configPath, 'utf-8'));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        config = parsed as Record<string, unknown>;
+      }
+    } catch {
+      const backupPath = `${configPath}.bak`;
+      fs.copyFileSync(configPath, backupPath);
+      config = {};
     }
   }
 
-  if (hasPs) {
-    return 'ps';
-  }
-  if (hasPy) {
-    return 'py';
-  }
-  return 'none';
+  const existing = Array.isArray(config.instructions)
+    ? config.instructions.filter((item): item is string => typeof item === 'string')
+    : [];
+  config.$schema = typeof config.$schema === 'string'
+    ? config.$schema
+    : 'https://opencode.ai/config.json';
+  config.instructions = [...new Set([...existing, instructionGlob])];
+  config.mcp = ensureOpenCodeMcp(config.mcp);
+
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf-8');
+  return configPath;
 }
 
-function containsPsInvocation(content: string): boolean {
-  RX_PS.lastIndex = 0;
-  return RX_PS.test(content);
+function ensureOpenCodeMcp(value: unknown): Record<string, unknown> {
+  const mcp = value && typeof value === 'object' && !Array.isArray(value)
+    ? { ...(value as Record<string, unknown>) }
+    : {};
+  const current = mcp.v8vscedit;
+  const v8vscedit = current && typeof current === 'object' && !Array.isArray(current)
+    ? { ...(current as Record<string, unknown>) }
+    : {};
+
+  v8vscedit.type = typeof v8vscedit.type === 'string' ? v8vscedit.type : 'remote';
+  v8vscedit.url = typeof v8vscedit.url === 'string' ? v8vscedit.url : DEFAULT_OPENCODE_MCP_URL;
+  v8vscedit.enabled = true;
+  mcp.v8vscedit = v8vscedit;
+  return mcp;
 }
 
-function containsPyInvocation(content: string): boolean {
-  RX_PY.lastIndex = 0;
-  return RX_PY.test(content);
+function parseJsonObjectConfig(content: string): unknown {
+  return JSON.parse(stripJsonCommentsAndTrailingCommas(content)) as unknown;
 }
 
-function checkMissingFiles(skillDir: string, targetRuntime: AiSkillsRuntime, root: string): string[] {
-  const missing: string[] = [];
+function stripJsonCommentsAndTrailingCommas(content: string): string {
+  return removeTrailingCommas(stripJsonComments(content));
+}
 
-  for (const mdPath of collectMdFiles(skillDir)) {
-    const content = fs.readFileSync(mdPath, 'utf-8');
-    if (targetRuntime === 'python') {
-      RX_PS.lastIndex = 0;
-      for (const match of content.matchAll(RX_PS)) {
-        const pyPath = `${match[1].replace(/^'/, '')}.py`;
-        if (!fs.existsSync(path.join(root, pyPath))) {
-          missing.push(pyPath);
-        }
+function stripJsonComments(content: string): string {
+  let result = '';
+  let inString = false;
+  let escaped = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  for (let i = 0; i < content.length; i += 1) {
+    const char = content[i];
+    const next = content[i + 1];
+
+    if (inLineComment) {
+      if (char === '\n' || char === '\r') {
+        inLineComment = false;
+        result += char;
+      }
+      continue;
+    }
+    if (inBlockComment) {
+      if (char === '*' && next === '/') {
+        inBlockComment = false;
+        i += 1;
+      } else if (char === '\n' || char === '\r') {
+        result += char;
       }
       continue;
     }
 
-    RX_PY.lastIndex = 0;
-    for (const match of content.matchAll(RX_PY)) {
-      const psPath = `${match[1].replace(/^'/, '')}.ps1`;
-      if (!fs.existsSync(path.join(root, psPath))) {
-        missing.push(psPath);
+    if (inString) {
+      result += char;
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
       }
+      continue;
     }
+
+    if (char === '"') {
+      inString = true;
+      result += char;
+      continue;
+    }
+    if (char === '/' && next === '/') {
+      inLineComment = true;
+      i += 1;
+      continue;
+    }
+    if (char === '/' && next === '*') {
+      inBlockComment = true;
+      i += 1;
+      continue;
+    }
+    result += char;
   }
 
-  return missing;
+  return result;
 }
 
-function shouldSkipRuntimeSwitch(
-  sourceRuntime: SkillRuntime,
-  targetRuntime: AiSkillsRuntime,
-  missing: readonly string[]
-): boolean {
-  if (missing.length === 0) {
+function removeTrailingCommas(content: string): string {
+  let result = '';
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < content.length; i += 1) {
+    const char = content[i];
+    if (inString) {
+      result += char;
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      result += char;
+      continue;
+    }
+    if (char === ',') {
+      let nextIndex = i + 1;
+      while (nextIndex < content.length && /\s/.test(content[nextIndex])) {
+        nextIndex += 1;
+      }
+      if (content[nextIndex] === '}' || content[nextIndex] === ']') {
+        continue;
+      }
+    }
+    result += char;
+  }
+
+  return result;
+}
+
+function isGeneratedRoleFile(filePath: string): boolean {
+  try {
+    return fs.readFileSync(filePath, 'utf-8').includes(GENERATED_MARKER);
+  } catch {
     return false;
-  }
-
-  return (targetRuntime === 'python' && (sourceRuntime === 'ps' || sourceRuntime === 'none'))
-    || (targetRuntime === 'powershell' && (sourceRuntime === 'py' || sourceRuntime === 'none'));
-}
-
-function rewritePaths(content: string, sourcePrefix: string, targetPrefix: string): string {
-  return content.split(`${sourcePrefix}/`).join(`${targetPrefix}/`);
-}
-
-function switchRuntimeContent(content: string, targetRuntime: AiSkillsRuntime): string {
-  if (targetRuntime === 'python') {
-    RX_PS.lastIndex = 0;
-    return content.replace(RX_PS, 'python $1.py');
-  }
-
-  RX_PY.lastIndex = 0;
-  return content.replace(RX_PY, 'powershell.exe -NoProfile -File $1.ps1');
-}
-
-function collectRuntimeMessages(
-  skillName: string,
-  skillDir: string,
-  targetRuntime: AiSkillsRuntime,
-  root: string
-): { readonly info: string[]; readonly warnings: string[] } {
-  const info: string[] = [];
-  const warnings: string[] = [];
-  const sourceRuntime = classifySkillRuntime(skillDir);
-
-  if (targetRuntime === 'python' && (sourceRuntime === 'ps' || sourceRuntime === 'none')) {
-    const missing = checkMissingFiles(skillDir, 'python', root);
-    if (missing.length > 0) {
-      info.push(`${skillName} — только PowerShell (Python-версия не предусмотрена)`);
-    }
-    return { info, warnings };
-  }
-
-  if (targetRuntime === 'powershell' && (sourceRuntime === 'py' || sourceRuntime === 'none')) {
-    const missing = checkMissingFiles(skillDir, 'powershell', root);
-    if (missing.length > 0) {
-      info.push(`${skillName} — только Python (PowerShell-версия не предусмотрена)`);
-    }
-    return { info, warnings };
-  }
-
-  for (const missingPath of checkMissingFiles(skillDir, targetRuntime, root)) {
-    warnings.push(`${missingPath} не найден (${skillName})`);
-  }
-
-  return { info, warnings };
-}
-
-function copyRootFiles(sourceDir: string, targetDir: string): void {
-  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
-    if (entry.isFile()) {
-      fs.copyFileSync(path.join(sourceDir, entry.name), path.join(targetDir, entry.name));
-    }
-  }
-}
-
-function copyDirectory(sourceDir: string, targetDir: string): void {
-  fs.mkdirSync(targetDir, { recursive: true });
-  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
-    const sourcePath = path.join(sourceDir, entry.name);
-    const targetPath = path.join(targetDir, entry.name);
-    if (entry.isDirectory()) {
-      copyDirectory(sourcePath, targetPath);
-      continue;
-    }
-    fs.copyFileSync(sourcePath, targetPath);
   }
 }

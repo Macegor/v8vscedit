@@ -1,6 +1,7 @@
 import * as path from 'path';
 import type { MetadataTreeProvider } from '../tree/MetadataTreeProvider';
 import type { MetadataNode } from '../tree/TreeNode';
+import type { AddMetadataTarget } from '../tree/TreeNodeModel';
 
 interface EncodedNodeRef {
   readonly label: string;
@@ -9,6 +10,7 @@ interface EncodedNodeRef {
   readonly ownerObjectXmlPath?: string;
   readonly tabularSectionName?: string;
   readonly standardAttributeName?: string;
+  readonly addMetadataTarget?: AddMetadataTarget;
 }
 
 export interface McpNodeSummary {
@@ -16,6 +18,7 @@ export interface McpNodeSummary {
   readonly label: string;
   readonly nodeKind: string;
   readonly xmlPath?: string;
+  readonly addMetadataTarget?: AddMetadataTarget;
   readonly canAddMetadata: boolean;
   readonly canRemoveMetadata: boolean;
 }
@@ -62,7 +65,8 @@ export class McpNodeRegistry {
       return (
         (node.metaContext?.ownerObjectXmlPath ?? '') === (ref.ownerObjectXmlPath ?? '') &&
         (node.metaContext?.tabularSectionName ?? '') === (ref.tabularSectionName ?? '') &&
-        (node.metaContext?.standardAttributeName ?? '') === (ref.standardAttributeName ?? '')
+        (node.metaContext?.standardAttributeName ?? '') === (ref.standardAttributeName ?? '') &&
+        sameAddMetadataTarget(node.addMetadataTarget, ref.addMetadataTarget)
       );
     });
     if (!found) {
@@ -77,6 +81,7 @@ export class McpNodeRegistry {
       label: node.textLabel,
       nodeKind: node.nodeKind,
       xmlPath: node.xmlPath,
+      addMetadataTarget: node.addMetadataTarget,
       canAddMetadata: Boolean(node.addMetadataTarget),
       canRemoveMetadata: Boolean(node.canRemoveMetadata),
     };
@@ -90,6 +95,7 @@ export class McpNodeRegistry {
       ownerObjectXmlPath: node.metaContext?.ownerObjectXmlPath,
       tabularSectionName: node.metaContext?.tabularSectionName,
       standardAttributeName: node.metaContext?.standardAttributeName,
+      addMetadataTarget: node.addMetadataTarget,
     };
     return Buffer.from(JSON.stringify(ref), 'utf-8').toString('base64url');
   }
@@ -124,5 +130,75 @@ function isEncodedNodeRef(value: unknown): value is EncodedNodeRef {
     return false;
   }
   const ref = value as Record<string, unknown>;
-  return typeof ref.label === 'string' && typeof ref.nodeKind === 'string';
+  return (
+    typeof ref.label === 'string' &&
+    typeof ref.nodeKind === 'string' &&
+    isOptionalString(ref.xmlPath) &&
+    isOptionalString(ref.ownerObjectXmlPath) &&
+    isOptionalString(ref.tabularSectionName) &&
+    isOptionalString(ref.standardAttributeName) &&
+    isAddMetadataTarget(ref.addMetadataTarget)
+  );
+}
+
+function isAddMetadataTarget(value: unknown): value is AddMetadataTarget | undefined {
+  if (value === undefined) {
+    return true;
+  }
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const target = value as Record<string, unknown>;
+  if (target.kind === 'root') {
+    return (
+      typeof target.configRoot === 'string' &&
+      (target.configKind === 'cf' || target.configKind === 'cfe') &&
+      typeof target.targetKind === 'string' &&
+      isOptionalString(target.namePrefix)
+    );
+  }
+  if (target.kind === 'child') {
+    return (
+      typeof target.ownerObjectXmlPath === 'string' &&
+      typeof target.childTag === 'string' &&
+      isOptionalString(target.tabularSectionName)
+    );
+  }
+  return false;
+}
+
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || typeof value === 'string';
+}
+
+function sameAddMetadataTarget(left: AddMetadataTarget | undefined, right: AddMetadataTarget | undefined): boolean {
+  if (!left && !right) {
+    return true;
+  }
+  if (!left || !right) {
+    return false;
+  }
+  if (left.kind !== right.kind) {
+    return false;
+  }
+  if (left.kind === 'root' && right.kind === 'root') {
+    return (
+      samePath(left.configRoot, right.configRoot) &&
+      left.configKind === right.configKind &&
+      left.targetKind === right.targetKind &&
+      (left.namePrefix ?? '') === (right.namePrefix ?? '')
+    );
+  }
+  if (left.kind === 'child' && right.kind === 'child') {
+    return (
+      samePath(left.ownerObjectXmlPath, right.ownerObjectXmlPath) &&
+      left.childTag === right.childTag &&
+      (left.tabularSectionName ?? '') === (right.tabularSectionName ?? '')
+    );
+  }
+  return false;
+}
+
+function samePath(left: string, right: string): boolean {
+  return path.resolve(left).toLowerCase() === path.resolve(right).toLowerCase();
 }

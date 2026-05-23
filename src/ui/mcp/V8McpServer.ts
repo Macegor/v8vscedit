@@ -1,16 +1,17 @@
 import * as http from 'http';
+import { randomUUID } from 'crypto';
 import * as vscode from 'vscode';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { isInitializeRequest, type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import * as z from 'zod/v4';
 import { META_TYPES } from '../../domain/MetaTypes';
-import type { ChildTag } from '../../domain/ChildTag';
+import { CHILD_TAG_CONFIG, type ChildTag } from '../../domain/ChildTag';
 import { getObjectLocationFromXml } from '../../infra/fs/MetaPathResolver';
 import type { ConfigurationXmlEditor } from '../../infra/xml';
 import { MetadataMutationService } from '../commands/metadata/MetadataMutationService';
 import type { CommandServices } from '../commands/_shared';
-import { McpNodeRegistry } from './McpNodeRegistry';
+import { McpMetadataPathService } from './McpMetadataPathService';
 import { McpPropertyService } from './McpPropertyService';
 
 export interface V8McpServerOptions {
@@ -25,6 +26,11 @@ export interface V8McpServerStatus {
 
 type McpCommandServices = Omit<CommandServices, 'aiMcpViewProvider'>;
 
+interface McpSession {
+  readonly server: McpServer;
+  readonly transport: StreamableHTTPServerTransport;
+}
+
 const TEMPLATE_TYPES = [
   'SpreadsheetDocument',
   'DataCompositionSchema',
@@ -35,6 +41,8 @@ const TEMPLATE_TYPES = [
   'GraphicalSchema',
   'AddIn',
 ] as const;
+
+type TemplateTypeInput = typeof TEMPLATE_TYPES[number];
 
 const ROLE_OBJECT_SCHEMA = z.union([
   z.string(),
@@ -81,8 +89,7 @@ const ALLOWED_COMMANDS = new Set([
  * сервисы расширения.
  */
 export class V8McpServer implements vscode.Disposable {
-  private mcpServer: McpServer | undefined;
-  private transport: StreamableHTTPServerTransport | undefined;
+  private readonly sessions = new Map<string, McpSession>();
   private httpServer: http.Server | undefined;
   private endpoint: string | undefined;
 
@@ -102,23 +109,11 @@ export class V8McpServer implements vscode.Disposable {
       return;
     }
 
-    const server = new McpServer({
-      name: 'v8vscedit',
-      version: '0.3.5',
-    });
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
-    });
-    this.registerTools(server);
-    await server.connect(transport);
-
     const httpServer = http.createServer((req, res) => {
-      void this.handleRequest(transport, req, res);
+      void this.handleRequest(req, res);
     });
     const port = await this.listenOnAvailablePort(httpServer, options.host, options.port);
 
-    this.mcpServer = server;
-    this.transport = transport;
     this.httpServer = httpServer;
     this.endpoint = `http://${formatHostForUrl(options.host)}:${String(port)}/mcp`;
     this.services.outputChannel.appendLine(`[mcp] Сервер запущен: ${this.endpoint}`);
@@ -131,10 +126,12 @@ export class V8McpServer implements vscode.Disposable {
     if (httpServer) {
       await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     }
-    await this.transport?.close();
-    await this.mcpServer?.close();
-    this.transport = undefined;
-    this.mcpServer = undefined;
+    const sessions = [...this.sessions.values()];
+    this.sessions.clear();
+    await Promise.all(sessions.map(async (session) => {
+      await session.transport.close();
+      await session.server.close();
+    }));
   }
 
   dispose(): void {
@@ -142,7 +139,7 @@ export class V8McpServer implements vscode.Disposable {
   }
 
   private registerTools(server: McpServer): void {
-    const nodes = new McpNodeRegistry(this.services.treeProvider);
+    const paths = new McpMetadataPathService(this.services.treeProvider);
     const properties = new McpPropertyService(this.xmlEditor);
     const mutations = new MetadataMutationService(this.services);
 
@@ -167,17 +164,45 @@ export class V8McpServer implements vscode.Disposable {
     );
 
     server.registerTool(
-      'v8vscedit_list_metadata_nodes',
+      'v8vscedit_workspace_overview',
       {
-        title: 'Список узлов дерева',
-        description: 'Ищет узлы основной панели метаданных и возвращает nodeId для последующих MCP-инструментов.',
+        title: 'Обзор конфигураций и расширений',
+        description: 'Возвращает основную конфигурацию, расширения, корневые пути и счётчики объектов без обхода дерева по nodeId.',
+        inputSchema: z.object({}),
+      },
+      () => this.ok(paths.getWorkspaceOverview())
+    );
+
+    server.registerTool(
+      'v8vscedit_search_metadata',
+      {
+        title: 'Поиск метаданных по пути',
+        description: 'Ищет по части строки в предметных путях метаданных выбранной конфигурации: например "Польз" найдёт Справочники.Пользователи.',
         inputSchema: z.object({
-          query: z.string().optional(),
-          rootPath: z.string().optional(),
+          query: z.string(),
+          configuration: z.string(),
+          kind: z.string().optional(),
           limit: z.number().int().min(1).max(1000).optional(),
         }),
       },
-      (args) => this.ok(nodes.listNodes(args))
+      (args) => this.ok(paths.search(args))
+    );
+
+    server.registerTool(
+      'v8vscedit_list_metadata',
+      {
+        title: 'Список метаданных по группе или объекту',
+        description: 'Возвращает объекты группы или дочерние элементы по предметному пути без nodeId: список справочников, форм, реквизитов, измерений, ресурсов и т.п.',
+        inputSchema: z.object({
+          configuration: z.string().optional(),
+          parentPath: z.string().optional(),
+          kind: z.string().optional(),
+          group: z.string().optional(),
+          query: z.string().optional(),
+          limit: z.number().int().min(1).max(1000).optional(),
+        }),
+      },
+      (args) => this.ok(paths.list(args))
     );
 
     server.registerTool(
@@ -303,7 +328,7 @@ export class V8McpServer implements vscode.Disposable {
       'v8vscedit_compile_mxl',
       {
         title: 'Скомпилировать MXL-макет',
-        description: 'Создаёт Template.xml табличного документа из JSON DSL: колонки, стили, области, параметры и шаблоны.',
+        description: 'Создаёт или перезаписывает содержимое существующего MXL-макета Template.xml из JSON DSL. Не регистрирует новый макет в объекте; для нового макета сначала используй v8vscedit_add_metadata_by_path.',
         inputSchema: z.object({
           outputPath: z.string(),
           definition: z.any(),
@@ -365,7 +390,7 @@ export class V8McpServer implements vscode.Disposable {
       'v8vscedit_compile_skd',
       {
         title: 'Скомпилировать СКД',
-        description: 'Создаёт Template.xml схемы компоновки данных из JSON DSL: наборы, поля, параметры, итоги и варианты.',
+        description: 'Создаёт или перезаписывает содержимое существующей СКД Template.xml из JSON DSL. Не регистрирует новый макет в объекте; для новой СКД сначала используй v8vscedit_add_metadata_by_path с templateType=Схема компоновки данных.',
         inputSchema: z.object({
           outputPath: z.string(),
           definition: z.any(),
@@ -851,28 +876,29 @@ export class V8McpServer implements vscode.Disposable {
     );
 
     server.registerTool(
-      'v8vscedit_get_property_contract',
+      'v8vscedit_get_properties',
       {
-        title: 'Контракт свойства',
-        description: 'Показывает тип значения, текущее значение и допустимые enum-значения конкретного свойства конкретного узла.',
+        title: 'Свойства объекта по пути',
+        description: 'Возвращает все свойства метаданных по предметному пути: текущее значение, readonly, тип контрола и допустимые enum/multiEnum-значения.',
         inputSchema: z.object({
-          nodeId: z.string(),
-          propertyKey: z.string(),
+          metadataPath: z.string(),
+          configuration: z.string().optional(),
         }),
       },
-      ({ nodeId, propertyKey }) => this.wrap(() => {
-        const node = nodes.resolveNode(nodeId);
-        return properties.getPropertyContract(node, propertyKey);
+      ({ metadataPath, configuration }) => this.wrap(() => {
+        const node = paths.resolveNode(metadataPath, configuration);
+        return properties.getPropertyContracts(node);
       })
     );
 
     server.registerTool(
-      'v8vscedit_set_property',
+      'v8vscedit_set_property_by_path',
       {
-        title: 'Изменить свойство',
-        description: 'Меняет простое свойство только после проверки контракта: enum, boolean и readonly валидируются до записи XML.',
+        title: 'Изменить свойство по пути',
+        description: 'Меняет простое свойство объекта по предметному пути без nodeId. Для enum/boolean/readonly использует те же проверки, что панель свойств.',
         inputSchema: z.object({
-          nodeId: z.string(),
+          metadataPath: z.string(),
+          configuration: z.string().optional(),
           propertyKey: z.string(),
           value: z.unknown(),
         }),
@@ -880,42 +906,107 @@ export class V8McpServer implements vscode.Disposable {
           destructiveHint: true,
         },
       },
-      ({ nodeId, propertyKey, value }) => this.wrap(() => {
-        const node = nodes.resolveNode(nodeId);
+      ({ metadataPath, configuration, propertyKey, value }) => this.wrap(() => {
+        const node = paths.resolveNode(metadataPath, configuration);
         const result = properties.setProperty(node, propertyKey, value);
-        if (result.changedFiles.length > 0) {
-          this.services.markChangedConfigurationByFiles([...result.changedFiles]);
-          this.services.treeProvider.refresh();
-          this.services.refreshActionsView();
-        }
+        this.afterMutation(result.changedFiles);
         return result;
       })
     );
 
     server.registerTool(
-      'v8vscedit_add_metadata',
+      'v8vscedit_list_available_types',
       {
-        title: 'Добавить метаданные',
-        description: 'Добавляет объект или дочерний элемент через тот же сервис, который использует команда UI v8vscedit.addMetadata.',
+        title: 'Доступные типы 1С',
+        description: 'Возвращает стандартные и конфигурационные типы для свойства "Тип", "Источник" или "Тип параметра команды". Для CFE показывает только типы текущего расширения: собственные и уже заимствованные объекты. Используй русское поле value при вызове v8vscedit_set_type.',
         inputSchema: z.object({
-          targetNodeId: z.string(),
-          name: z.string(),
-          templateType: z.enum(TEMPLATE_TYPES).optional(),
+          metadataPath: z.string().optional(),
+          configuration: z.string().optional(),
+          propertyKey: z.string().optional(),
+        }),
+      },
+      ({ metadataPath, configuration, propertyKey }) => this.wrap(() => {
+        const node = metadataPath ? paths.resolveNode(metadataPath, configuration) : undefined;
+        return properties.getAvailableTypes(node, propertyKey ?? 'Type');
+      })
+    );
+
+    server.registerTool(
+      'v8vscedit_set_type',
+      {
+        title: 'Изменить тип объекта',
+        description: 'Меняет свойство "Тип", "Источник" или "Тип параметра команды" по предметному пути. Перед ссылочным типом сначала вызови v8vscedit_list_available_types для того же metadataPath: set_type принимает только доступные типы, а в CFE не позволит сослаться на незаимствованный объект. Принимает русские имена типов и квалификаторы: длина строки, длина числа и точность.',
+        inputSchema: z.object({
+          metadataPath: z.string(),
+          configuration: z.string().optional(),
+          propertyKey: z.string().optional(),
+          value: z.unknown().optional(),
+          type: z.string().optional(),
+          items: z.array(z.string()).optional(),
+          length: z.number().int().min(0).optional(),
+          allowedLength: z.string().optional(),
+          digits: z.number().int().min(1).optional(),
+          fractionDigits: z.number().int().min(0).optional(),
+          precision: z.number().int().min(0).optional(),
+          allowedSign: z.string().optional(),
+          dateFractions: z.string().optional(),
         }),
         annotations: {
           destructiveHint: true,
         },
       },
-      async ({ targetNodeId, name, templateType }) => this.wrapAsync(async () => {
-        const node = nodes.resolveNode(targetNodeId);
-        if (!node.addMetadataTarget) {
-          throw new Error(`Узел "${node.textLabel}" не поддерживает добавление метаданных.`);
-        }
+      ({ metadataPath, configuration, propertyKey, ...typeInput }) => this.wrap(() => {
+        const node = paths.resolveNode(metadataPath, configuration);
+        const result = properties.setType(node, propertyKey ?? 'Type', normalizeSetTypeToolInput(typeInput));
+        this.afterMutation(result.changedFiles);
+        return result;
+      })
+    );
+
+    server.registerTool(
+      'v8vscedit_rename_metadata',
+      {
+        title: 'Переименовать метаданные',
+        description: 'Переименовывает объект или дочерний элемент по предметному пути. Для корневого объекта обновляет файл, каталог, ChildObjects и ссылки через общий XML-сервис.',
+        inputSchema: z.object({
+          metadataPath: z.string(),
+          configuration: z.string().optional(),
+          newName: z.string(),
+        }),
+        annotations: {
+          destructiveHint: true,
+        },
+      },
+      ({ metadataPath, configuration, newName }) => this.wrap(() => {
+        const node = paths.resolveNode(metadataPath, configuration);
+        const result = properties.rename(node, newName);
+        this.afterMutation(result.changedFiles);
+        return result;
+      })
+    );
+
+    server.registerTool(
+      'v8vscedit_add_metadata_by_path',
+      {
+        title: 'Добавить метаданные по пути',
+        description: 'Добавляет объект, реквизит, табличную часть, колонку, форму, команду или макет по предметному пути без nodeId. Примеры: Справочники.Пользователи.Фамилия, Справочники.Пользователи.ТабличныеЧасти.Состав, Справочники.Пользователи.ТабличныеЧасти.Состав.Реквизиты.Номенклатура, Справочники.Пользователи.Формы.ФормаСписка.',
+        inputSchema: z.object({
+          path: z.string(),
+          configuration: z.string().optional(),
+          childTag: z.string().optional(),
+          templateType: z.string().optional(),
+        }),
+        annotations: {
+          destructiveHint: true,
+        },
+      },
+      async ({ path: metadataPath, configuration, childTag, templateType }) => this.wrapAsync(async () => {
+        const resolved = paths.resolveAddTarget({ path: metadataPath, configuration, childTag: normalizeChildTag(childTag) });
         return mutations.addMetadata({
-          target: node.addMetadataTarget,
-          name,
-          templateType,
-          sourceNode: node,
+          target: resolved.target,
+          name: resolved.name,
+          templateType: normalizeTemplateType(templateType),
+          sourceNode: resolved.sourceNode,
         });
       })
     );
@@ -924,17 +1015,18 @@ export class V8McpServer implements vscode.Disposable {
       'v8vscedit_remove_metadata',
       {
         title: 'Удалить метаданные',
-        description: 'Удаляет объект или дочерний элемент через тот же infra-сервис, который использует команда UI v8vscedit.removeMetadata.',
+        description: 'Удаляет объект или дочерний элемент по предметному пути через тот же infra-сервис, который использует UI; не удаляй XML/каталоги вручную.',
         inputSchema: z.object({
-          nodeId: z.string(),
+          metadataPath: z.string(),
+          configuration: z.string().optional(),
           keepFiles: z.boolean().optional(),
         }),
         annotations: {
           destructiveHint: true,
         },
       },
-      ({ nodeId, keepFiles }) => this.wrap(() => {
-        const node = nodes.resolveNode(nodeId);
+      ({ metadataPath, configuration, keepFiles }) => this.wrap(() => {
+        const node = paths.resolveNode(metadataPath, configuration);
         if (!node.xmlPath || !node.canRemoveMetadata) {
           throw new Error(`Узел "${node.textLabel}" не поддерживает удаление метаданных.`);
         }
@@ -1045,11 +1137,7 @@ export class V8McpServer implements vscode.Disposable {
     );
   }
 
-  private async handleRequest(
-    transport: StreamableHTTPServerTransport,
-    req: http.IncomingMessage,
-    res: http.ServerResponse
-  ): Promise<void> {
+  private async handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     try {
       if (!this.isLoopbackRequest(req)) {
         res.writeHead(403).end('MCP server accepts loopback requests only.');
@@ -1064,7 +1152,33 @@ export class V8McpServer implements vscode.Disposable {
         res.writeHead(405).end('Method not allowed');
         return;
       }
-      await transport.handleRequest(req, res);
+      if (req.method === 'GET' && !acceptsEventStream(req)) {
+        this.writeBrowserProbeResponse(res);
+        return;
+      }
+      const sessionId = getHeaderString(req, 'mcp-session-id');
+      const existingSession = sessionId ? this.sessions.get(sessionId) : undefined;
+      if (existingSession) {
+        await existingSession.transport.handleRequest(req, res);
+        return;
+      }
+      if (sessionId) {
+        this.writeJsonRpcError(res, 404, -32001, 'Session not found');
+        return;
+      }
+      if (req.method !== 'POST') {
+        this.writeJsonRpcError(res, 400, -32000, 'Bad Request: Mcp-Session-Id header is required');
+        return;
+      }
+
+      const parsedBody = await readJsonBody(req);
+      if (!isInitializeRequest(parsedBody)) {
+        this.writeJsonRpcError(res, 400, -32000, 'Bad Request: No valid session ID provided');
+        return;
+      }
+
+      const session = await this.createSession();
+      await session.transport.handleRequest(req, res, parsedBody);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.services.outputChannel.appendLine(`[mcp][error] ${message}`);
@@ -1072,6 +1186,32 @@ export class V8McpServer implements vscode.Disposable {
         res.writeHead(500).end('MCP server error');
       }
     }
+  }
+
+  private async createSession(): Promise<McpSession> {
+    let initializedSessionId: string | undefined;
+    const server = new McpServer({
+      name: 'v8vscedit',
+      version: '0.3.5',
+    });
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => randomUUID(),
+      onsessioninitialized: (sessionId) => {
+        initializedSessionId = sessionId;
+        this.sessions.set(sessionId, { server, transport });
+        this.services.outputChannel.appendLine(`[mcp] Сессия подключена: ${sessionId}`);
+      },
+    });
+    transport.onclose = () => {
+      const sessionId = transport.sessionId ?? initializedSessionId;
+      if (sessionId) {
+        this.sessions.delete(sessionId);
+        this.services.outputChannel.appendLine(`[mcp] Сессия закрыта: ${sessionId}`);
+      }
+    };
+    this.registerTools(server);
+    await server.connect(transport);
+    return { server, transport };
   }
 
   private async listenOnAvailablePort(server: http.Server, host: string, preferredPort: number): Promise<number> {
@@ -1111,6 +1251,30 @@ export class V8McpServer implements vscode.Disposable {
   private isLoopbackRequest(req: http.IncomingMessage): boolean {
     const address = req.socket.remoteAddress ?? '';
     return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+  }
+
+  private writeBrowserProbeResponse(res: http.ServerResponse): void {
+    res.writeHead(200, {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-store',
+    }).end([
+      'MCP-сервер v8vscedit запущен.',
+      '',
+      'Этот endpoint не открывается как обычная веб-страница.',
+      'Подключайте MCP-клиент к этому URL; для GET-потока клиент должен отправлять Accept: text/event-stream.',
+      'Для JSON-RPC POST клиент должен отправлять Accept: application/json, text/event-stream.',
+    ].join('\n'));
+  }
+
+  private writeJsonRpcError(res: http.ServerResponse, status: number, code: number, message: string): void {
+    res.writeHead(status, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+    }).end(JSON.stringify({
+      jsonrpc: '2.0',
+      error: { code, message },
+      id: null,
+    }));
   }
 
   private ok(data: unknown): CallToolResult {
@@ -1158,6 +1322,34 @@ function formatHostForUrl(host: string): string {
   return host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
 }
 
+function acceptsEventStream(req: http.IncomingMessage): boolean {
+  const accept = req.headers.accept;
+  if (Array.isArray(accept)) {
+    return accept.some((value: unknown) => typeof value === 'string' && value.includes('text/event-stream'));
+  }
+  return typeof accept === 'string' && accept.includes('text/event-stream');
+}
+
+function getHeaderString(req: http.IncomingMessage, name: string): string | undefined {
+  const value = req.headers[name.toLowerCase()];
+  if (Array.isArray(value)) {
+    return value.find((item) => item.trim().length > 0);
+  }
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
+async function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req as AsyncIterable<Buffer | string>) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk, 'utf-8') : Buffer.from(chunk));
+  }
+  const raw = Buffer.concat(chunks).toString('utf-8').trim();
+  if (!raw) {
+    throw new Error('Parse error: empty JSON body');
+  }
+  return JSON.parse(raw) as unknown;
+}
+
 function toRemoveChildTag(kind: string): ChildTag | 'Column' {
   if (
     kind === 'Attribute' ||
@@ -1174,4 +1366,116 @@ function toRemoveChildTag(kind: string): ChildTag | 'Column' {
     return kind;
   }
   throw new Error(`Неподдерживаемый дочерний тип для удаления: ${kind}`);
+}
+
+function normalizeChildTag(value: string | undefined): ChildTag | 'Column' | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = normalizeInputText(value);
+  if (normalized === normalizeInputText('Колонка') || normalized === normalizeInputText('Реквизит табличной части')) {
+    return 'Column';
+  }
+  for (const [tag, config] of Object.entries(CHILD_TAG_CONFIG)) {
+    const aliases = [
+      tag,
+      config.label,
+      META_TYPES[tag as keyof typeof META_TYPES].label,
+      META_TYPES[tag as keyof typeof META_TYPES].pluralLabel,
+    ];
+    if (aliases.some((alias) => normalizeInputText(alias) === normalized)) {
+      return tag as ChildTag;
+    }
+  }
+  throw new Error(`Неподдерживаемый дочерний тип "${value}". Используйте русское имя группы, например "Реквизиты", "Формы", "Макеты".`);
+}
+
+function normalizeTemplateType(value: string | undefined): TemplateTypeInput | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = normalizeInputText(value);
+  const aliases: Record<TemplateTypeInput, readonly string[]> = {
+    SpreadsheetDocument: ['Табличный документ', 'MXL', 'SpreadsheetDocument'],
+    DataCompositionSchema: ['Схема компоновки данных', 'СКД', 'DataCompositionSchema'],
+    TextDocument: ['Текстовый документ', 'Текст', 'TextDocument'],
+    HTMLDocument: ['HTML документ', 'HTMLDocument'],
+    BinaryData: ['Двоичные данные', 'BinaryData'],
+    DataCompositionAppearanceTemplate: ['Макет оформления компоновки данных', 'DataCompositionAppearanceTemplate'],
+    GraphicalSchema: ['Графическая схема', 'GraphicalSchema'],
+    AddIn: ['Внешняя компонента', 'AddIn'],
+  };
+  for (const [templateType, names] of Object.entries(aliases) as [TemplateTypeInput, readonly string[]][]) {
+    if (names.some((name) => normalizeInputText(name) === normalized)) {
+      return templateType;
+    }
+  }
+  throw new Error(`Неподдерживаемый тип макета "${value}". Используйте русское имя, например "Текстовый документ", "Табличный документ", "СКД".`);
+}
+
+function normalizeSetTypeToolInput(input: Record<string, unknown>): unknown {
+  const rawValue = input.value;
+  const items = Array.isArray(input.items)
+    ? input.items.filter((item): item is string => typeof item === 'string')
+    : undefined;
+  const type = typeof input.type === 'string' ? input.type : undefined;
+  const value = rawValue ?? (items ? { items } : type);
+
+  if (value === undefined) {
+    throw new Error('Укажите тип в value, type или items.');
+  }
+
+  const normalized: Record<string, unknown> = isPlainObject(value)
+    ? { ...value }
+    : { items: typeof value === 'string' ? [value] : value };
+
+  if (items && !Array.isArray(normalized.items)) {
+    normalized.items = items;
+  }
+  if (type && !Array.isArray(normalized.items)) {
+    normalized.items = [type];
+  }
+
+  const stringQualifiers = mergeQualifierObject(normalized.stringQualifiers, {
+    length: input.length,
+    allowedLength: input.allowedLength,
+  });
+  const numberQualifiers = mergeQualifierObject(normalized.numberQualifiers, {
+    digits: input.digits ?? input.length,
+    fractionDigits: input.fractionDigits ?? input.precision,
+    allowedSign: input.allowedSign,
+  });
+  const dateQualifiers = mergeQualifierObject(normalized.dateQualifiers, {
+    dateFractions: input.dateFractions,
+  });
+
+  if (stringQualifiers) {
+    normalized.stringQualifiers = stringQualifiers;
+  }
+  if (numberQualifiers) {
+    normalized.numberQualifiers = numberQualifiers;
+  }
+  if (dateQualifiers) {
+    normalized.dateQualifiers = dateQualifiers;
+  }
+
+  return normalized;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function mergeQualifierObject(current: unknown, additions: Record<string, unknown>): Record<string, unknown> | undefined {
+  const result = isPlainObject(current) ? { ...current } : {};
+  for (const [key, value] of Object.entries(additions)) {
+    if (value !== undefined) {
+      result[key] = value;
+    }
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function normalizeInputText(value: string): string {
+  return value.trim().toLocaleLowerCase('ru-RU').replace(/ё/g, 'е').replace(/\s+/g, '');
 }

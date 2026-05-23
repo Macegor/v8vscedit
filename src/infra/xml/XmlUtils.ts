@@ -85,7 +85,14 @@ function getWrappedRootChildren(fragmentXml: string): XmlNodeList {
   return wrapped ? getElementChildren(wrapped) : [];
 }
 
-function findFirstElementRange(xml: string, tagName: string): { start: number; openEnd: number; end: number; closeStart: number } | null {
+export interface XmlElementRange {
+  readonly start: number;
+  readonly openEnd: number;
+  readonly end: number;
+  readonly closeStart: number;
+}
+
+export function findNestingAwareElementRange(xml: string, tagName: string): XmlElementRange | null {
   const tagRe = new RegExp(`</?${escapeRegExp(tagName)}(?:\\s[^<>]*)?\\/?>`, 'g');
   let depth = 0;
   let start = -1;
@@ -131,7 +138,11 @@ function findFirstElementRange(xml: string, tagName: string): { start: number; o
   return null;
 }
 
-function findDirectElementRanges(xml: string, tagName: string): { start: number; end: number }[] {
+function findFirstElementRange(xml: string, tagName: string): XmlElementRange | null {
+  return findNestingAwareElementRange(xml, tagName);
+}
+
+export function findDirectElementRanges(xml: string, tagName: string): { start: number; end: number }[] {
   const ranges: { start: number; end: number }[] = [];
   const tagRe = /<\/?([A-Za-z_][\w:.-]*)(?:\s[^<>]*)?\/?>/g;
   let depth = 0;
@@ -233,6 +244,31 @@ export function findChildElementFullXmlInBlock(
   }
 
   return null;
+}
+
+/** Проверяет наличие прямого дочернего элемента по имени или текстовой ссылке. */
+export function hasDirectChildElementNameInBlock(
+  block: string,
+  childTag: string,
+  elementName: string
+): boolean {
+  for (const range of findDirectElementRanges(block, childTag)) {
+    const childXml = block.slice(range.start, range.end);
+    const children = getWrappedRootChildren(childXml);
+    const child = findDirectChildren(children, childTag).at(0);
+    if (!child) {
+      continue;
+    }
+    const childChildren = getElementChildren(child);
+    const nameNode = findFirstElement(childChildren, 'Name');
+    const name = nameNode
+      ? collectText(getElementChildren(nameNode))
+      : collectText(childChildren);
+    if (name.trim() === elementName) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Возвращает все прямые дочерние элементы указанного типа из XML-блока. */

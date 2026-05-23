@@ -40,9 +40,21 @@ export const EXTENSION_MCP_TOOLS: readonly AiMcpToolInfo[] = [
   },
   {
     profile: 'extension',
-    name: 'v8vscedit_list_metadata_nodes',
-    description: 'Поиск узлов основной панели метаданных и выдача nodeId для последующих инструментов.',
+    name: 'v8vscedit_workspace_overview',
+    description: 'Быстрый обзор основной конфигурации и расширений: корни, имена, версии и счётчики объектов.',
     requirement: 'Загруженное дерево метаданных',
+  },
+  {
+    profile: 'extension',
+    name: 'v8vscedit_search_metadata',
+    description: 'Поиск по части строки в предметных путях метаданных выбранной конфигурации.',
+    requirement: 'query и configuration из v8vscedit_workspace_overview; kind можно задавать по-русски',
+  },
+  {
+    profile: 'extension',
+    name: 'v8vscedit_list_metadata',
+    description: 'Список объектов группы или дочерних элементов по пути без nodeId.',
+    requirement: 'При нескольких корнях обязательно configuration; kind/group можно задавать по-русски',
   },
   {
     profile: 'extension',
@@ -101,8 +113,8 @@ export const EXTENSION_MCP_TOOLS: readonly AiMcpToolInfo[] = [
   {
     profile: 'extension',
     name: 'v8vscedit_compile_mxl',
-    description: 'Создание MXL Template.xml из JSON DSL.',
-    requirement: 'OutputPath и definition с columns/areas',
+    description: 'Создание или перезапись содержимого существующего MXL Template.xml из JSON DSL.',
+    requirement: 'Для нового макета сначала v8vscedit_add_metadata_by_path',
   },
   {
     profile: 'extension',
@@ -125,8 +137,8 @@ export const EXTENSION_MCP_TOOLS: readonly AiMcpToolInfo[] = [
   {
     profile: 'extension',
     name: 'v8vscedit_compile_skd',
-    description: 'Создание СКД Template.xml из JSON DSL.',
-    requirement: 'OutputPath и definition с dataSets/parameters/settingsVariants',
+    description: 'Создание или перезапись содержимого существующей СКД Template.xml из JSON DSL.',
+    requirement: 'Для новой СКД сначала v8vscedit_add_metadata_by_path',
   },
   {
     profile: 'extension',
@@ -250,27 +262,45 @@ export const EXTENSION_MCP_TOOLS: readonly AiMcpToolInfo[] = [
   },
   {
     profile: 'extension',
-    name: 'v8vscedit_get_property_contract',
-    description: 'Контракт свойства узла: тип значения, текущее значение и допустимые enum-значения.',
-    requirement: 'nodeId и ключ свойства',
+    name: 'v8vscedit_get_properties',
+    description: 'Все свойства объекта по предметному пути с текущими значениями и допустимыми enum/multiEnum-значениями.',
+    requirement: 'metadataPath',
   },
   {
     profile: 'extension',
-    name: 'v8vscedit_set_property',
-    description: 'Изменение простого свойства после проверки контракта.',
-    requirement: 'Сначала получить контракт свойства',
+    name: 'v8vscedit_set_property_by_path',
+    description: 'Изменение простого свойства объекта по предметному пути с проверками панели свойств.',
+    requirement: 'metadataPath, propertyKey, value',
   },
   {
     profile: 'extension',
-    name: 'v8vscedit_add_metadata',
-    description: 'Добавление объекта или дочернего элемента через общий сервис UI-команды.',
-    requirement: 'Узел, поддерживающий добавление метаданных',
+    name: 'v8vscedit_list_available_types',
+    description: 'Список доступных типов 1С с русским value для передачи в set_type; для CFE включает только собственные и заимствованные объекты.',
+    requirement: 'Перед ссылочным типом вызывать с тем же metadataPath и propertyKey; propertyKey можно "Тип"',
+  },
+  {
+    profile: 'extension',
+    name: 'v8vscedit_set_type',
+    description: 'Изменение свойства "Тип"/"Источник"/"Тип параметра команды" по предметному пути, включая длину и точность.',
+    requirement: 'Ссылочные типы брать из v8vscedit_list_available_types; для числа можно указать length/digits и precision/fractionDigits',
+  },
+  {
+    profile: 'extension',
+    name: 'v8vscedit_rename_metadata',
+    description: 'Переименование объекта или дочернего элемента по предметному пути через общий XML-сервис.',
+    requirement: 'metadataPath и newName',
+  },
+  {
+    profile: 'extension',
+    name: 'v8vscedit_add_metadata_by_path',
+    description: 'Добавление объекта, реквизита, табличной части, колонки, формы, команды или макета по предметному пути.',
+    requirement: 'path; для табличной части используй сегмент "ТабличныеЧасти"; childTag и templateType можно задавать по-русски',
   },
   {
     profile: 'extension',
     name: 'v8vscedit_remove_metadata',
     description: 'Удаление объекта или дочернего элемента через общий сервис удаления метаданных.',
-    requirement: 'Узел, поддерживающий удаление метаданных',
+    requirement: 'metadataPath и configuration; XML/каталоги вручную не удалять',
   },
   {
     profile: 'extension',

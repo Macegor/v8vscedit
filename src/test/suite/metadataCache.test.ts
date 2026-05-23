@@ -80,6 +80,27 @@ suite('MetadataCache', () => {
     assert.strictEqual(commonTemplate?.singleClickAction, 'openTemplateContent');
     assert.strictEqual(spreadsheetTemplate?.singleClickAction, undefined);
   });
+
+  test('Макеты справочника отображаются в дереве после табличных частей', () => {
+    const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-catalog-template-cache-'));
+    fs.writeFileSync(path.join(configRoot, 'Configuration.xml'), buildConfigXml(), 'utf-8');
+
+    const creator = new MetadataXmlCreator();
+    assert.strictEqual(creator.addRootObject({ configRoot, kind: 'Catalog', name: 'Товары' }).success, true);
+    const ownerXmlPath = path.join(configRoot, 'Catalogs', 'Товары.xml');
+    assert.strictEqual(creator.addChildElement({ ownerObjectXmlPath: ownerXmlPath, childTag: 'TabularSection', name: 'Состав' }).success, true);
+    assert.strictEqual(creator.addChildElement({
+      ownerObjectXmlPath: ownerXmlPath,
+      childTag: 'Template',
+      name: 'Печать',
+      templateType: 'TextDocument',
+    }).success, true);
+
+    const snapshot = buildMetadataCacheSnapshot('test-catalog-template-after-tabular-section', { rootPath: configRoot, kind: 'cf' });
+    const template = findNode(snapshot.root, (node) => node.type === 'Template' && node.name === 'Печать');
+    assert.ok(template, 'Макет справочника не найден в дереве');
+    assert.strictEqual(template.singleClickAction, 'openTemplateContent');
+  });
 });
 
 function findNode(
