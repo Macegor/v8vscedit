@@ -1,7 +1,9 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import { CHILD_TAG_CONFIG, type ChildTag } from '../../domain/ChildTag';
 import { META_TYPES, type MetaKind } from '../../domain/MetaTypes';
 import { ConfigXmlReader } from '../../infra/xml';
+import { resolveMetadataObjectPath } from '../../infra/xml/MetadataInfoService';
 import type { MetadataTreeProvider } from '../tree/MetadataTreeProvider';
 import type { MetadataNode } from '../tree/TreeNode';
 import type { AddMetadataTarget } from '../tree/TreeNodeModel';
@@ -216,6 +218,62 @@ export class McpMetadataPathService {
     return this.resolveIndexedNode(pathValue, configuration).node;
   }
 
+  /**
+   * Универсальный резолвер для tool'ов, принимающих `objectPath`:
+   * 1. абсолютный путь к файлу или каталогу объекта;
+   * 2. относительный путь от корня одной из зарегистрированных конфигураций
+   *    (например, `Catalogs/Задачи.xml` или `Roles/БазовыеПрава`);
+   * 3. предметный путь (`Catalog.Задачи`, `Справочники.Задачи` и т.п.).
+   *
+   * Возвращает абсолютный путь к XML-файлу или null, если ничего не подошло.
+   */
+  resolveObjectXmlPath(input: string, configuration?: string): string | null {
+    const trimmed = input.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const direct = resolveMetadataObjectPath(trimmed);
+    if (direct) {
+      return direct;
+    }
+
+    if (!path.isAbsolute(trimmed)) {
+      for (const root of this.collectCandidateRoots(configuration)) {
+        const candidate = resolveMetadataObjectPath(path.join(root, trimmed));
+        if (candidate) {
+          return candidate;
+        }
+      }
+    }
+
+    try {
+      const node = this.resolveNode(trimmed, configuration);
+      if (node.xmlPath && fs.existsSync(node.xmlPath)) {
+        return node.xmlPath;
+      }
+    } catch {
+      // fall through
+    }
+    return null;
+  }
+
+  private collectCandidateRoots(configuration?: string): string[] {
+    const entries = this.treeProvider.getEntries();
+    if (!configuration?.trim()) {
+      return entries.map((entry) => entry.rootPath);
+    }
+    const normalized = normalize(configuration);
+    const normalizedPath = path.resolve(configuration);
+    const filtered = entries.filter((entry) => {
+      const baseName = path.basename(entry.rootPath);
+      return normalize(baseName) === normalized ||
+        normalize(entry.rootPath) === normalized ||
+        path.resolve(entry.rootPath).toLowerCase() === normalizedPath.toLowerCase();
+    });
+    return (filtered.length > 0 ? filtered : entries).map((entry) => entry.rootPath);
+  }
+
   resolveAddTarget(request: McpAddMetadataByPathRequest): McpAddMetadataByPathTarget {
     const segments = splitPath(request.path);
     if (segments.length < 2) {
@@ -350,9 +408,20 @@ export class McpMetadataPathService {
     const roots = this.getConfigRoots(configuration);
     const result: IndexedNode[] = [];
     for (const root of roots) {
+      this.collectRoot(root, result);
       this.collectRootChildren(root, result);
     }
     return result;
+  }
+
+  private collectRoot(root: MetadataNode, result: IndexedNode[]): void {
+    const aliases = ['Configuration', 'Конфигурация', 'Расширение', 'Extension', root.textLabel, root.nodeKind];
+    result.push({
+      node: root,
+      root,
+      logicalPath: root.textLabel,
+      aliases: uniqueNonEmpty(aliases),
+    });
   }
 
   private listRootObjectsByKind(options: {

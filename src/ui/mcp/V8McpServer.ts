@@ -55,6 +55,44 @@ const ROLE_OBJECT_SCHEMA = z.union([
   }),
 ]);
 
+const ROLE_EDIT_OPERATION_SCHEMA = z.discriminatedUnion('op', [
+  z.object({
+    op: z.literal('grant'),
+    object: z.string(),
+    preset: z.string().optional(),
+    rights: z.union([z.array(z.string()), z.record(z.string(), z.boolean())]).optional(),
+    rls: z.record(z.string(), z.string()).optional(),
+  }),
+  z.object({
+    op: z.literal('revoke'),
+    object: z.string(),
+    rights: z.array(z.string()).optional(),
+  }),
+  z.object({
+    op: z.literal('setRls'),
+    object: z.string(),
+    right: z.string(),
+    condition: z.string().optional(),
+  }),
+  z.object({
+    op: z.literal('setFlags'),
+    flags: z.object({
+      setForNewObjects: z.boolean().optional(),
+      setForAttributesByDefault: z.boolean().optional(),
+      independentRightsOfChildObjects: z.boolean().optional(),
+    }),
+  }),
+  z.object({
+    op: z.literal('addTemplate'),
+    name: z.string(),
+    condition: z.string(),
+  }),
+  z.object({
+    op: z.literal('removeTemplate'),
+    name: z.string(),
+  }),
+]);
+
 const COMMAND_INTERFACE_OPERATION_SCHEMA = z.discriminatedUnion('operation', [
   z.object({
     operation: z.enum(['hide', 'show']),
@@ -239,30 +277,41 @@ export class V8McpServer implements vscode.Disposable {
       'v8vscedit_metadata_info',
       {
         title: 'Информация об объекте метаданных',
-        description: 'Структурированный аналог meta-info: реквизиты, табличные части, формы, команды, макеты и текстовый отчёт.',
+        description: 'Структурированный аналог meta-info: реквизиты, табличные части, формы, команды, макеты и текстовый отчёт. objectPath принимает: абсолютный путь к XML/каталогу объекта; путь относительно корня одной из зарегистрированных конфигураций (Catalogs/Задачи.xml, Roles/БазовыеПрава); предметный путь (Catalog.Задачи, Справочники.Задачи). Если корней больше одного, уточни configuration по имени из v8vscedit_workspace_overview.',
         inputSchema: z.object({
           objectPath: z.string(),
+          configuration: z.string().optional(),
           mode: z.enum(['overview', 'brief', 'full']).optional(),
           name: z.string().optional(),
           limit: z.number().int().min(1).max(1000).optional(),
           offset: z.number().int().min(0).optional(),
         }),
       },
-      (args) => this.wrap(() => this.services.metadataInfoService.read(args))
+      ({ objectPath, configuration, ...rest }) => this.wrap(() => {
+        const resolved = paths.resolveObjectXmlPath(objectPath, configuration) ?? objectPath;
+        return this.services.metadataInfoService.read({ ...rest, objectPath: resolved });
+      })
     );
 
     server.registerTool(
       'v8vscedit_validate_metadata',
       {
         title: 'Валидировать объект метаданных',
-        description: 'Проверяет XML объекта, тип в META_TYPES, имя, UUID, допустимые дочерние элементы и связанные файлы.',
+        description: 'Проверяет XML объекта, тип в META_TYPES, имя, UUID, допустимые дочерние элементы и связанные файлы. objectPath поддерживает абсолютный путь, путь относительно корня конфигурации (Catalogs/Задачи.xml) и предметный путь (Catalog.Задачи, Справочники.Задачи). Несколько объектов можно передать через | (pipe).',
         inputSchema: z.object({
           objectPath: z.string(),
+          configuration: z.string().optional(),
           detailed: z.boolean().optional(),
           maxErrors: z.number().int().min(1).max(500).optional(),
         }),
       },
-      (args) => this.wrap(() => this.services.metadataValidationService.validate(args))
+      ({ objectPath, configuration, ...rest }) => this.wrap(() => {
+        const items = objectPath.split('|').map((item) => item.trim()).filter(Boolean);
+        const resolvedJoined = items
+          .map((item) => paths.resolveObjectXmlPath(item, configuration) ?? item)
+          .join('|');
+        return this.services.metadataValidationService.validate({ ...rest, objectPath: resolvedJoined });
+      })
     );
 
     server.registerTool(
@@ -589,7 +638,18 @@ export class V8McpServer implements vscode.Disposable {
       'v8vscedit_form_info',
       {
         title: 'Информация о форме',
-        description: 'Структурированный аналог form-info: элементы, реквизиты, команды, события и BaseForm.',
+        description: [
+          'Структурированный отчёт о Form.xml: иерархия элементов (дерево с │ ├ └), Properties формы,',
+          'AutoCommandBar главной панели, Attributes (с колонками ValueTable и MainTable у DynamicList),',
+          'Parameters, Commands (с Action+callType+Shortcut), Events формы, BaseForm для расширений.',
+          '',
+          'Аргументы:',
+          '  formPath — путь к Form.xml ИЛИ каталогу формы (Forms/<Имя>) ИЛИ XML-дескриптору формы.',
+          '  expand — раскрыть свёрнутую Page по имени, или "*" для всех страниц.',
+          '  limit/offset — постраничный вывод (по умолчанию 150 строк).',
+          '',
+          'Используй ПЕРЕД edit/validate, чтобы понять текущую структуру формы.',
+        ].join('\n'),
         inputSchema: z.object({
           formPath: z.string(),
           expand: z.string().optional(),
@@ -604,7 +664,23 @@ export class V8McpServer implements vscode.Disposable {
       'v8vscedit_validate_form',
       {
         title: 'Валидировать форму',
-        description: 'Проверяет Form.xml: AutoCommandBar, ID, DataPath, команды, события, callType и типы реквизитов.',
+        description: [
+          'Полная проверка Form.xml. Делает 12 групп проверок:',
+          ' 1. Версия Form (2.17/2.20).',
+          ' 2. AutoCommandBar id=-1.',
+          ' 3. Уникальность ID элементов / реквизитов / команд / колонок.',
+          ' 4. Companion-элементы (ContextMenu/ExtendedTooltip/Table-Search* и пр.).',
+          ' 5. DataPath ссылается на существующий реквизит (учитывает Items.<Table>.CurrentData.*).',
+          ' 6. CommandName кнопок ссылается на существующую команду.',
+          ' 7. Все Event имеют непустой handler.',
+          ' 8. У каждой Command есть Action.',
+          ' 9. Не более одного MainAttribute=true.',
+          '10. Title формы — мультиязычный XML.',
+          '11. BaseForm + extension ID >= 1000000 + callType только при BaseForm.',
+          '12. Допустимость типов (cfg-префиксы, запрет FormDataStructure/FormGroup/и т.п.).',
+          '',
+          'detailed=true показывает все [OK]-проверки. maxErrors ограничивает остановку.',
+        ].join('\n'),
         inputSchema: z.object({
           formPath: z.string(),
           detailed: z.boolean().optional(),
@@ -618,13 +694,36 @@ export class V8McpServer implements vscode.Disposable {
       'v8vscedit_add_form',
       {
         title: 'Добавить форму',
-        description: 'Создаёт метаданные формы, Form.xml, Module.bsl и регистрирует форму в ChildObjects объекта.',
+        description: [
+          'Создаёт управляемую форму у объекта конфигурации: метаданные (Forms/<Имя>.xml),',
+          'Form.xml, Module.bsl и регистрирует <Form>Имя</Form> в ChildObjects.',
+          '',
+          'Аргументы:',
+          '  objectPath  — путь к XML объекта (Catalogs/Товары.xml) ИЛИ каталогу объекта.',
+          '  formName    — идентификатор 1С (например, "ФормаЭлемента", "ФормаСписка").',
+          '  purpose     — назначение. Принимает синонимы:',
+          '     Object (по умолчанию) | Item | ItemForm | ObjectForm | Element | Folder | Group | Document |',
+          '       ФормаЭлемента | ФормаОбъекта | ФормаДокумента | ФормаГруппы | ФормаСчёта',
+          '     List | ListForm | ФормаСписка',
+          '     Choice | ChoiceForm | Selection | ФормаВыбора',
+          '     Record | RecordForm | ФормаЗаписи (только для InformationRegister).',
+          '  synonym     — синоним формы (по умолчанию = formName).',
+          '  setDefault  — назначить как форму по умолчанию для этого purpose. Если у объекта',
+          '                ещё нет default-формы для этого purpose — будет установлено автоматически.',
+          '  autoFill    — true (по умолчанию): Form.xml наполняется по метаданным объекта',
+          '                (Код+Наименование+реквизиты+табличные части для Catalog/Document/Register).',
+          '                false — пустой каркас только с основным реквизитом.',
+          '',
+          'Сразу после создания форма готова к работе — НЕ нужно дополнительно вызывать compile.',
+          'Для тонкой правки уже созданной формы — vscedit_edit_form.',
+        ].join('\n'),
         inputSchema: z.object({
           objectPath: z.string(),
           formName: z.string(),
           purpose: z.string().optional(),
           synonym: z.string().optional(),
           setDefault: z.boolean().optional(),
+          autoFill: z.boolean().optional(),
         }),
         annotations: {
           destructiveHint: true,
@@ -641,7 +740,13 @@ export class V8McpServer implements vscode.Disposable {
       'v8vscedit_remove_form',
       {
         title: 'Удалить форму',
-        description: 'Удаляет форму, каталог формы, регистрацию в ChildObjects и очищает DefaultForm-ссылку.',
+        description: [
+          'Удаляет форму у объекта: каталог Forms/<Имя>/, дескриптор Forms/<Имя>.xml,',
+          'снимает регистрацию <Form>Имя</Form> из ChildObjects и очищает соответствующее',
+          'DefaultForm/DefaultObjectForm/DefaultListForm/DefaultChoiceForm/DefaultRecordForm.',
+          '',
+          'objectPath — путь к XML объекта; formName — имя формы.',
+        ].join('\n'),
         inputSchema: z.object({
           objectPath: z.string(),
           formName: z.string(),
@@ -661,7 +766,48 @@ export class V8McpServer implements vscode.Disposable {
       'v8vscedit_compile_form',
       {
         title: 'Скомпилировать форму',
-        description: 'Создаёт Form.xml из JSON DSL или из метаданных объекта по outputPath.',
+        description: [
+          'Создаёт/перезаписывает Form.xml из JSON DSL. ПЕРЕЗАПИСЫВАЕТ существующий Form.xml целиком.',
+          'Для регистрации формы в объекте и Module.bsl лучше использовать v8vscedit_add_form.',
+          '',
+          'Аргументы:',
+          '  outputPath  — путь к Form.xml или каталогу формы.',
+          '  fromObject  — если true и definition не указан, генерирует базовую форму по метаданным',
+          '                объекта (определяемого по структуре пути .../<TypePlural>/<Object>/Forms/<Form>/Ext/Form.xml).',
+          '  definition  — JSON DSL формы (объект). Структура:',
+          '',
+          '{',
+          '  "title": "Заголовок формы",  // мультиязычный заголовок',
+          '  "properties": { "autoTitle": false, "windowOpeningMode": "LockOwnerWindow", "width": 80 },',
+          '  "events": { "OnCreateAtServer": "ПриСозданииНаСервере" },',
+          '  "excludedCommands": ["Reread"],',
+          '  "elements": [...],          // верхний уровень ChildItems',
+          '  "attributes": [...],        // реквизиты формы',
+          '  "commands": [...],          // команды формы',
+          '  "parameters": [...]         // параметры формы',
+          '}',
+          '',
+          'Элементы (ключ определяет тип, значение = имя):',
+          '  group/columnGroup: "horizontal"|"vertical"|"alwaysHorizontal"|"alwaysVertical"|"collapsible" | "inCell"',
+          '  input, check, radio, label, labelField, table, pages, page, button, picture, picField,',
+          '  calendar, cmdBar, autoCmdBar (заполняет главную AutoCommandBar id=-1), popup.',
+          '  Общие свойства: name, title, path (DataPath), visible:false, enabled:false, readOnly:true,',
+          '    on: ["OnChange",...] (имена событий валидируются), handlers: {OnChange: "ИмяОбработчика"}.',
+          '  input: multiLine, passwordMode, choiceButton:false, clearButton, spinButton, dropListButton,',
+          '    markIncomplete, inputHint, autoMaxWidth, maxWidth, width, height, horizontalStretch, titleLocation.',
+          '  table: path, columns:[...], changeRowSet, changeRowOrder, header:false, footer:true,',
+          '    commandBarLocation, choiceMode, initialTreeView, rowPictureDataPath, tableAutofill.',
+          '  button: command|stdCommand, defaultButton, type:"usual"|"hyperlink", picture, representation.',
+          '  radio: radioButtonType:"Auto"|"RadioButtons"|"Tumbler", columnsCount, choiceList:[{value,presentation}].',
+          '',
+          'Реквизиты (attributes): { "name":"Объект", "type":"DocumentObject.X", "main":true, ',
+          '  "savedData":true, "columns":[{name,type}], "settings":{mainTable,dynamicDataRead} }.',
+          'Типы: string|string(100)|decimal(15,2)|decimal(10,2,nonneg)|boolean|date|dateTime|time|',
+          '  CatalogRef.X|DocumentObject.X|EnumRef.X|ValueTable|ValueTree|DynamicList|UUID|FormattedString|',
+          '  Picture|Color|Font|DataCompositionSettings. Составной: "Type1 | Type2".',
+          '',
+          'Команды: { "name":"X", "action":"XОбработка", "title":"Заголовок", "shortcut":"Ctrl+L", "picture":"..." }.',
+        ].join('\n'),
         inputSchema: z.object({
           outputPath: z.string(),
           definition: z.any().optional(),
@@ -682,7 +828,28 @@ export class V8McpServer implements vscode.Disposable {
       'v8vscedit_edit_form',
       {
         title: 'Изменить форму',
-        description: 'Добавляет элементы, реквизиты, команды и события в существующий Form.xml.',
+        description: [
+          'Точечно добавляет элементы / реквизиты / команды / события в существующий Form.xml.',
+          'НЕ перезаписывает форму целиком, в отличие от compile. ID берутся из правильных пулов',
+          '(элементы / реквизиты / команды отдельно), для расширений (с BaseForm) автоматически >= 1000000.',
+          '',
+          'Аргументы:',
+          '  formPath — путь к Form.xml (или каталогу формы).',
+          '  definition — описание добавлений:',
+          '',
+          '{',
+          '  "into": "ГруппаШапка",       // (опционально) имя контейнера, куда вставлять elements',
+          '  "after": "Контрагент",       // (опционально) имя элемента, после которого вставлять',
+          '  "elements":   [ {...} ],     // те же DSL-ключи, что в compile',
+          '  "attributes": [ {...} ],     // добавляются в конец <Attributes>',
+          '  "commands":   [ {...} ],     // добавляются в конец <Commands>',
+          '  "formEvents": [ {name, handler, callType?} ],     // события уровня формы',
+          '  "elementEvents": [ {element, name, handler, callType?} ]  // на существующий элемент',
+          '}',
+          '',
+          'Для расширений (BaseForm) поддерживается callType: "Before"|"After"|"Override" в',
+          'formEvents, elementEvents, и в Action команды (через actions:[{handler,callType}]).',
+        ].join('\n'),
         inputSchema: z.object({
           formPath: z.string(),
           definition: z.any(),
@@ -827,7 +994,7 @@ export class V8McpServer implements vscode.Disposable {
       'v8vscedit_compile_role',
       {
         title: 'Создать роль из DSL',
-        description: 'Создаёт Roles/<Имя>.xml и Roles/<Имя>/Ext/Rights.xml из JSON DSL, затем регистрирует роль в Configuration.xml.',
+        description: 'Создаёт Roles/<Имя>.xml и Roles/<Имя>/Ext/Rights.xml из JSON DSL и регистрирует роль в Configuration.xml через ChildObjects (как скилл role-compile). DefaultRoles при этом НЕ затрагивается — для назначения роли по умолчанию используй v8vscedit_add_default_role.',
         inputSchema: z.object({
           outputDir: z.string(),
           definition: z.object({
@@ -848,6 +1015,110 @@ export class V8McpServer implements vscode.Disposable {
       },
       (args) => this.wrap(() => {
         const result = this.services.roleRightsService.compile(args);
+        this.afterMutation([...result.changedFiles]);
+        return result;
+      })
+    );
+
+    server.registerTool(
+      'v8vscedit_edit_role',
+      {
+        title: 'Точечное редактирование прав роли',
+        description: [
+          'Применяет список операций к Rights.xml существующей роли и сериализует файл в том же стиле, что role-compile.',
+          'rightsPath — путь к Roles/<Имя>/Ext/Rights.xml, к Roles/<Имя>.xml или к каталогу роли.',
+          'Объекты задаются именами 1С с английскими типами или русскими синонимами: Catalog.Контрагенты, Справочник.Контрагенты, Catalog.Контрагенты.Attribute.ИНН, Catalog.Контрагенты.Command.НоваяКоманда, IntegrationService.Х.IntegrationServiceChannel.Y. Имена прав тоже принимают русские синонимы (Чтение, Просмотр).',
+          'Поддерживаемые операции:',
+          ' • grant {object, preset?, rights?, rls?} — выдать права. preset (@view/@edit) применяется только для типов из RoleRightsXml.PRESETS. rights — массив имён (выдать true) или объект {right: boolean} (явный true/false). rls — словарь right→условие; право должно быть сначала выдано через rights/preset.',
+          ' • revoke {object, rights?} — удалить указанные права; без rights удаляет объект из Rights.xml полностью.',
+          ' • setRls {object, right, condition?} — задать или сбросить RLS-условие существующего права. Пустой condition снимает ограничение.',
+          ' • setFlags {flags: {setForNewObjects?, setForAttributesByDefault?, independentRightsOfChildObjects?}} — установить только переданные глобальные флаги.',
+          ' • addTemplate {name, condition} — добавить или заменить шаблон ограничения (имя вида ДляОбъекта(Мод)).',
+          ' • removeTemplate {name} — удалить шаблон по имени.',
+          'Возвращает success/changed, число применённых операций, предупреждения (например, для несуществующего права) и ошибки парсинга/невалидных операций. После сохранения файл всегда нормализуется сериализатором — ручное форматирование Rights.xml не сохраняется.',
+        ].join(' '),
+        inputSchema: z.object({
+          rightsPath: z.string(),
+          operations: z.array(ROLE_EDIT_OPERATION_SCHEMA).min(1),
+        }),
+        annotations: {
+          destructiveHint: true,
+        },
+      },
+      (args) => this.wrap(() => {
+        const result = this.services.roleRightsService.edit(args);
+        this.afterMutation([...result.changedFiles]);
+        return result;
+      })
+    );
+
+    server.registerTool(
+      'v8vscedit_list_default_roles',
+      {
+        title: 'Список ролей по умолчанию',
+        description: 'Возвращает текущий список <DefaultRoles> из Configuration.xml — роли, которые автоматически назначаются новым пользователям информационной базы. Принимает либо путь к каталогу выгрузки конфигурации, либо непосредственно к Configuration.xml.',
+        inputSchema: z.object({
+          configPath: z.string(),
+        }),
+      },
+      (args) => this.wrap(() => this.services.roleRightsService.listDefaultRoles(args))
+    );
+
+    server.registerTool(
+      'v8vscedit_add_default_role',
+      {
+        title: 'Добавить роль в DefaultRoles',
+        description: 'Добавляет роль в <DefaultRoles> Configuration.xml. Принимает имя роли как "БазовыеПрава" или полную ссылку "Role.БазовыеПрава" — префикс Role. подставляется автоматически. Если блок отсутствует или самозакрывающийся (<DefaultRoles/>), он будет развёрнут. Возвращает обновлённый список ролей.',
+        inputSchema: z.object({
+          configPath: z.string(),
+          role: z.string(),
+        }),
+        annotations: {
+          destructiveHint: true,
+        },
+      },
+      (args) => this.wrap(() => {
+        const result = this.services.roleRightsService.addDefaultRole(args);
+        this.afterMutation([...result.changedFiles]);
+        return result;
+      })
+    );
+
+    server.registerTool(
+      'v8vscedit_remove_default_role',
+      {
+        title: 'Удалить роль из DefaultRoles',
+        description: 'Убирает роль из <DefaultRoles> Configuration.xml. Принимает имя роли как "БазовыеПрава" или полную ссылку "Role.БазовыеПрава". Если роли в списке нет — возвращает предупреждение без изменения файла.',
+        inputSchema: z.object({
+          configPath: z.string(),
+          role: z.string(),
+        }),
+        annotations: {
+          destructiveHint: true,
+        },
+      },
+      (args) => this.wrap(() => {
+        const result = this.services.roleRightsService.removeDefaultRole(args);
+        this.afterMutation([...result.changedFiles]);
+        return result;
+      })
+    );
+
+    server.registerTool(
+      'v8vscedit_set_default_roles',
+      {
+        title: 'Задать список DefaultRoles',
+        description: 'Полностью заменяет список <DefaultRoles> в Configuration.xml. Передай пустой массив, чтобы оставить только <DefaultRoles/>. Каждое имя нормализуется в форму "Role.<Имя>". Альтернатива: v8vscedit_set_property_by_path с metadataPath="Конфигурация" и propertyKey="DefaultRoles".',
+        inputSchema: z.object({
+          configPath: z.string(),
+          roles: z.array(z.string()),
+        }),
+        annotations: {
+          destructiveHint: true,
+        },
+      },
+      (args) => this.wrap(() => {
+        const result = this.services.roleRightsService.setDefaultRoles(args);
         this.afterMutation([...result.changedFiles]);
         return result;
       })
@@ -925,7 +1196,7 @@ export class V8McpServer implements vscode.Disposable {
       'v8vscedit_set_property_by_path',
       {
         title: 'Изменить свойство по пути',
-        description: 'Меняет простое свойство объекта по предметному пути без nodeId. Для enum/boolean/readonly использует те же проверки, что панель свойств.',
+        description: 'Меняет простое свойство объекта по предметному пути без nodeId. Для enum/boolean/readonly использует те же проверки, что панель свойств. Корневые свойства Configuration и Extension доступны по metadataPath="Конфигурация" / "Расширение" / "Configuration" / "Extension" или по имени конфигурации (DefaultRoles, DefaultLanguage, UsePurposes и т.п.). Для точечного управления списком DefaultRoles удобнее v8vscedit_add_default_role / v8vscedit_remove_default_role / v8vscedit_set_default_roles.',
         inputSchema: z.object({
           metadataPath: z.string(),
           configuration: z.string().optional(),
@@ -1343,6 +1614,9 @@ export class V8McpServer implements vscode.Disposable {
     }
     this.services.suppressConfigurationReloadForFiles([...filePaths]);
     this.services.markChangedConfigurationByFiles([...filePaths]);
+    // Обновить JSON-кэш дерева по изменённым файлам — без этого treeProvider.refresh()
+    // переэмитит устаревший снимок (новая/удалённая форма не появится).
+    this.services.treeProvider.refreshCacheForFiles([...filePaths]);
     this.services.treeProvider.refresh();
     this.services.refreshActionsView();
   }

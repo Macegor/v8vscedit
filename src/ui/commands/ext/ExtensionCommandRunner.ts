@@ -77,6 +77,10 @@ interface RunCliOptions {
   failureOperation?: string;
   logPrefix: string;
   showSuccessMessage?: boolean;
+  /** Если false — popup с ошибкой не показывается, ответственность за UX-обработку у вызывающей стороны. */
+  showErrorMessage?: boolean;
+  /** Колбэк получает извлечённую причину при сбое. Вызывается до показа popup'а (если он включён). */
+  onFailureReason?: (reason: string) => void;
   afterSuccess?: () => Promise<void>;
   onProgressMessage?: (message: string) => void;
 }
@@ -525,6 +529,40 @@ function createWorkspaceTempDir(workspaceRoot: string, prefix: string): string {
   return fs.mkdtempSync(path.join(tempParent, prefix));
 }
 
+const FULL_SYNC_CONFIRM_BUTTON = 'Выполнить полную загрузку';
+
+function isConfigurationIdMismatchReason(reason: string): boolean {
+  return /идентификатор[\s\S]*загружаемой конфигурации[\s\S]*отличается[\s\S]*сохраненной/i.test(reason)
+    || /ошибка частичной загрузки/i.test(reason);
+}
+
+async function confirmFullSyncFallback(
+  targetLabel: string,
+  failureReason: string,
+  outputChannel: vscode.OutputChannel
+): Promise<boolean> {
+  const isMismatch = isConfigurationIdMismatchReason(failureReason);
+  const detail = isMismatch
+    ? `Идентификатор конфигурации в файлах не совпадает с идентификатором базы — частичная загрузка платформой запрещена. Это типично для первой синхронизации с базой или после её пересоздания.\n\nПолная загрузка перезапишет конфигурацию базы исходниками из ${targetLabel}.`
+    : `Причина:\n${failureReason}\n\nПолная загрузка перезапишет конфигурацию базы исходниками из ${targetLabel}.`;
+
+  const choice = await vscode.window.showWarningMessage(
+    `Не удалось выполнить быструю загрузку изменений ${targetLabel}. Выполнить полную загрузку?`,
+    {
+      modal: true,
+      detail,
+    },
+    FULL_SYNC_CONFIRM_BUTTON,
+    'Открыть журнал'
+  );
+
+  if (choice === 'Открыть журнал') {
+    outputChannel.show(true);
+    return false;
+  }
+  return choice === FULL_SYNC_CONFIRM_BUTTON;
+}
+
 async function runBatchCompileExtension(
   extensionName: string,
   extensionRoot: string,
@@ -584,6 +622,7 @@ async function runBatchUpdateExtension(
     extensionName,
     ...buildConnectionCliArgs(connection),
   ];
+  let importFailureReason = '';
   const imported = await runInternalCliCommand(
     {
       cliArgs: importChangedFilesArgs,
@@ -594,6 +633,8 @@ async function runBatchUpdateExtension(
       failureOperation: 'быстрой загрузке изменённых файлов',
       logPrefix: 'import-git-changes',
       showSuccessMessage: false,
+      showErrorMessage: false,
+      onFailureReason: (reason) => { importFailureReason = reason; },
       onProgressMessage: hooks?.onProgressMessage,
     },
     workspaceFolder,
@@ -601,8 +642,17 @@ async function runBatchUpdateExtension(
   );
   if (!imported) {
     outputChannel.appendLine(
-      '[update-configuration] Частичная загрузка по хеш-кэшу недоступна, выполняю fallback на полную синхронизацию исходников.'
+      '[update-configuration] Частичная загрузка по хеш-кэшу недоступна, запрашиваю подтверждение полной загрузки.'
     );
+    const confirmed = await confirmFullSyncFallback(
+      `расширения "${extensionName}"`,
+      importFailureReason,
+      outputChannel
+    );
+    if (!confirmed) {
+      outputChannel.appendLine('[update-configuration] Полная загрузка отклонена пользователем.');
+      return false;
+    }
     const fallbackArgs = [
       'sync-configuration-full',
       '-ProjectRoot',
@@ -618,11 +668,11 @@ async function runBatchUpdateExtension(
     return runInternalCliCommand(
       {
         cliArgs: fallbackArgs,
-        progressTitle: `Обновление расширения ${extensionName} (fallback без git)`,
+        progressTitle: `Обновление расширения ${extensionName} (полная загрузка)`,
         progressStartMessage: 'Выполняется полная синхронизация исходников и применение в базе...',
-        successMessage: `Обновление расширения "${extensionName}" завершено через fallback без хеш-кэша.`,
-        errorTitle: `Ошибка fallback-обновления расширения "${extensionName}".`,
-        failureOperation: 'fallback-обновлении без хеш-кэша',
+        successMessage: `Обновление расширения "${extensionName}" завершено через полную загрузку.`,
+        errorTitle: `Ошибка полной загрузки расширения "${extensionName}".`,
+        failureOperation: 'полной загрузке расширения',
         logPrefix: 'sync-configuration-full',
         showSuccessMessage,
         onProgressMessage: hooks?.onProgressMessage,
@@ -675,6 +725,7 @@ async function runBatchUpdateMainConfiguration(
     configRoot,
     ...buildConnectionCliArgs(connection),
   ];
+  let importFailureReason = '';
   const imported = await runInternalCliCommand(
     {
       cliArgs: importChangedFilesArgs,
@@ -685,6 +736,8 @@ async function runBatchUpdateMainConfiguration(
       failureOperation: 'быстрой загрузке изменённых файлов',
       logPrefix: 'import-git-changes',
       showSuccessMessage: false,
+      showErrorMessage: false,
+      onFailureReason: (reason) => { importFailureReason = reason; },
       onProgressMessage: hooks?.onProgressMessage,
     },
     workspaceFolder,
@@ -692,8 +745,17 @@ async function runBatchUpdateMainConfiguration(
   );
   if (!imported) {
     outputChannel.appendLine(
-      '[update-configuration] Частичная загрузка основной конфигурации недоступна, выполняю fallback на полную синхронизацию исходников.'
+      '[update-configuration] Частичная загрузка основной конфигурации недоступна, запрашиваю подтверждение полной загрузки.'
     );
+    const confirmed = await confirmFullSyncFallback(
+      `конфигурации "${configName}"`,
+      importFailureReason,
+      outputChannel
+    );
+    if (!confirmed) {
+      outputChannel.appendLine('[update-configuration] Полная загрузка отклонена пользователем.');
+      return false;
+    }
     const fallbackArgs = [
       'sync-configuration-full',
       '-ProjectRoot',
@@ -707,11 +769,11 @@ async function runBatchUpdateMainConfiguration(
     return runInternalCliCommand(
       {
         cliArgs: fallbackArgs,
-        progressTitle: `Обновление конфигурации ${configName} (fallback без git)`,
+        progressTitle: `Обновление конфигурации ${configName} (полная загрузка)`,
         progressStartMessage: 'Выполняется полная синхронизация исходников и применение в базе...',
-        successMessage: `Обновление конфигурации "${configName}" завершено через fallback без хеш-кэша.`,
-        errorTitle: `Ошибка fallback-обновления конфигурации "${configName}".`,
-        failureOperation: 'fallback-обновлении без хеш-кэша',
+        successMessage: `Обновление конфигурации "${configName}" завершено через полную загрузку.`,
+        errorTitle: `Ошибка полной загрузки конфигурации "${configName}".`,
+        failureOperation: 'полной загрузке конфигурации',
         logPrefix: 'sync-configuration-full',
         showSuccessMessage,
         onProgressMessage: hooks?.onProgressMessage,
@@ -810,14 +872,17 @@ async function runInternalCliCommand(
     const message = error instanceof Error ? error.message : String(error);
     outputChannel.appendLine(`[actions][error] ${message}`);
     setOperationStatus(options.progressTitle, 'ошибка', false);
-    void vscode.window.showErrorMessage(
-      `${options.errorTitle}\n${message}`,
-      'Открыть журнал'
-    ).then((action) => {
-      if (action === 'Открыть журнал') {
-        outputChannel.show(true);
-      }
-    });
+    options.onFailureReason?.(message);
+    if (options.showErrorMessage !== false) {
+      void vscode.window.showErrorMessage(
+        `${options.errorTitle}\n${message}`,
+        'Открыть журнал'
+      ).then((action) => {
+        if (action === 'Открыть журнал') {
+          outputChannel.show(true);
+        }
+      });
+    }
     return false;
   }
 }

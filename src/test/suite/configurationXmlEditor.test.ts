@@ -42,6 +42,65 @@ suite('configurationXmlEditor', () => {
     assert.ok(saved.includes('Role.НоваяРоль'));
   });
 
+  test('Развёртывает самозакрывающийся <DefaultRoles/> при добавлении роли', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-cfg-'));
+    const configPath = path.join(dir, 'Configuration.xml');
+    fs.writeFileSync(
+      configPath,
+      `<?xml version="1.0" encoding="utf-8"?>
+<MetaDataObject>
+  <Configuration>
+    <Properties>
+      <Name>Тест</Name>
+      <ScriptVariant>Russian</ScriptVariant>
+      <DefaultRoles/>
+    </Properties>
+    <ChildObjects/>
+  </Configuration>
+</MetaDataObject>`,
+      'utf-8'
+    );
+    const editor = new ConfigurationXmlEditor();
+    const added = editor.addDefaultRole(configPath, 'БазовыеПрава');
+    assert.strictEqual(added.success, true);
+    assert.strictEqual(added.changed, true);
+    const after = fs.readFileSync(configPath, 'utf-8');
+    assert.ok(!/\<DefaultRoles\s*\/\>/.test(after), 'остался self-closing блок');
+    assert.ok(after.includes('<xr:Item xsi:type="xr:MDObjectRef">Role.БазовыеПрава</xr:Item>'));
+
+    const cleared = editor.setDefaultRoles(configPath, []);
+    assert.strictEqual(cleared.success, true);
+    const empty = fs.readFileSync(configPath, 'utf-8');
+    assert.ok(/\<DefaultRoles\s*\/\>/.test(empty), 'после очистки блок должен схлопнуться');
+  });
+
+  test('modifyConfigurationProperty с multiEnum DefaultRoles переиспользует setDefaultRoles', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-cfg-'));
+    const configPath = path.join(dir, 'Configuration.xml');
+    fs.writeFileSync(
+      configPath,
+      `<?xml version="1.0" encoding="utf-8"?>
+<MetaDataObject>
+  <Configuration>
+    <Properties>
+      <Name>Тест</Name>
+      <DefaultRoles/>
+    </Properties>
+    <ChildObjects/>
+  </Configuration>
+</MetaDataObject>`,
+      'utf-8'
+    );
+    const editor = new ConfigurationXmlEditor();
+    const result = editor.modifyConfigurationProperty(configPath, 'DefaultRoles', ['Role.Один', 'Два'], 'multiEnum');
+    assert.strictEqual(result.success, true);
+    assert.strictEqual(result.changed, true);
+    const saved = fs.readFileSync(configPath, 'utf-8');
+    assert.ok(saved.includes('<xr:Item xsi:type="xr:MDObjectRef">Role.Один</xr:Item>'));
+    assert.ok(saved.includes('<xr:Item xsi:type="xr:MDObjectRef">Role.Два</xr:Item>'));
+    assert.ok(!/\<DefaultRoles\>Role\.Один,Role\.Два/.test(saved), 'не должно сериализоваться как scalar строка');
+  });
+
   test('Добавляет и удаляет объект из ChildObjects', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-cfg-'));
     fs.mkdirSync(path.join(dir, 'Catalogs'), { recursive: true });

@@ -35,6 +35,34 @@ suite('metadataXmlCreator', () => {
     assert.ok(changed[0].changedFilesCount > 0);
   });
 
+  test('Catalog получает полный набор обязательных свойств, чтобы Designer не висел на partial load', () => {
+    const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-catalog-defaults-'));
+    fs.writeFileSync(path.join(configRoot, 'Configuration.xml'), buildConfigXml(), 'utf-8');
+
+    const creator = new MetadataXmlCreator();
+    assert.strictEqual(creator.addRootObject({ configRoot, kind: 'Catalog', name: 'Контрагенты' }).success, true);
+    const xml = fs.readFileSync(path.join(configRoot, 'Catalogs', 'Контрагенты.xml'), 'utf-8');
+
+    for (const tag of [
+      '<Hierarchical>false</Hierarchical>',
+      '<HierarchyType>HierarchyFoldersAndItems</HierarchyType>',
+      '<UseStandardCommands>true</UseStandardCommands>',
+      '<SubordinationUse>ToItems</SubordinationUse>',
+      '<CodeType>String</CodeType>',
+      '<CodeAllowedLength>Variable</CodeAllowedLength>',
+      '<EditType>InDialog</EditType>',
+      '<DataLockControlMode>Managed</DataLockControlMode>',
+      '<FullTextSearch>Use</FullTextSearch>',
+      '<DataHistory>DontUse</DataHistory>',
+      '<CreateOnInput>Use</CreateOnInput>',
+      '<DefaultPresentation>AsDescription</DefaultPresentation>',
+      '<xr:Field>Catalog.Контрагенты.StandardAttribute.Description</xr:Field>',
+      '<xr:Field>Catalog.Контрагенты.StandardAttribute.Code</xr:Field>',
+    ]) {
+      assert.ok(xml.includes(tag), `ожидался тег ${tag}`);
+    }
+  });
+
   test('наследует версию формата XML из текущей выгрузки', () => {
     const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-format-version-'));
     fs.writeFileSync(path.join(configRoot, 'Configuration.xml'), buildConfigXml('2.21'), 'utf-8');
@@ -264,6 +292,23 @@ suite('metadataXmlCreator', () => {
     const xml = fs.readFileSync(xmlPath, 'utf-8');
     assert.ok(xml.includes('xmlns:xs="http://www.w3.org/2001/XMLSchema"'));
     assert.ok(xml.includes('<v8:Type>xs:string</v8:Type>'));
+  });
+
+  test('не добавляет <ChildObjects/> для объектов без дочерних элементов (SessionParameter, Constant, Style, и т.п.)', () => {
+    const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-no-children-'));
+    fs.writeFileSync(path.join(configRoot, 'Configuration.xml'), buildConfigXml('2.21'), 'utf-8');
+    const creator = new MetadataXmlCreator();
+
+    // SessionParameter — самый частый кейс: ломает загрузку конфигурации,
+    // если поставить <ChildObjects/> после </Properties>
+    assert.strictEqual(creator.addRootObject({ configRoot, kind: 'SessionParameter', name: 'ТекущийПользователь' }).success, true);
+    const spXml = fs.readFileSync(path.join(configRoot, 'SessionParameters', 'ТекущийПользователь.xml'), 'utf-8');
+    assert.doesNotMatch(spXml, /<ChildObjects/, 'SessionParameter не должен содержать ChildObjects');
+
+    // Аналогично для Constant
+    assert.strictEqual(creator.addRootObject({ configRoot, kind: 'Constant', name: 'ВалютаУчета' }).success, true);
+    const constXml = fs.readFileSync(path.join(configRoot, 'Constants', 'ВалютаУчета.xml'), 'utf-8');
+    assert.doesNotMatch(constXml, /<ChildObjects/, 'Constant не должен содержать ChildObjects');
   });
 
   test('создаёт InternalInfo для объектов и табличных частей по правилам meta-compile', () => {

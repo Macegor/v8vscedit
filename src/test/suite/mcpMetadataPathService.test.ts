@@ -86,6 +86,46 @@ suite('McpMetadataPathService', () => {
 
     assert.deepStrictEqual(found.map((item) => item.path), ['Обработки.ев_РедакторСхемыПроцессов']);
   });
+
+  test('разрешает корневой узел конфигурации по предметному имени', () => {
+    const service = new McpMetadataPathService(createProvider());
+
+    for (const alias of ['Конфигурация', 'Configuration', 'configuration']) {
+      const node = service.resolveNode(alias);
+      assert.strictEqual(node.nodeKind, 'configuration', `alias ${alias}`);
+      assert.strictEqual(node.xmlPath, '/tmp/cf/Configuration.xml');
+    }
+  });
+
+  test('разрешает корень расширения по предметному имени', () => {
+    const service = new McpMetadataPathService(createProvider({ withExtension: true }));
+
+    const ext = service.resolveNode('Расширение', 'EVOLC');
+    assert.strictEqual(ext.nodeKind, 'extension');
+    assert.strictEqual(ext.xmlPath, '/tmp/cfe/EVOLC/Configuration.xml');
+  });
+
+  test('resolveObjectXmlPath принимает абсолютный путь, относительный от корня и предметный путь', () => {
+    const fs = require('fs') as typeof import('fs');
+    const os = require('os') as typeof import('os');
+    const path = require('path') as typeof import('path');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-resolve-object-'));
+    const catalogsDir = path.join(root, 'Catalogs');
+    fs.mkdirSync(catalogsDir, { recursive: true });
+    const catalogXml = path.join(catalogsDir, 'Задачи.xml');
+    fs.writeFileSync(catalogXml, '<MetaDataObject><Catalog><Properties><Name>Задачи</Name></Properties></Catalog></MetaDataObject>', 'utf-8');
+
+    const provider = {
+      getAutomationRoots: () => [],
+      getEntries: () => [{ rootPath: root, kind: 'cf' as const }],
+    } as unknown as MetadataTreeProvider;
+    const service = new McpMetadataPathService(provider);
+
+    assert.strictEqual(service.resolveObjectXmlPath(catalogXml), catalogXml, 'абсолютный путь');
+    assert.strictEqual(service.resolveObjectXmlPath('Catalogs/Задачи.xml'), catalogXml, 'относительный от корня');
+    assert.strictEqual(service.resolveObjectXmlPath('Catalogs/Задачи'), catalogXml, 'без расширения');
+    assert.strictEqual(service.resolveObjectXmlPath('Catalogs/НетТакого.xml'), null, 'несуществующий путь');
+  });
 });
 
 function createProvider(options: { readonly withExtension?: boolean } = {}): MetadataTreeProvider {

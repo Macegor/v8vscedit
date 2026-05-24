@@ -68,6 +68,10 @@ export class ConfigurationXmlEditor {
     value: string | boolean | string[],
     kind: RootPropertyKind
   ): EditResult {
+    if (kind === 'multiEnum' && propertyName === 'DefaultRoles') {
+      const roles = Array.isArray(value) ? value : [String(value)].filter((item) => item.length > 0);
+      return this.setDefaultRoles(configXmlPath, roles);
+    }
     if (!fs.existsSync(configXmlPath)) {
       return this.fail(`Не найден файл: ${configXmlPath}`);
     }
@@ -280,30 +284,44 @@ export class ConfigurationXmlEditor {
     configXmlPath: string,
     mutator: (items: string[]) => { items: string[]; changed: boolean; warning?: string }
   ): EditResult {
+    if (!fs.existsSync(configXmlPath)) {
+      return this.fail(`Не найден файл: ${configXmlPath}`);
+    }
     const xml = fs.readFileSync(configXmlPath, 'utf-8');
     const props = /<Properties>([\s\S]*?)<\/Properties>/.exec(xml)?.[1];
     if (props === undefined) {
       return this.fail('В Configuration.xml отсутствует блок <Properties>.');
     }
-    const rolesBlockRe = /<DefaultRoles>([\s\S]*?)<\/DefaultRoles>/;
-    const rolesInner = rolesBlockRe.exec(props)?.[1];
-    if (rolesInner === undefined) {
+    const pairedRe = /<DefaultRoles>([\s\S]*?)<\/DefaultRoles>/;
+    const selfClosingRe = /<DefaultRoles\s*\/>/;
+    const pairedMatch = pairedRe.exec(props);
+    const selfClosingMatch = selfClosingRe.exec(props);
+    if (!pairedMatch && !selfClosingMatch) {
       return this.fail('В Configuration.xml отсутствует блок <DefaultRoles>.');
     }
+    const rolesInner = pairedMatch?.[1] ?? '';
     const current = Array.from(rolesInner.matchAll(/<xr:Item\s+xsi:type="xr:MDObjectRef">([^<]+)<\/xr:Item>/g)).map((m) => m[1].trim());
     const { items, changed, warning } = mutator(current);
     if (!changed) {
       return warning ? this.warn(warning) : this.warn('Изменения отсутствуют.');
     }
 
-    const indent = this.detectIndent(rolesInner, '\t\t\t\t');
-    const nextInner = items.length === 0
-      ? ''
-      : `\n${items.map((item) => `${indent}<xr:Item xsi:type="xr:MDObjectRef">${escapeXmlText(item)}</xr:Item>`).join('\n')}\n${indent.slice(0, -1)}`;
-    const nextProps = props.replace(rolesBlockRe, `<DefaultRoles>${nextInner}</DefaultRoles>`);
+    const replacement = this.buildDefaultRolesBlock(items, this.detectIndent(props, '\t\t\t'));
+    const nextProps = pairedMatch
+      ? props.replace(pairedRe, replacement)
+      : props.replace(selfClosingRe, replacement);
     const updatedXml = xml.replace(props, nextProps);
     writeTextFilePreservingBomAndEol(configXmlPath, xml, updatedXml);
     return this.ok([configXmlPath]);
+  }
+
+  private buildDefaultRolesBlock(items: readonly string[], outerIndent: string): string {
+    if (items.length === 0) {
+      return '<DefaultRoles/>';
+    }
+    const innerIndent = `${outerIndent}\t`;
+    const lines = items.map((item) => `${innerIndent}<xr:Item xsi:type="xr:MDObjectRef">${escapeXmlText(item)}</xr:Item>`);
+    return `<DefaultRoles>\n${lines.join('\n')}\n${outerIndent}</DefaultRoles>`;
   }
 
   private buildRootPropertyBlock(propertyName: string, value: string | boolean | string[], kind: RootPropertyKind): string {

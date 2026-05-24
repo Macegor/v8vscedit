@@ -2,7 +2,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { ChildTag } from '../../domain/ChildTag';
-import { getMetaFolder, type MetaKind } from '../../domain/MetaTypes';
+import { getMetaFolder, getMetaType, type MetaKind } from '../../domain/MetaTypes';
 import { ConfigurationXmlEditor, type EditResult } from './ConfigurationXmlEditor';
 import { getObjectLocationFromXml } from '../fs/MetaPathResolver';
 import { buildTypedFieldPropertyBlocks } from './TypedFieldPropertyRules';
@@ -347,7 +347,7 @@ function buildRootProperties(kind: MetaKind, name: string, templateType?: Templa
 
   switch (kind) {
     case 'Catalog':
-      return [...base, '\t\t\t<CodeLength>9</CodeLength>', '\t\t\t<DescriptionLength>25</DescriptionLength>'].join('\n');
+      return [...base, ...buildCatalogProperties(name)].join('\n');
     case 'Document':
     case 'BusinessProcess':
     case 'Task':
@@ -372,6 +372,64 @@ function buildRootProperties(kind: MetaKind, name: string, templateType?: Templa
     default:
       return base.join('\n');
   }
+}
+
+function buildCatalogProperties(name: string): string[] {
+  return [
+    '\t\t\t<Hierarchical>false</Hierarchical>',
+    '\t\t\t<HierarchyType>HierarchyFoldersAndItems</HierarchyType>',
+    '\t\t\t<LimitLevelCount>false</LimitLevelCount>',
+    '\t\t\t<LevelCount>2</LevelCount>',
+    '\t\t\t<FoldersOnTop>true</FoldersOnTop>',
+    '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
+    '\t\t\t<Owners/>',
+    '\t\t\t<SubordinationUse>ToItems</SubordinationUse>',
+    '\t\t\t<CodeLength>9</CodeLength>',
+    '\t\t\t<DescriptionLength>25</DescriptionLength>',
+    '\t\t\t<CodeType>String</CodeType>',
+    '\t\t\t<CodeAllowedLength>Variable</CodeAllowedLength>',
+    '\t\t\t<CodeSeries>WholeCatalog</CodeSeries>',
+    '\t\t\t<CheckUnique>true</CheckUnique>',
+    '\t\t\t<Autonumbering>true</Autonumbering>',
+    '\t\t\t<DefaultPresentation>AsDescription</DefaultPresentation>',
+    '\t\t\t<Characteristics/>',
+    '\t\t\t<PredefinedDataUpdate>Auto</PredefinedDataUpdate>',
+    '\t\t\t<EditType>InDialog</EditType>',
+    '\t\t\t<QuickChoice>false</QuickChoice>',
+    '\t\t\t<ChoiceMode>BothWays</ChoiceMode>',
+    '\t\t\t<InputByString>',
+    `\t\t\t\t<xr:Field>Catalog.${escapeXml(name)}.StandardAttribute.Description</xr:Field>`,
+    `\t\t\t\t<xr:Field>Catalog.${escapeXml(name)}.StandardAttribute.Code</xr:Field>`,
+    '\t\t\t</InputByString>',
+    '\t\t\t<SearchStringModeOnInputByString>Begin</SearchStringModeOnInputByString>',
+    '\t\t\t<FullTextSearchOnInputByString>DontUse</FullTextSearchOnInputByString>',
+    '\t\t\t<ChoiceDataGetModeOnInputByString>Directly</ChoiceDataGetModeOnInputByString>',
+    '\t\t\t<DefaultObjectForm/>',
+    '\t\t\t<DefaultFolderForm/>',
+    '\t\t\t<DefaultListForm/>',
+    '\t\t\t<DefaultChoiceForm/>',
+    '\t\t\t<DefaultFolderChoiceForm/>',
+    '\t\t\t<AuxiliaryObjectForm/>',
+    '\t\t\t<AuxiliaryFolderForm/>',
+    '\t\t\t<AuxiliaryListForm/>',
+    '\t\t\t<AuxiliaryChoiceForm/>',
+    '\t\t\t<AuxiliaryFolderChoiceForm/>',
+    '\t\t\t<IncludeHelpInContents>false</IncludeHelpInContents>',
+    '\t\t\t<BasedOn/>',
+    '\t\t\t<DataLockFields/>',
+    '\t\t\t<DataLockControlMode>Managed</DataLockControlMode>',
+    '\t\t\t<FullTextSearch>Use</FullTextSearch>',
+    '\t\t\t<ObjectPresentation/>',
+    '\t\t\t<ExtendedObjectPresentation/>',
+    '\t\t\t<ListPresentation/>',
+    '\t\t\t<ExtendedListPresentation/>',
+    '\t\t\t<Explanation/>',
+    '\t\t\t<CreateOnInput>Use</CreateOnInput>',
+    '\t\t\t<ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>',
+    '\t\t\t<DataHistory>DontUse</DataHistory>',
+    '\t\t\t<UpdateDataHistoryImmediatelyAfterWrite>false</UpdateDataHistoryImmediatelyAfterWrite>',
+    '\t\t\t<ExecuteAfterWriteDataHistoryVersionProcessing>false</ExecuteAfterWriteDataHistoryVersionProcessing>',
+  ];
 }
 
 function buildChildFragment(
@@ -687,8 +745,16 @@ function getDefaultModulePaths(kind: MetaKind, objectDir: string): string[] {
   return result;
 }
 
+/**
+ * Решение «нужен ли блок <ChildObjects/>» — на основе декларации в META_TYPES.
+ * Объекты без дочерних тегов (SessionParameter, Constant, DefinedType,
+ * Style, StyleItem, CommonPicture, Language, FunctionalOption, ...) ломают
+ * платформенную загрузку при наличии лишнего <ChildObjects/>:
+ *   «ошибка формата документа — читаемое свойство не соответствует ожидаемому».
+ */
 function needsChildObjects(kind: MetaKind): boolean {
-  return !['Constant', 'DefinedType', 'ScheduledJob', 'EventSubscription', 'CommonModule', 'Role', 'CommonTemplate'].includes(kind);
+  const def = getMetaType(kind);
+  return Array.isArray(def?.childTags) && def.childTags.length > 0;
 }
 
 function ensureEmptyFile(filePath: string): void {
