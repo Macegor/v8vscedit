@@ -2,7 +2,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { Logger } from '../support/Logger';
 
-export type AiRolePlatformFormat = 'skill' | 'cursor-rule' | 'copilot-instruction' | 'opencode-instruction';
+export type AiRolePlatformFormat =
+  | 'skill'
+  | 'cursor-rule'
+  | 'copilot-instruction'
+  | 'opencode-instruction'
+  | 'claude-code';
 
 export interface AiSkillsPlatform {
   readonly id: string;
@@ -12,7 +17,7 @@ export interface AiSkillsPlatform {
 }
 
 export const AI_SKILLS_PLATFORMS: readonly AiSkillsPlatform[] = [
-  { id: 'claude-code', label: 'Claude Code', targetPrefix: '.claude/skills', format: 'skill' },
+  { id: 'claude-code', label: 'Claude Code', targetPrefix: '.claude/skills', format: 'claude-code' },
   { id: 'augment', label: 'Augment', targetPrefix: '.augment/skills', format: 'skill' },
   { id: 'cline', label: 'Cline', targetPrefix: '.cline/skills', format: 'skill' },
   { id: 'cursor', label: 'Cursor', targetPrefix: '.cursor/rules', format: 'cursor-rule' },
@@ -55,6 +60,8 @@ interface AiRoleFile {
 }
 
 const GENERATED_MARKER = '<!-- v8vscedit:generated-role -->';
+const CLAUDE_MD_START = '<!-- v8vscedit:claude-roles:start -->';
+const CLAUDE_MD_END = '<!-- v8vscedit:claude-roles:end -->';
 const DEFAULT_OPENCODE_MCP_URL = 'http://127.0.0.1:38481/mcp';
 
 const ROLE_DEFINITIONS: readonly AiRoleDefinition[] = [
@@ -196,12 +203,14 @@ export class AiSkillsInstaller {
 
   installProjectRoles(options: AiSkillsInstallOptions): AiSkillsInstallResult {
     const targetDir = path.join(options.projectRoot, ...options.platform.targetPrefix.split('/'));
-    fs.mkdirSync(targetDir, { recursive: true });
-
     const files = buildRoleFiles(options.platform);
     const info: string[] = [];
     const warnings: string[] = [];
     let installedCount = 0;
+
+    if (files.length > 0) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
 
     this.logger.appendLine(`[ai-roles] Установка ролей v8vscedit в ${options.platform.targetPrefix}/`);
     for (const file of files) {
@@ -224,6 +233,22 @@ export class AiSkillsInstaller {
       info.push('OpenCode MCP v8vscedit включён в opencode.json.');
     }
 
+    if (options.platform.format === 'claude-code') {
+      const alwaysApplyRoles = ROLE_DEFINITIONS.filter((role) => role.alwaysApply);
+      const claudeMdPath = path.join(options.projectRoot, 'CLAUDE.md');
+      const updateResult = upsertClaudeMd(claudeMdPath, alwaysApplyRoles);
+      this.logger.appendLine(`[ai-roles] [OK] ${path.relative(options.projectRoot, claudeMdPath)} (${updateResult.action})`);
+      installedCount += alwaysApplyRoles.length;
+
+      const removed = removeStaleClaudeAlwaysApplySkills(targetDir, alwaysApplyRoles);
+      for (const relative of removed) {
+        this.logger.appendLine(`[ai-roles] [cleanup] удалён устаревший skill ${path.join(options.platform.targetPrefix, relative)}`);
+      }
+
+      info.push('Claude Code: always-apply роли встроены в CLAUDE.md между маркерами v8vscedit:claude-roles.');
+      info.push('Claude Code: остальные роли установлены в .claude/skills и подключаются по описанию.');
+    }
+
     info.push('Установлены проектные роли без внешнего репозитория, Python и PowerShell-скриптов.');
     info.push('Роль v8vscedit-mcp-required запрещает прямую правку XML при наличии MCP-инструмента.');
 
@@ -238,7 +263,11 @@ export class AiSkillsInstaller {
 }
 
 export function buildRoleFiles(platform: AiSkillsPlatform): readonly AiRoleFile[] {
-  return ROLE_DEFINITIONS.map((role) => {
+  const roles = platform.format === 'claude-code'
+    ? ROLE_DEFINITIONS.filter((role) => !role.alwaysApply)
+    : ROLE_DEFINITIONS;
+
+  return roles.map((role) => {
     if (platform.format === 'cursor-rule') {
       return {
         relativePath: `${role.id}.mdc`,
@@ -319,6 +348,66 @@ function renderSkill(role: AiRoleDefinition): string {
     role.body,
     '',
   ].join('\n');
+}
+
+interface ClaudeMdUpsertResult {
+  readonly action: 'created' | 'updated' | 'replaced' | 'appended';
+}
+
+function upsertClaudeMd(
+  filePath: string,
+  alwaysApplyRoles: readonly AiRoleDefinition[]
+): ClaudeMdUpsertResult {
+  const block = renderClaudeMdBlock(alwaysApplyRoles);
+
+  if (!fs.existsSync(filePath)) {
+    const header = '# Инструкции для Claude Code\n\n';
+    fs.writeFileSync(filePath, `${header}${block}\n`, 'utf-8');
+    return { action: 'created' };
+  }
+
+  const original = fs.readFileSync(filePath, 'utf-8');
+  const startIdx = original.indexOf(CLAUDE_MD_START);
+  const endIdx = original.indexOf(CLAUDE_MD_END);
+
+  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+    const before = original.slice(0, startIdx);
+    const after = original.slice(endIdx + CLAUDE_MD_END.length);
+    fs.writeFileSync(filePath, `${before}${block}${after}`, 'utf-8');
+    return { action: 'replaced' };
+  }
+
+  const separator = original.endsWith('\n') ? '\n' : '\n\n';
+  fs.writeFileSync(filePath, `${original}${separator}${block}\n`, 'utf-8');
+  return original.length === 0 ? { action: 'updated' } : { action: 'appended' };
+}
+
+function renderClaudeMdBlock(alwaysApplyRoles: readonly AiRoleDefinition[]): string {
+  const sections = alwaysApplyRoles.map((role) => role.body.trim()).join('\n\n---\n\n');
+  return [
+    CLAUDE_MD_START,
+    '<!-- Автоматически сгенерировано v8vscedit. Изменения внутри блока перезаписываются. -->',
+    '',
+    sections,
+    '',
+    CLAUDE_MD_END,
+  ].join('\n');
+}
+
+function removeStaleClaudeAlwaysApplySkills(
+  skillsDir: string,
+  alwaysApplyRoles: readonly AiRoleDefinition[]
+): readonly string[] {
+  const removed: string[] = [];
+  for (const role of alwaysApplyRoles) {
+    const skillDir = path.join(skillsDir, role.id);
+    const skillFile = path.join(skillDir, 'SKILL.md');
+    if (fs.existsSync(skillFile) && isGeneratedRoleFile(skillFile)) {
+      fs.rmSync(skillDir, { recursive: true, force: true });
+      removed.push(`${role.id}/SKILL.md`);
+    }
+  }
+  return removed;
 }
 
 function ensureOpenCodeConfig(

@@ -106,6 +106,105 @@ suite('AiSkillsInstaller', () => {
     }
   });
 
+  test('для Claude Code always-apply роли встраиваются в CLAUDE.md, остальные в .claude/skills', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v8-ai-roles-claude-'));
+    try {
+      const platform = AI_SKILLS_PLATFORMS.find((item) => item.id === 'claude-code') ?? AI_SKILLS_PLATFORMS[0];
+      const installer = new AiSkillsInstaller({ appendLine: () => undefined });
+      const result = installer.installProjectRoles({
+        projectRoot: root,
+        platform,
+      });
+
+      const claudeMdPath = path.join(root, 'CLAUDE.md');
+      const claudeMd = fs.readFileSync(claudeMdPath, 'utf-8');
+      assert.ok(claudeMd.includes('<!-- v8vscedit:claude-roles:start -->'));
+      assert.ok(claudeMd.includes('<!-- v8vscedit:claude-roles:end -->'));
+      assert.ok(claudeMd.includes('v8vscedit: обязательная работа через MCP'));
+      assert.ok(claudeMd.includes('v8vscedit: senior 1C developer'));
+
+      // на диске остаются только on-demand скиллы
+      const skillsRoot = path.join(root, '.claude', 'skills');
+      assert.ok(!fs.existsSync(path.join(skillsRoot, 'v8vscedit-mcp-required')));
+      assert.ok(!fs.existsSync(path.join(skillsRoot, 'v8vscedit-1c-developer')));
+      assert.ok(fs.existsSync(path.join(skillsRoot, 'v8vscedit-bsp-developer', 'SKILL.md')));
+      assert.ok(fs.existsSync(path.join(skillsRoot, 'v8vscedit-metadata-manager', 'SKILL.md')));
+      assert.ok(fs.existsSync(path.join(skillsRoot, 'v8vscedit-bsl-module-standards', 'SKILL.md')));
+
+      // installedCount считает и always-apply, и on-demand
+      assert.strictEqual(result.installedCount, 5);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('для Claude Code повторная установка перезаписывает блок CLAUDE.md между маркерами', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v8-ai-roles-claude-update-'));
+    try {
+      const platform = AI_SKILLS_PLATFORMS.find((item) => item.id === 'claude-code') ?? AI_SKILLS_PLATFORMS[0];
+      const claudeMdPath = path.join(root, 'CLAUDE.md');
+      const userContent = [
+        '# Мой проект',
+        '',
+        'Пользовательские правила, которые нельзя терять.',
+        '',
+        '<!-- v8vscedit:claude-roles:start -->',
+        'старое содержимое блока',
+        '<!-- v8vscedit:claude-roles:end -->',
+        '',
+        '## После блока',
+        'еще пользовательский текст',
+        '',
+      ].join('\n');
+      fs.writeFileSync(claudeMdPath, userContent, 'utf-8');
+
+      const installer = new AiSkillsInstaller({ appendLine: () => undefined });
+      installer.installProjectRoles({
+        projectRoot: root,
+        platform,
+      });
+
+      const updated = fs.readFileSync(claudeMdPath, 'utf-8');
+      assert.ok(updated.includes('Пользовательские правила, которые нельзя терять.'));
+      assert.ok(updated.includes('После блока'));
+      assert.ok(updated.includes('еще пользовательский текст'));
+      assert.ok(!updated.includes('старое содержимое блока'));
+      assert.ok(updated.includes('v8vscedit: обязательная работа через MCP'));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('для Claude Code чистит устаревшие сгенерированные always-apply скиллы', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v8-ai-roles-claude-cleanup-'));
+    try {
+      const platform = AI_SKILLS_PLATFORMS.find((item) => item.id === 'claude-code') ?? AI_SKILLS_PLATFORMS[0];
+      const skillsRoot = path.join(root, '.claude', 'skills');
+      const staleSkillDir = path.join(skillsRoot, 'v8vscedit-mcp-required');
+      fs.mkdirSync(staleSkillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(staleSkillDir, 'SKILL.md'),
+        `---\nname: v8vscedit-mcp-required\n---\n<!-- v8vscedit:generated-role -->\nстарая версия\n`,
+        'utf-8'
+      );
+      // пользовательский скилл с тем же id-каталогом, но без маркера — не удаляется
+      const userSkillDir = path.join(skillsRoot, 'v8vscedit-1c-developer');
+      fs.mkdirSync(userSkillDir, { recursive: true });
+      fs.writeFileSync(path.join(userSkillDir, 'SKILL.md'), '---\nname: v8vscedit-1c-developer\n---\nручной\n', 'utf-8');
+
+      const installer = new AiSkillsInstaller({ appendLine: () => undefined });
+      installer.installProjectRoles({
+        projectRoot: root,
+        platform,
+      });
+
+      assert.ok(!fs.existsSync(staleSkillDir));
+      assert.ok(fs.existsSync(path.join(userSkillDir, 'SKILL.md')));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('для OpenCode читает JSONC-конфиг и не теряет MCP-серверы', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v8-ai-roles-opencode-jsonc-'));
     try {
