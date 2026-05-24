@@ -1204,10 +1204,15 @@ function replaceDirectorySnapshot(sourceDir: string, targetDir: string): boolean
     return true;
   } catch (error) {
     if (targetMoved && !fs.existsSync(targetDir) && fs.existsSync(backupDir)) {
-      fs.renameSync(backupDir, targetDir);
+      try {
+        fs.renameSync(backupDir, targetDir);
+      } catch {
+        // если откат не удался — это редкий случай Windows-блокировок,
+        // оставим резервную копию и пробросим исходную ошибку
+      }
     }
 
-    if (isCrossDeviceRenameError(error)) {
+    if (isRenameFallbackError(error)) {
       return false;
     }
 
@@ -1219,11 +1224,14 @@ function removeDirectoryInBackground(directoryPath: string): void {
   fs.rm(directoryPath, { recursive: true, force: true }, () => undefined);
 }
 
-function isCrossDeviceRenameError(error: unknown): boolean {
-  return typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === 'EXDEV';
+function isRenameFallbackError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('code' in error)) {
+    return false;
+  }
+  // EXDEV — rename между томами; EPERM/EACCES/EBUSY — типичная ошибка Windows,
+  // когда внутри каталога удерживается дескриптор (file watcher, антивирус).
+  const code = (error as { code?: unknown }).code;
+  return code === 'EXDEV' || code === 'EPERM' || code === 'EACCES' || code === 'EBUSY';
 }
 
 function collectSnapshotProjectFiles(sourceDir: string, targetDir: string): string[] {
