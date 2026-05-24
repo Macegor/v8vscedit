@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { decode } from 'iconv-lite';
 
 export type RegisteredInfoBaseKind = 'file' | 'server' | 'unknown';
 
@@ -29,28 +30,14 @@ interface SectionData {
 
 /**
  * Читает системный реестр информационных баз 1С из локального `ibases.v8i`
- * и общих списков, подключённых через `CommonInfoBases`.
+ * и общих списков, подключённых через `CommonInfoBases`/`CommonCfgLocation`.
  */
 export class InfoBaseRegistryService {
   scan(): InfoBaseRegistryScanResult {
     const warnings: string[] = [];
     const sources = new Set<string>();
     const v8iPaths = new Set(resolveLocalInfoBaseListPaths());
-
-    for (const cfgPath of resolveStartCfgPaths()) {
-      if (!fs.existsSync(cfgPath)) {
-        continue;
-      }
-      sources.add(cfgPath);
-      try {
-        const cfgContent = readTextFileWithEncoding(cfgPath);
-        for (const commonPath of parseCommonInfoBasePaths(cfgContent, cfgPath)) {
-          v8iPaths.add(commonPath);
-        }
-      } catch (error) {
-        warnings.push(formatReadWarning(cfgPath, error));
-      }
-    }
+    collectConfiguredInfoBaseListPaths(v8iPaths, sources, warnings);
 
     const bases: RegisteredInfoBase[] = [];
     for (const v8iPath of v8iPaths) {
@@ -93,8 +80,49 @@ export function parseV8iContent(content: string, sourcePath: string): Registered
 }
 
 export function parseCommonInfoBasePaths(content: string, cfgPath: string): string[] {
+  return parseConfiguredPaths(content, cfgPath, 'commoninfobases');
+}
+
+export function parseCommonCfgPaths(content: string, cfgPath: string): string[] {
+  return parseConfiguredPaths(content, cfgPath, 'commoncfglocation');
+}
+
+function collectConfiguredInfoBaseListPaths(
+  v8iPaths: Set<string>,
+  sources: Set<string>,
+  warnings: string[]
+): void {
+  const queue = resolveStartCfgPaths();
+  const visited = new Set<string>();
+
+  while (queue.length > 0) {
+    const cfgPath = queue.shift();
+    if (!cfgPath || visited.has(normalizePathKey(cfgPath))) {
+      continue;
+    }
+    visited.add(normalizePathKey(cfgPath));
+    if (!fs.existsSync(cfgPath)) {
+      continue;
+    }
+
+    sources.add(cfgPath);
+    try {
+      const cfgContent = readTextFileWithEncoding(cfgPath);
+      for (const commonPath of parseCommonInfoBasePaths(cfgContent, cfgPath)) {
+        v8iPaths.add(commonPath);
+      }
+      for (const commonCfgPath of parseCommonCfgPaths(cfgContent, cfgPath)) {
+        queue.push(commonCfgPath);
+      }
+    } catch (error) {
+      warnings.push(formatReadWarning(cfgPath, error));
+    }
+  }
+}
+
+function parseConfiguredPaths(content: string, cfgPath: string, expectedKey: string): string[] {
   const result: string[] = [];
-  for (const rawLine of content.replace(/^\uFEFF/, '').split(/\r?\n/)) {
+  for (const rawLine of content.replace(/^\uFEFF/, '').split(/\r\n|\n|\r/)) {
     const line = rawLine.trim();
     if (!line || line.startsWith(';') || line.startsWith('#')) {
       continue;
@@ -104,7 +132,7 @@ export function parseCommonInfoBasePaths(content: string, cfgPath: string): stri
       continue;
     }
     const key = line.slice(0, delimiterIndex).trim().toLowerCase();
-    if (key !== 'commoninfobases') {
+    if (key !== expectedKey) {
       continue;
     }
     const value = line.slice(delimiterIndex + 1).trim();
@@ -115,7 +143,7 @@ export function parseCommonInfoBasePaths(content: string, cfgPath: string): stri
 
 function resolveLocalInfoBaseListPaths(): string[] {
   if (process.platform === 'win32') {
-    const appData = process.env.APPDATA;
+    const appData = getEnvironmentVariable('APPDATA');
     return appData ? [path.join(appData, '1C', '1CEStart', 'ibases.v8i')] : [];
   }
 
@@ -130,13 +158,16 @@ function resolveLocalInfoBaseListPaths(): string[] {
 function resolveStartCfgPaths(): string[] {
   if (process.platform === 'win32') {
     const result: string[] = [];
-    if (process.env.APPDATA) {
-      result.push(path.join(process.env.APPDATA, '1C', '1CEStart', '1cestart.cfg'));
+    const appData = getEnvironmentVariable('APPDATA');
+    const allUsersProfile = getEnvironmentVariable('ALLUSERSPROFILE');
+    if (appData) {
+      result.push(path.join(appData, '1C', '1CEStart', '1cestart.cfg'));
     }
-    if (process.env.ALLUSERSPROFILE) {
-      result.push(path.join(process.env.ALLUSERSPROFILE, '1C', '1CEStart', '1cestart.cfg'));
+    if (allUsersProfile) {
+      result.push(path.join(allUsersProfile, '1C', '1CEStart', '1cestart.cfg'));
+      result.push(path.join(allUsersProfile, 'Application Data', '1C', '1CEStart', '1cestart.cfg'));
     }
-    return result;
+    return deduplicatePaths(result);
   }
 
   const home = os.homedir();
@@ -158,14 +189,19 @@ function readTextFileWithEncoding(filePath: string): string {
     return buffer.toString('utf16le');
   }
 
-  return buffer.toString('utf8');
+  const utf8Text = buffer.toString('utf8');
+  if (!utf8Text.includes('\uFFFD')) {
+    return utf8Text;
+  }
+
+  return decode(buffer, 'win1251');
 }
 
 function parseSections(content: string): SectionData[] {
   const sections: SectionData[] = [];
   let current: SectionData | undefined;
 
-  for (const rawLine of content.replace(/^\uFEFF/, '').split(/\r?\n/)) {
+  for (const rawLine of content.replace(/^\uFEFF/, '').split(/\r\n|\n|\r/)) {
     const line = rawLine.trim();
     if (!line || line.startsWith(';') || line.startsWith('#')) {
       continue;
@@ -291,8 +327,11 @@ function splitConfigList(value: string): string[] {
 
 function resolveConfiguredPath(rawValue: string, cfgPath: string): string {
   const expanded = expandVariables(trimOuterQuotes(rawValue));
-  if (path.isAbsolute(expanded)) {
+  if (isAbsoluteConfiguredPath(expanded)) {
     return expanded;
+  }
+  if (isWindowsLikePath(cfgPath) || isWindowsLikePath(expanded)) {
+    return path.win32.resolve(path.win32.dirname(cfgPath), expanded);
   }
   return path.resolve(path.dirname(cfgPath), expanded);
 }
@@ -301,9 +340,9 @@ function expandVariables(value: string): string {
   const home = os.homedir();
   return value
     .replace(/^~(?=$|[\\/])/, home)
-    .replace(/%([^%]+)%/g, (_, name: string) => process.env[name] ?? '')
-    .replace(/\$\{([^}]+)}/g, (_, name: string) => process.env[name] ?? '')
-    .replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_, name: string) => process.env[name] ?? '');
+    .replace(/%([^%]+)%/g, (_, name: string) => getEnvironmentVariable(name) ?? '')
+    .replace(/\$\{([^}]+)}/g, (_, name: string) => getEnvironmentVariable(name) ?? '')
+    .replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_, name: string) => getEnvironmentVariable(name) ?? '');
 }
 
 function deduplicateBases(bases: RegisteredInfoBase[]): RegisteredInfoBase[] {
@@ -330,6 +369,39 @@ function compareInfoBases(left: RegisteredInfoBase, right: RegisteredInfoBase): 
 
 function trimOuterQuotes(value: string): string {
   return value.replace(/^"+|"+$/g, '');
+}
+
+function getEnvironmentVariable(name: string): string | undefined {
+  return process.env[name] ?? Object.entries(process.env)
+    .find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1];
+}
+
+function isAbsoluteConfiguredPath(filePath: string): boolean {
+  return path.isAbsolute(filePath) || path.win32.isAbsolute(filePath);
+}
+
+function isWindowsLikePath(filePath: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(filePath) || filePath.startsWith('\\\\');
+}
+
+function normalizePathKey(filePath: string): string {
+  return process.platform === 'win32' || isWindowsLikePath(filePath)
+    ? filePath.toLowerCase()
+    : filePath;
+}
+
+function deduplicatePaths(paths: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of paths) {
+    const key = normalizePathKey(item);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push(item);
+  }
+  return result;
 }
 
 function formatReadWarning(filePath: string, error: unknown): string {
