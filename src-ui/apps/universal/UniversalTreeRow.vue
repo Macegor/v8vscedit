@@ -65,10 +65,12 @@ function gitBadgeLabel(status?: string): string {
     </span>
     <span v-else class="tree-expander-spacer" />
 
-    <picture v-if="isAssetIcon(node.icon)" class="tree-icon-picture" aria-hidden="true">
-      <source :srcset="node.icon.lightUri" media="(prefers-color-scheme: light)" />
-      <img class="tree-icon-img" :src="node.icon.darkUri" alt="" />
-    </picture>
+    <span
+      v-if="isAssetIcon(node.icon)"
+      class="tree-icon-asset"
+      :style="{ '--icon-light': `url(${node.icon.lightUri})`, '--icon-dark': `url(${node.icon.darkUri})` }"
+      aria-hidden="true"
+    />
     <span v-else class="tree-icon" :class="iconClass(node.icon)" aria-hidden="true" />
 
     <span class="tree-label" :title="node.label">{{ node.label }}</span>
@@ -89,10 +91,12 @@ function gitBadgeLabel(status?: string): string {
 
     <span v-if="node.stateIcons?.length" class="state-icons">
       <span v-for="stateIcon in node.stateIcons" :key="stateIcon.title" class="state-icon" :title="stateIcon.title">
-        <picture v-if="isAssetIcon(stateIcon.icon)" class="state-icon-picture" aria-hidden="true">
-          <source :srcset="stateIcon.icon.lightUri" media="(prefers-color-scheme: light)" />
-          <img class="state-icon-img" :src="stateIcon.icon.darkUri" alt="" />
-        </picture>
+        <span
+          v-if="isAssetIcon(stateIcon.icon)"
+          class="state-icon-asset"
+          :style="{ '--icon-light': `url(${stateIcon.icon.lightUri})`, '--icon-dark': `url(${stateIcon.icon.darkUri})` }"
+          aria-hidden="true"
+        />
         <span v-else-if="stateIcon.icon.kind === 'codicon'" class="codicon" :class="'codicon-' + stateIcon.icon.name" aria-hidden="true" />
       </span>
     </span>
@@ -174,19 +178,19 @@ function gitBadgeLabel(status?: string): string {
 .tree-row.selected .tree-icon {
   color: var(--vscode-list-activeSelectionForeground);
 }
-.tree-icon-picture {
+.tree-icon-asset {
   width: 16px;
   height: 16px;
   flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: inline-block;
+  background-image: var(--icon-light);
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
 }
-.tree-icon-img {
-  width: 16px;
-  height: 16px;
-  display: block;
-  object-fit: contain;
+body.vscode-dark .tree-icon-asset,
+body.vscode-high-contrast:not(.vscode-high-contrast-light) .tree-icon-asset {
+  background-image: var(--icon-dark);
 }
 .tree-label {
   flex: 1;
@@ -247,8 +251,7 @@ button.inline-action:hover {
   gap: 2px;
   margin-left: 6px;
 }
-.state-icon,
-.state-icon-picture {
+.state-icon {
   width: 16px;
   height: 16px;
   flex: 0 0 16px;
@@ -257,11 +260,18 @@ button.inline-action:hover {
   justify-content: center;
   color: var(--vscode-icon-foreground);
 }
-.state-icon-img {
+.state-icon-asset {
   width: 16px;
   height: 16px;
-  display: block;
-  object-fit: contain;
+  display: inline-block;
+  background-image: var(--icon-light);
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+body.vscode-dark .state-icon-asset,
+body.vscode-high-contrast:not(.vscode-high-contrast-light) .state-icon-asset {
+  background-image: var(--icon-dark);
 }
 .git-badge {
   min-width: 15px;
