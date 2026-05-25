@@ -754,7 +754,7 @@ function getDefaultModulePaths(kind: MetaKind, objectDir: string): string[] {
  */
 function needsChildObjects(kind: MetaKind): boolean {
   const def = getMetaType(kind);
-  return Array.isArray(def?.childTags) && def.childTags.length > 0;
+  return Array.isArray(def.childTags) && def.childTags.length > 0;
 }
 
 function ensureEmptyFile(filePath: string): void {

@@ -1,8 +1,14 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import { parseConfigXml } from '../../../infra/xml';
 import type { MetadataTypeItem } from './_types';
-import { buildEventSourceItemsFromConfiguration } from './EventSubscriptionPropertyService';
+import {
+  buildEventSourceItemsFromConfiguration,
+} from './EventSubscriptionPropertyService';
+import {
+  getPlatformTypeRegistry,
+  resolveConfigurationXml,
+  type PlatformTypeGroup,
+  type PlatformTypeOption,
+  type TypeContext,
+} from '../../../infra/xml';
 
 export interface TypeRegistryTreeGroup {
   id: string;
@@ -14,123 +20,72 @@ export interface TypeRegistryTreeGroup {
 export type TypeRegistryFilter = 'value' | 'commandParameter' | 'eventSource';
 
 /**
- * Реестр доступных типов для окна выбора:
- * сначала стандартные типы платформы, затем типы текущей конфигурации.
+ * Реестр доступных типов для окна выбора свойств. Тонкая UI-обёртка над
+ * `getPlatformTypeRegistry` из `infra/xml/PlatformTypeRegistry`. Возвращает
+ * группы в формате, ожидаемом панелью свойств: `canonical` — английская форма
+ * (для записи в XML), `display` — русская форма (для отображения и приёма
+ * от MCP-агента).
  */
 export class TypeRegistryService {
   getAvailableTypes(sourceXmlPath: string | undefined, filter: TypeRegistryFilter = 'value'): TypeRegistryTreeGroup[] {
-    switch (filter) {
-      case 'commandParameter':
-        return this.getConfigurationTypes(sourceXmlPath);
-      case 'eventSource':
-        return [this.getGenericEventSourceTypes(), ...buildEventSourceItemsFromConfiguration(sourceXmlPath)];
-      case 'value':
-      default:
-        return [this.getBaseTypes(), ...this.getConfigurationTypes(sourceXmlPath)];
-    }
-  }
+    const configXml = resolveConfigurationXml(sourceXmlPath) ?? undefined;
+    const context = filterToContext(filter);
 
-  private getBaseTypes(): TypeRegistryTreeGroup {
-    return {
-      id: 'base',
-      title: 'Стандартные типы',
-      items: [
-        { canonical: 'String', display: 'Строка', group: 'primitive' },
-        { canonical: 'Number', display: 'Число', group: 'primitive' },
-        { canonical: 'Boolean', display: 'Булево', group: 'primitive' },
-        { canonical: 'Date', display: 'Дата', group: 'primitive' },
-        { canonical: 'DateTime', display: 'ДатаВремя', group: 'primitive' },
-        { canonical: 'ValueStorage', display: 'ХранилищеЗначения', group: 'primitive' },
-      ],
-    };
-  }
-
-  private getGenericEventSourceTypes(): TypeRegistryTreeGroup {
-    return {
-      id: 'eventSourceKinds',
-      title: 'Типы источников',
-      items: [
-        { canonical: 'CatalogObject', display: 'СправочникОбъект', group: 'reference' },
-        { canonical: 'CatalogManager', display: 'СправочникМенеджер', group: 'reference' },
-        { canonical: 'DocumentObject', display: 'ДокументОбъект', group: 'reference' },
-        { canonical: 'DocumentManager', display: 'ДокументМенеджер', group: 'reference' },
-        { canonical: 'ConstantValueManager', display: 'КонстантаМенеджерЗначения', group: 'reference' },
-        { canonical: 'ExchangePlanObject', display: 'ПланОбменаОбъект', group: 'reference' },
-        { canonical: 'BusinessProcessObject', display: 'БизнесПроцессОбъект', group: 'reference' },
-        { canonical: 'BusinessProcessManager', display: 'БизнесПроцессМенеджер', group: 'reference' },
-        { canonical: 'TaskObject', display: 'ЗадачаОбъект', group: 'reference' },
-        { canonical: 'ChartOfAccountsObject', display: 'ПланСчетовОбъект', group: 'reference' },
-        { canonical: 'ChartOfCalculationTypesObject', display: 'ПланВидовРасчетаОбъект', group: 'reference' },
-        { canonical: 'ChartOfCharacteristicTypesObject', display: 'ПланВидовХарактеристикОбъект', group: 'reference' },
-        { canonical: 'InformationRegisterRecordSet', display: 'РегистрСведенийНаборЗаписей', group: 'reference' },
-        { canonical: 'InformationRegisterManager', display: 'РегистрСведенийМенеджер', group: 'reference' },
-        { canonical: 'AccumulationRegisterRecordSet', display: 'РегистрНакопленияНаборЗаписей', group: 'reference' },
-        { canonical: 'AccountingRegisterRecordSet', display: 'РегистрБухгалтерииНаборЗаписей', group: 'reference' },
-        { canonical: 'CalculationRegisterRecordSet', display: 'РегистрРасчетаНаборЗаписей', group: 'reference' },
-        { canonical: 'SequenceRecordSet', display: 'ПоследовательностьНаборЗаписей', group: 'reference' },
-        { canonical: 'RecalculationRecordSet', display: 'ПерерасчетНаборЗаписей', group: 'reference' },
-        { canonical: 'ReportManager', display: 'ОтчетМенеджер', group: 'reference' },
-        { canonical: 'DataProcessorManager', display: 'ОбработкаМенеджер', group: 'reference' },
-      ],
-    };
-  }
-
-  private getConfigurationTypes(sourceXmlPath: string | undefined): TypeRegistryTreeGroup[] {
-    const configXml = resolveConfigurationXml(sourceXmlPath);
-    if (!configXml || !fs.existsSync(configXml)) {
-      return [];
+    if (filter === 'eventSource') {
+      // У источника подписки специфические группы — оставляем существующий
+      // сервис, который строит список через `EventSubscriptionPropertyService`
+      // (там зашиты особенности `Source` и определяемых типов).
+      return buildEventSourceItemsFromConfiguration(sourceXmlPath);
     }
-    try {
-      const cfg = parseConfigXml(configXml);
-      const groups: TypeRegistryTreeGroup[] = [];
-      const mapped: { key: string; prefix: string; display: string }[] = [
-        { key: 'Catalog', prefix: 'CatalogRef.', display: 'СправочникСсылка.' },
-        { key: 'Document', prefix: 'DocumentRef.', display: 'ДокументСсылка.' },
-        { key: 'Enum', prefix: 'EnumRef.', display: 'ПеречислениеСсылка.' },
-        { key: 'ChartOfAccounts', prefix: 'ChartOfAccountsRef.', display: 'ПланСчетовСсылка.' },
-        { key: 'ChartOfCharacteristicTypes', prefix: 'ChartOfCharacteristicTypesRef.', display: 'ПланВидовХарактеристикСсылка.' },
-        { key: 'ChartOfCalculationTypes', prefix: 'ChartOfCalculationTypesRef.', display: 'ПланВидовРасчетаСсылка.' },
-        { key: 'ExchangePlan', prefix: 'ExchangePlanRef.', display: 'ПланОбменаСсылка.' },
-        { key: 'BusinessProcess', prefix: 'BusinessProcessRef.', display: 'БизнесПроцессСсылка.' },
-        { key: 'Task', prefix: 'TaskRef.', display: 'ЗадачаСсылка.' },
-        { key: 'DefinedType', prefix: 'DefinedType.', display: 'ОпределяемыйТип.' },
-      ];
-      for (const entry of mapped) {
-        const names = cfg.childObjects.get(entry.key) ?? [];
-        if (names.length === 0) {
-          continue;
-        }
-        groups.push({
-          id: entry.key,
-          title: entry.key,
-          items: names.map((name) => ({
-            canonical: `${entry.prefix}${name}`,
-            display: `${entry.display}${name}`,
-            group: entry.key === 'DefinedType' ? 'defined' : 'reference',
-          })),
-        });
-      }
-      return groups;
-    } catch {
-      return [];
-    }
+
+    return getPlatformTypeRegistry(configXml, context).map(toTreeGroup);
   }
 }
 
-function resolveConfigurationXml(sourceXmlPath: string | undefined): string | null {
-  if (!sourceXmlPath) {
-    return null;
+function filterToContext(filter: TypeRegistryFilter): TypeContext {
+  if (filter === 'commandParameter') {
+    return 'commandParameter';
   }
-  let current = path.dirname(sourceXmlPath);
-  for (;;) {
-    const cfg = path.join(current, 'Configuration.xml');
-    if (fs.existsSync(cfg)) {
-      return cfg;
-    }
-    const parent = path.dirname(current);
-    if (parent === current) {
-      return null;
-    }
-    current = parent;
+  if (filter === 'eventSource') {
+    return 'eventSource';
   }
+  return 'metadataAttribute';
+}
+
+function toTreeGroup(group: PlatformTypeGroup): TypeRegistryTreeGroup {
+  return {
+    id: group.id,
+    title: group.title,
+    items: group.items.map(toTreeItem),
+  };
+}
+
+function toTreeItem(item: PlatformTypeOption): MetadataTypeItem {
+  return {
+    canonical: optionCanonicalToTreeCanonical(item),
+    display: item.canonical,
+    group: optionGroupToTreeGroup(item.group),
+  };
+}
+
+/**
+ * Историческое поле `canonical` в `MetadataTypeItem` хранит английскую форму
+ * для XML. Для базовых типов это короткое имя (`String`, `UUID`), для
+ * ссылочных — `CatalogRef.X` и т.п. Здесь конвертируем `PlatformTypeOption`,
+ * у которого `canonical` уже русский.
+ */
+function optionCanonicalToTreeCanonical(item: PlatformTypeOption): string {
+  return item.english;
+}
+
+function optionGroupToTreeGroup(group: PlatformTypeOption['group']): MetadataTypeItem['group'] {
+  if (group === 'defined') {
+    return 'defined';
+  }
+  if (group === 'reference') {
+    return 'reference';
+  }
+  // `compositeData` (Тип/ОписаниеТипов/ТаблицаЗначений/…) исторически
+  // классифицировался как `primitive` в дереве выбора. Сохраняем поведение.
+  return 'primitive';
 }

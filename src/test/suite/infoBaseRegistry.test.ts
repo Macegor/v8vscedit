@@ -34,14 +34,17 @@ OrderInList=10
   });
 
   test('Разбирает CommonInfoBases из 1cestart.cfg', () => {
-    const cfgPath = path.join('/Users/test/.1C/1cestart', '1cestart.cfg');
+    const cfgDir = path.join('/Users/test/.1C/1cestart');
+    const cfgPath = path.join(cfgDir, '1cestart.cfg');
     const paths = parseCommonInfoBasePaths(
       'CommonInfoBases=shared.v8i,"/opt/1c/common bases.v8i"',
       cfgPath
     );
 
+    // На Windows path.resolve добавит букву текущего диска к относительному пути;
+    // сравниваем через тот же path.resolve, чтобы тест не зависел от ОС-хоста.
     assert.deepStrictEqual(paths, [
-      path.join('/Users/test/.1C/1cestart', 'shared.v8i'),
+      path.resolve(cfgDir, 'shared.v8i'),
       '/opt/1c/common bases.v8i',
     ]);
   });

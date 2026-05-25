@@ -57,7 +57,6 @@ suite('ExternalObjectService', () => {
       withSkd: true,
     });
 
-    const objectXml = path.join(root, 'ОтчётСКД.xml');
     const skdDescriptor = path.join(root, 'ОтчётСКД', 'Templates', 'ОсновнаяСхемаКомпоновкиДанных.xml');
     const skdBody = path.join(root, 'ОтчётСКД', 'Templates', 'ОсновнаяСхемаКомпоновкиДанных', 'Ext', 'Template.xml');
     assert.ok(created.changedFiles.includes(skdDescriptor));

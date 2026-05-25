@@ -28,6 +28,7 @@ export * from './BasedOnXmlService';
 export * from './MetadataXmlCreator';
 export * from './MetadataXmlRemover';
 export * from './MxlTemplateService';
+export * from './PlatformTypeRegistry';
 export * from './PropertySchema';
 export * from './SubsystemToolsService';
 export * from './SubsystemXmlService';

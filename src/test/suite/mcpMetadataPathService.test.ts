@@ -1,119 +1,171 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { McpMetadataPathService } from '../../ui/mcp/McpMetadataPathService';
 import type { MetadataTreeProvider } from '../../ui/tree/MetadataTreeProvider';
 import { MetadataNode } from '../../ui/tree/TreeNode';
 
-suite('McpMetadataPathService', () => {
-  test('разрешает предметные пути без nodeId', () => {
-    const provider = createProvider();
-    const service = new McpMetadataPathService(provider);
+suite('McpMetadataPathService — каноническая навигация', () => {
+  // ── Позитивные сценарии: каноничные русские пути ────────────────────────
 
-    assert.strictEqual(service.resolveNode('Справочники.Пользователи').nodeKind, 'Catalog');
-    assert.strictEqual(service.resolveNode('Catalog.Пользователи.Фамилия').nodeKind, 'Attribute');
-    assert.strictEqual(service.resolveNode('Справочники.Пользователи.Формы.ФормаСписка').nodeKind, 'Form');
-    assert.strictEqual(service.resolveNode('Справочники.Пользователи.ДополнительныеРеквизиты.Ссылка').nodeKind, 'Column');
-    assert.strictEqual(service.resolveNode('Справочники.Пользователи.ТабличныеЧасти.ДополнительныеРеквизиты').nodeKind, 'TabularSection');
-  });
-
-  test('строит цель добавления по пути', () => {
+  test('Конфигурация — корневой узел', () => {
     const service = new McpMetadataPathService(createProvider());
-
-    const attr = service.resolveAddTarget({ path: 'Справочники.Пользователи.Отчество' });
-    assert.strictEqual(attr.target.kind, 'child');
-    assert.strictEqual(attr.target.kind === 'child' ? attr.target.childTag : undefined, 'Attribute');
-    assert.strictEqual(attr.name, 'Отчество');
-
-    const form = service.resolveAddTarget({ path: 'Справочники.Пользователи.Формы.ФормаЭлемента' });
-    assert.strictEqual(form.target.kind === 'child' ? form.target.childTag : undefined, 'Form');
-    assert.strictEqual(form.name, 'ФормаЭлемента');
-
-    const column = service.resolveAddTarget({ path: 'Справочники.Пользователи.ДополнительныеРеквизиты.Значение' });
-    assert.strictEqual(column.target.kind === 'child' ? column.target.childTag : undefined, 'Column');
-    assert.strictEqual(column.target.kind === 'child' ? column.target.tabularSectionName : undefined, 'ДополнительныеРеквизиты');
-    assert.strictEqual(column.name, 'Значение');
-
-    const groupedColumn = service.resolveAddTarget({ path: 'Справочники.Пользователи.ТабличныеЧасти.ДополнительныеРеквизиты.Реквизиты.Сумма' });
-    assert.strictEqual(groupedColumn.target.kind === 'child' ? groupedColumn.target.childTag : undefined, 'Column');
-    assert.strictEqual(groupedColumn.target.kind === 'child' ? groupedColumn.target.tabularSectionName : undefined, 'ДополнительныеРеквизиты');
-    assert.strictEqual(groupedColumn.name, 'Сумма');
-
-    const tabularSection = service.resolveAddTarget({ path: 'Справочники.Пользователи.ТабличныеЧасти.Состав' });
-    assert.strictEqual(tabularSection.target.kind === 'child' ? tabularSection.target.childTag : undefined, 'TabularSection');
-    assert.strictEqual(tabularSection.name, 'Состав');
-
-    const tabularSectionByUiLabel = service.resolveAddTarget({ path: 'Справочники.Пользователи.Табличные части.Состав' });
-    assert.strictEqual(tabularSectionByUiLabel.target.kind === 'child' ? tabularSectionByUiLabel.target.childTag : undefined, 'TabularSection');
+    const node = service.resolveNode('Конфигурация');
+    assert.strictEqual(node.nodeKind, 'configuration');
+    assert.strictEqual(node.xmlPath, '/tmp/cf/Configuration.xml');
   });
 
-  test('требует указать конфигурацию при нескольких корнях', () => {
+  test('Расширение — корневой узел с явной конфигурацией', () => {
     const service = new McpMetadataPathService(createProvider({ withExtension: true }));
-
-    assert.throws(
-      () => service.search({ query: 'Польз' }),
-      /Укажите configuration/
-    );
-    assert.ok(service.search({ query: 'Польз', configuration: 'Конфигурация' }).length > 0);
+    const node = service.resolveNode('Расширение', 'EVOLC');
+    assert.strictEqual(node.nodeKind, 'extension');
+    assert.strictEqual(node.xmlPath, '/tmp/cfe/EVOLC/Configuration.xml');
   });
 
-  test('быстро ищет корневые объекты по русскому виду метаданных', () => {
+  test('Справочники.X — корневой объект', () => {
     const service = new McpMetadataPathService(createProvider());
-
-    const found = service.search({
-      query: 'Редактор схемы процессов',
-      configuration: 'Конфигурация',
-      kind: 'Обработки',
-    });
-
-    assert.strictEqual(found.length, 1);
-    assert.strictEqual(found[0].path, 'Обработки.ев_РедакторСхемыПроцессов');
-    assert.strictEqual(found[0].nodeKind, 'DataProcessor');
-
-    const withoutKind = service.search({
-      query: 'Редактор схемы процессов',
-      configuration: 'Конфигурация',
-    });
-    assert.strictEqual(withoutKind[0].path, 'Обработки.ев_РедакторСхемыПроцессов');
+    const node = service.resolveNode('Справочники.Пользователи');
+    assert.strictEqual(node.nodeKind, 'Catalog');
   });
 
-  test('возвращает список корневой группы без обхода дочерних элементов', () => {
+  test('Справочники.X.Y — прямой реквизит без сегмента', () => {
     const service = new McpMetadataPathService(createProvider());
+    const node = service.resolveNode('Справочники.Пользователи.Фамилия');
+    assert.strictEqual(node.nodeKind, 'Attribute');
+  });
 
+  test('Справочники.X.Y — прямая табличная часть без сегмента', () => {
+    const service = new McpMetadataPathService(createProvider());
+    const node = service.resolveNode('Справочники.Пользователи.ДополнительныеРеквизиты');
+    assert.strictEqual(node.nodeKind, 'TabularSection');
+  });
+
+  test('Справочники.X.ТабличнаяЧасть.Имя.Реквизит.Y — колонка ТЧ с сегментом', () => {
+    const service = new McpMetadataPathService(createProvider());
+    const node = service.resolveNode('Справочники.Пользователи.ТабличнаяЧасть.ДополнительныеРеквизиты.Реквизит.Ссылка');
+    assert.strictEqual(node.nodeKind, 'Column');
+  });
+
+  test('Справочники.X.Форма.Y — форма с сегментом', () => {
+    const service = new McpMetadataPathService(createProvider());
+    const node = service.resolveNode('Справочники.Пользователи.Форма.ФормаСписка');
+    assert.strictEqual(node.nodeKind, 'Form');
+  });
+
+  test('Справочники.X.СтандартныйРеквизит.Y — стандартный реквизит', () => {
+    const service = new McpMetadataPathService(createProvider({ withStandardAttribute: true }));
+    const node = service.resolveNode('Справочники.Пользователи.СтандартныйРеквизит.Код');
+    assert.strictEqual(node.nodeKind, 'StandardAttribute');
+  });
+
+  test('Подсистема.А.Б — вложенная подсистема без удвоения', () => {
+    const service = new McpMetadataPathService(createProvider({ withSubsystems: true }));
+    const node = service.resolveNode('Подсистема.Продажи.Розница');
+    assert.strictEqual(node.nodeKind, 'Subsystem');
+    assert.strictEqual(node.textLabel, 'Розница');
+  });
+
+  test('search — выдаёт ТОЛЬКО канонические пути', () => {
+    const service = new McpMetadataPathService(createProvider());
+    const results = service.search({ query: 'Польз', configuration: 'Конфигурация' });
+    assert.ok(results.length > 0, 'должен найти Пользователи');
+    for (const item of results) {
+      assert.ok(
+        item.path.startsWith('Справочники.')
+          || item.path.startsWith('Документы.')
+          || item.path === 'Конфигурация'
+          || item.path.startsWith('Обработки.'),
+        `канон, получено "${item.path}"`,
+      );
+    }
+  });
+
+  test('search — kind принимает русский label типа', () => {
+    const service = new McpMetadataPathService(createProvider());
+    const results = service.search({
+      query: 'Редактор',
+      configuration: 'Конфигурация',
+      kind: 'Обработка',
+    });
+    assert.ok(results.length > 0);
+    for (const item of results) {
+      assert.strictEqual(item.nodeKind, 'DataProcessor');
+      assert.ok(item.path.startsWith('Обработки.'));
+    }
+  });
+
+  test('list — корневая группа объектов выдаёт канонические пути', () => {
+    const service = new McpMetadataPathService(createProvider());
     const found = service.list({
       configuration: 'Конфигурация',
       kind: 'DataProcessor',
     });
-
     assert.deepStrictEqual(found.map((item) => item.path), ['Обработки.ев_РедакторСхемыПроцессов']);
   });
 
-  test('разрешает корневой узел конфигурации по предметному имени', () => {
+  // ── resolveAddTarget: канонические формы ────────────────────────────────
+
+  test('resolveAddTarget — прямой реквизит к существующему объекту', () => {
     const service = new McpMetadataPathService(createProvider());
-
-    for (const alias of ['Конфигурация', 'Configuration', 'configuration']) {
-      const node = service.resolveNode(alias);
-      assert.strictEqual(node.nodeKind, 'configuration', `alias ${alias}`);
-      assert.strictEqual(node.xmlPath, '/tmp/cf/Configuration.xml');
+    const attr = service.resolveAddTarget({ path: 'Справочники.Пользователи.Отчество' });
+    if (attr.target.kind !== 'child') {
+      assert.fail(`Ожидался target.kind === 'child', получено ${attr.target.kind}`);
     }
+    assert.strictEqual(attr.target.childTag, 'Attribute');
+    assert.strictEqual(attr.name, 'Отчество');
   });
 
-  test('разрешает корень расширения по предметному имени', () => {
+  test('resolveAddTarget — форма к существующему объекту через сегмент', () => {
+    const service = new McpMetadataPathService(createProvider());
+    const form = service.resolveAddTarget({ path: 'Справочники.Пользователи.Форма.ФормаЭлемента' });
+    assert.strictEqual(form.target.kind === 'child' ? form.target.childTag : undefined, 'Form');
+    assert.strictEqual(form.name, 'ФормаЭлемента');
+  });
+
+  test('resolveAddTarget — колонка ТЧ через канон.форму ТабличнаяЧасть.X.Реквизит.Y', () => {
+    const service = new McpMetadataPathService(createProvider());
+    const column = service.resolveAddTarget({
+      path: 'Справочники.Пользователи.ТабличнаяЧасть.ДополнительныеРеквизиты.Реквизит.Сумма',
+    });
+    assert.strictEqual(column.target.kind === 'child' ? column.target.childTag : undefined, 'Column');
+    assert.strictEqual(
+      column.target.kind === 'child' ? column.target.tabularSectionName : undefined,
+      'ДополнительныеРеквизиты',
+    );
+    assert.strictEqual(column.name, 'Сумма');
+  });
+
+  test('resolveAddTarget — новый корневой объект по канону', () => {
+    const service = new McpMetadataPathService(createProvider());
+    const root = service.resolveAddTarget({ path: 'Справочники.НовыйСправочник' });
+    if (root.target.kind !== 'root') {
+      assert.fail(`Ожидался target.kind === 'root', получено ${root.target.kind}`);
+    }
+    assert.strictEqual(root.target.targetKind, 'Catalog');
+    assert.strictEqual(root.name, 'НовыйСправочник');
+  });
+
+  // ── Многокорневые рабочие области ───────────────────────────────────────
+
+  test('Несколько корней — требуется configuration', () => {
     const service = new McpMetadataPathService(createProvider({ withExtension: true }));
-
-    const ext = service.resolveNode('Расширение', 'EVOLC');
-    assert.strictEqual(ext.nodeKind, 'extension');
-    assert.strictEqual(ext.xmlPath, '/tmp/cfe/EVOLC/Configuration.xml');
+    assert.throws(
+      () => service.search({ query: 'Польз', configuration: '' }),
+      /Укажите configuration/,
+    );
+    assert.ok(service.search({ query: 'Польз', configuration: 'Конфигурация' }).length > 0);
   });
 
-  test('resolveObjectXmlPath принимает абсолютный путь, относительный от корня и предметный путь', () => {
-    const fs = require('fs') as typeof import('fs');
-    const os = require('os') as typeof import('os');
-    const path = require('path') as typeof import('path');
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-resolve-object-'));
+  // ── resolveObjectXmlPath: канон + абсолютный путь, без relative-from-root ──
+
+  test('resolveObjectXmlPath — абсолютный путь к файлу', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-resolve-canonical-'));
     const catalogsDir = path.join(root, 'Catalogs');
     fs.mkdirSync(catalogsDir, { recursive: true });
     const catalogXml = path.join(catalogsDir, 'Задачи.xml');
-    fs.writeFileSync(catalogXml, '<MetaDataObject><Catalog><Properties><Name>Задачи</Name></Properties></Catalog></MetaDataObject>', 'utf-8');
+    fs.writeFileSync(catalogXml, '<MetaDataObject/>', 'utf-8');
 
     const provider = {
       getAutomationRoots: () => [],
@@ -121,16 +173,179 @@ suite('McpMetadataPathService', () => {
     } as unknown as MetadataTreeProvider;
     const service = new McpMetadataPathService(provider);
 
-    assert.strictEqual(service.resolveObjectXmlPath(catalogXml), catalogXml, 'абсолютный путь');
-    assert.strictEqual(service.resolveObjectXmlPath('Catalogs/Задачи.xml'), catalogXml, 'относительный от корня');
-    assert.strictEqual(service.resolveObjectXmlPath('Catalogs/Задачи'), catalogXml, 'без расширения');
-    assert.strictEqual(service.resolveObjectXmlPath('Catalogs/НетТакого.xml'), null, 'несуществующий путь');
+    assert.strictEqual(service.resolveObjectXmlPath(catalogXml), catalogXml);
+  });
+
+  test('resolveObjectXmlPath — относительный путь от корня НЕ поддерживается', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-resolve-rel-'));
+    const catalogsDir = path.join(root, 'Catalogs');
+    fs.mkdirSync(catalogsDir, { recursive: true });
+    fs.writeFileSync(path.join(catalogsDir, 'Задачи.xml'), '<MetaDataObject/>', 'utf-8');
+
+    const provider = {
+      getAutomationRoots: () => [],
+      getEntries: () => [{ rootPath: root, kind: 'cf' as const }],
+    } as unknown as MetadataTreeProvider;
+    const service = new McpMetadataPathService(provider);
+
+    assert.strictEqual(service.resolveObjectXmlPath('Catalogs/Задачи.xml'), null);
+  });
+
+  // ── Негативные тесты: alias-формы отбиваются ────────────────────────────
+
+  test('Catalog.X — английский алиас отвергается с подсказкой канона', () => {
+    const service = new McpMetadataPathService(createProvider());
+    assert.throws(
+      () => service.resolveNode('Catalog.Пользователи'),
+      /Справочники/,
+    );
+  });
+
+  test('Catalogs.X — английская папка отвергается', () => {
+    const service = new McpMetadataPathService(createProvider());
+    assert.throws(
+      () => service.resolveNode('Catalogs.Пользователи'),
+      /Справочники/,
+    );
+  });
+
+  test('Справочник.X (ед. ч.) — отвергается', () => {
+    const service = new McpMetadataPathService(createProvider());
+    assert.throws(
+      () => service.resolveNode('Справочник.Пользователи'),
+      /Справочники/,
+    );
+  });
+
+  test('Справочники.X.Реквизиты.Y — старая «грязная» форма отвергается', () => {
+    const service = new McpMetadataPathService(createProvider());
+    assert.throws(
+      () => service.resolveNode('Справочники.Пользователи.Реквизиты.Фамилия'),
+      /сегмент-роль|сегмент/i,
+    );
+  });
+
+  test('Подсистема.А.Подсистема.Б — удвоение сегмента отвергается', () => {
+    const service = new McpMetadataPathService(createProvider({ withSubsystems: true }));
+    assert.throws(
+      () => service.resolveNode('Подсистема.Продажи.Подсистема.Розница'),
+      /Подсистема|не найден/i,
+    );
+  });
+
+  // ── listTreePaths: плоский список путей ────────────────────────────────
+
+  test('listTreePaths(scope=all, depth=roots) — содержит корни Справочники.X, Обработки.X, Подсистема.X', () => {
+    const service = new McpMetadataPathService(createProvider({ withSubsystems: true }));
+    const result = service.listTreePaths({ scope: 'all', depth: 'roots' });
+    assert.ok(result.paths.includes('Справочники.Пользователи'), 'должен быть Справочники.Пользователи');
+    assert.ok(result.paths.includes('Обработки.ев_РедакторСхемыПроцессов'), 'должен быть Обработки.ев_РедакторСхемыПроцессов');
+    assert.ok(result.paths.includes('Подсистема.Продажи'), 'должна быть корневая подсистема Подсистема.Продажи');
+    // depth=roots для подсистем НЕ должен включать дочерние
+    assert.ok(!result.paths.includes('Подсистема.Продажи.Розница'), 'вложенная подсистема не должна быть в roots');
+  });
+
+  test('listTreePaths(depth=objects) — есть объекты, нет реквизитов', () => {
+    const service = new McpMetadataPathService(createProvider({ withSubsystems: true }));
+    const result = service.listTreePaths({ depth: 'objects' });
+    assert.ok(result.paths.includes('Справочники.Пользователи'));
+    // Реквизиты и табличные части НЕ должны попадать
+    assert.ok(!result.paths.includes('Справочники.Пользователи.Фамилия'), 'реквизит не должен быть в objects');
+    assert.ok(!result.paths.includes('Справочники.Пользователи.ДополнительныеРеквизиты'), 'ТЧ не должна быть в objects');
+    assert.ok(!result.paths.includes('Справочники.Пользователи.Форма.ФормаСписка'), 'формы не должны быть в objects');
+    // Подсистемы — это объекты, должны попадать на всех уровнях иерархии
+    assert.ok(result.paths.includes('Подсистема.Продажи.Розница'));
+  });
+
+  test('listTreePaths(depth=children) — есть прямые реквизиты, формы и вложенные подсистемы', () => {
+    const service = new McpMetadataPathService(createProvider({ withSubsystems: true }));
+    const result = service.listTreePaths({ depth: 'children' });
+    assert.ok(result.paths.includes('Справочники.Пользователи.Фамилия'), 'прямой реквизит');
+    assert.ok(result.paths.includes('Справочники.Пользователи.Форма.ФормаСписка'), 'форма с сегментом');
+    assert.ok(result.paths.includes('Подсистема.Продажи.Розница.Возвраты'), 'вложенная подсистема');
+  });
+
+  test('listTreePaths(include=[Справочники]) — фильтр по корневому сегменту', () => {
+    const service = new McpMetadataPathService(createProvider({ withSubsystems: true }));
+    const result = service.listTreePaths({ depth: 'objects', include: ['Справочники'] });
+    assert.ok(result.paths.length > 0);
+    for (const value of result.paths) {
+      assert.ok(value.startsWith('Справочники.') || value === 'Справочники', `путь "${value}" должен начинаться со Справочники`);
+    }
+  });
+
+  test('listTreePaths — подсистемы без удвоения сегмента', () => {
+    const service = new McpMetadataPathService(createProvider({ withSubsystems: true }));
+    const result = service.listTreePaths({ depth: 'children' });
+    const subsystemPaths = result.paths.filter((p) => p.startsWith('Подсистема.'));
+    // Должна быть Подсистема.Продажи.Розница, и НЕ должно быть Подсистема.Продажи.Подсистема.Розница.
+    assert.ok(subsystemPaths.includes('Подсистема.Продажи.Розница'));
+    assert.ok(!subsystemPaths.some((p) => p.includes('Подсистема.Продажи.Подсистема')),
+      `подсистемы не должны удваивать сегмент: ${subsystemPaths.join(', ')}`);
+  });
+
+  test('listTreePaths(scope=subsystems) — только подсистемы', () => {
+    const service = new McpMetadataPathService(createProvider({ withSubsystems: true }));
+    const result = service.listTreePaths({ scope: 'subsystems', depth: 'children' });
+    for (const value of result.paths) {
+      assert.ok(value.startsWith('Подсистема.'), `должно быть только Подсистема.*, получено "${value}"`);
+    }
+  });
+
+  test('listTreePaths(limit) — обрезает выдачу и выставляет truncated', () => {
+    const service = new McpMetadataPathService(createProvider({ withSubsystems: true }));
+    const result = service.listTreePaths({ depth: 'children', limit: 2 });
+    assert.strictEqual(result.paths.length, 2);
+    assert.strictEqual(result.truncated, true);
+    assert.ok(result.total >= 2);
+  });
+
+  // ── resolveNodeSafe: для tool v8vscedit_resolve_path ──────────────────
+
+  test('resolveNodeSafe — существующий узел: exists=true, node заполнен', () => {
+    const service = new McpMetadataPathService(createProvider());
+    const result = service.resolveNodeSafe('Справочники.Пользователи');
+    assert.strictEqual(result.exists, true);
+    assert.strictEqual(result.canonical, 'Справочники.Пользователи');
+    assert.strictEqual(result.node?.nodeKind, 'Catalog');
+  });
+
+  test('resolveNodeSafe — валидный синтаксис, узла нет: exists=false без ошибки', () => {
+    const service = new McpMetadataPathService(createProvider());
+    const result = service.resolveNodeSafe('Справочники.НетТакого');
+    assert.strictEqual(result.exists, false);
+    assert.strictEqual(result.canonical, 'Справочники.НетТакого');
+    assert.strictEqual(result.node, undefined);
+  });
+
+  test('resolveNodeSafe — невалидный синтаксис (английский алиас) → бросает ошибку', () => {
+    const service = new McpMetadataPathService(createProvider());
+    assert.throws(
+      () => service.resolveNodeSafe('Catalog.Пользователи'),
+      /Справочники|канонические/i,
+    );
   });
 });
 
-function createProvider(options: { readonly withExtension?: boolean } = {}): MetadataTreeProvider {
-  const attribute = node('Фамилия', 'Attribute', { xmlPath: '/tmp/cf/Catalogs/Пользователи.xml', owner: '/tmp/cf/Catalogs/Пользователи.xml' });
-  const form = node('ФормаСписка', 'Form', { xmlPath: '/tmp/cf/Catalogs/Пользователи.xml', owner: '/tmp/cf/Catalogs/Пользователи.xml' });
+// ─── Тестовые утилиты ─────────────────────────────────────────────────────
+
+function createProvider(options: {
+  readonly withExtension?: boolean;
+  readonly withSubsystems?: boolean;
+  readonly withStandardAttribute?: boolean;
+} = {}): MetadataTreeProvider {
+  const attribute = node('Фамилия', 'Attribute', {
+    xmlPath: '/tmp/cf/Catalogs/Пользователи.xml',
+    owner: '/tmp/cf/Catalogs/Пользователи.xml',
+  });
+  const form = node('ФормаСписка', 'Form', {
+    xmlPath: '/tmp/cf/Catalogs/Пользователи.xml',
+    owner: '/tmp/cf/Catalogs/Пользователи.xml',
+  });
+  const standardAttribute = node('Код', 'StandardAttribute', {
+    xmlPath: '/tmp/cf/Catalogs/Пользователи.xml',
+    owner: '/tmp/cf/Catalogs/Пользователи.xml',
+  });
   const column = node('Ссылка', 'Column', {
     xmlPath: '/tmp/cf/Catalogs/Пользователи.xml',
     owner: '/tmp/cf/Catalogs/Пользователи.xml',
@@ -147,15 +362,22 @@ function createProvider(options: { readonly withExtension?: boolean } = {}): Met
       tabularSectionName: 'ДополнительныеРеквизиты',
     },
   });
+
+  const catalogGroups: MetadataNode[] = [];
+  if (options.withStandardAttribute) {
+    catalogGroups.push(group('Стандартные реквизиты', 'StandardAttribute', [standardAttribute]));
+  }
+  catalogGroups.push(
+    group('Реквизиты', 'Attribute', [attribute]),
+    group('Табличные части', 'TabularSection', [tabularSection]),
+    group('Формы', 'Form', [form]),
+  );
+
   const catalog = node('Пользователи', 'Catalog', {
     xmlPath: '/tmp/cf/Catalogs/Пользователи.xml',
-    children: [
-      group('Реквизиты', 'Attribute', [attribute]),
-      group('Табличные части', 'TabularSection', [tabularSection]),
-      group('Формы', 'Form', [form]),
-    ],
+    children: catalogGroups,
   });
-  const catalogs = node('Справочники', 'Catalog', {
+  const catalogs = node('Справочники', 'group-type', {
     children: [catalog],
     addMetadataTarget: {
       kind: 'root',
@@ -170,7 +392,7 @@ function createProvider(options: { readonly withExtension?: boolean } = {}): Met
       group('Макеты', 'Template', []),
     ],
   });
-  const dataProcessors = node('Обработки', 'DataProcessor', {
+  const dataProcessors = node('Обработки', 'group-type', {
     children: [dataProcessor],
     addMetadataTarget: {
       kind: 'root',
@@ -179,10 +401,38 @@ function createProvider(options: { readonly withExtension?: boolean } = {}): Met
       targetKind: 'DataProcessor',
     },
   });
+
+  const rootChildren: MetadataNode[] = [catalogs, dataProcessors];
+
+  if (options.withSubsystems) {
+    const subsystemReturns = node('Возвраты', 'Subsystem', {
+      xmlPath: '/tmp/cf/Subsystems/Возвраты.xml',
+    });
+    const subsystemRetail = node('Розница', 'Subsystem', {
+      xmlPath: '/tmp/cf/Subsystems/Розница.xml',
+      children: [subsystemReturns],
+    });
+    const subsystemSales = node('Продажи', 'Subsystem', {
+      xmlPath: '/tmp/cf/Subsystems/Продажи.xml',
+      children: [subsystemRetail],
+    });
+    const subsystemsGroup = node('Подсистемы', 'group-type', {
+      children: [subsystemSales],
+      addMetadataTarget: {
+        kind: 'root',
+        configRoot: '/tmp/cf',
+        configKind: 'cf',
+        targetKind: 'Subsystem',
+      },
+    });
+    rootChildren.push(subsystemsGroup);
+  }
+
   const root = node('Конфигурация', 'configuration', {
     xmlPath: '/tmp/cf/Configuration.xml',
-    children: [catalogs, dataProcessors],
+    children: rootChildren,
   });
+
   const roots = options.withExtension
     ? [
       root,
@@ -196,13 +446,17 @@ function createProvider(options: { readonly withExtension?: boolean } = {}): Met
   return {
     getAutomationRoots: () => roots,
     getEntries: () => [
-      { rootPath: '/tmp/cf', kind: 'cf' },
+      { rootPath: '/tmp/cf', kind: 'cf' as const },
       ...(options.withExtension ? [{ rootPath: '/tmp/cfe/EVOLC', kind: 'cfe' as const }] : []),
     ],
   } as unknown as MetadataTreeProvider;
 }
 
-function group(label: string, childTag: 'Attribute' | 'TabularSection' | 'Form' | 'Template', children: MetadataNode[]): MetadataNode {
+function group(
+  label: string,
+  childTag: 'Attribute' | 'TabularSection' | 'Form' | 'Template' | 'StandardAttribute',
+  children: MetadataNode[],
+): MetadataNode {
   return node(label, 'group-type', {
     children,
     addMetadataTarget: {
@@ -222,8 +476,9 @@ function node(
     readonly tabularSectionName?: string;
     readonly children?: MetadataNode[];
     readonly addMetadataTarget?: MetadataNode['addMetadataTarget'];
-  } = {}
+  } = {},
 ): MetadataNode {
+  const children = options.children;
   return new MetadataNode({
     label,
     nodeKind,
@@ -235,7 +490,7 @@ function node(
         tabularSectionName: options.tabularSectionName,
       }
       : undefined,
-    childrenLoader: options.children ? () => options.children ?? [] : undefined,
+    childrenLoader: children ? () => children : undefined,
     addMetadataTarget: options.addMetadataTarget,
-  }, options.children?.length ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None);
+  }, children?.length ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None);
 }

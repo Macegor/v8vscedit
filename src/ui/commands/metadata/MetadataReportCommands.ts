@@ -33,7 +33,7 @@ async function validateMetadata(node: MetadataNode | undefined, services: Comman
     return;
   }
   const result = services.metadataValidationService.validate({ objectPath: xmlPath, detailed: true, maxErrors: 100 });
-  await openReport(`Валидация объекта: ${result.errors} ошибок`, result.lines.join('\n'));
+  await openReport(`Валидация объекта: ${String(result.errors)} ошибок`, result.lines.join('\n'));
 }
 
 async function openReport(title: string, content: string): Promise<void> {

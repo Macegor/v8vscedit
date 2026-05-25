@@ -86,7 +86,7 @@ export class MetadataValidationService {
       return buildSingleResult(objectPath, undefined, undefined, undefined, issues, options.detailed);
     }
 
-    let xml = '';
+    let xml: string;
     try {
       xml = fs.readFileSync(xmlPath, 'utf-8');
     } catch (error) {

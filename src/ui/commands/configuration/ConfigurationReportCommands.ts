@@ -33,7 +33,7 @@ async function validateConfiguration(node: MetadataNode | undefined, services: C
     return;
   }
   const result = services.configurationValidationService.validate({ configPath, detailed: true, maxErrors: 100 });
-  await openReport(`Валидация: ${result.errors} ошибок`, result.lines.join('\n'));
+  await openReport(`Валидация: ${String(result.errors)} ошибок`, result.lines.join('\n'));
 }
 
 async function openReport(title: string, content: string): Promise<void> {

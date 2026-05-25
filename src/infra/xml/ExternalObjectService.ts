@@ -42,14 +42,15 @@ export type BspCommandType =
 
 export interface BspRegistrationOptions {
   readonly objectPath: string;
-  readonly kind: BspProcessingKind | string;
+  // Принимаем как известные значения BspProcessingKind, так и произвольную строку.
+  readonly kind: BspProcessingKind | (string & {});
   readonly targets?: readonly string[];
 }
 
 export interface AddBspCommandOptions {
   readonly objectPath: string;
   readonly identifier: string;
-  readonly commandType?: BspCommandType | string;
+  readonly commandType?: BspCommandType | (string & {});
   readonly presentation?: string;
   readonly formModulePath?: string;
 }
@@ -71,7 +72,6 @@ export interface ExternalObjectValidationResult {
 }
 
 const XMLNS = 'xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:app="http://v8.1c.ru/8.2/managed-application/core" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:cmi="http://v8.1c.ru/8.2/managed-application/cmi" xmlns:ent="http://v8.1c.ru/8.1/data/enterprise" xmlns:lf="http://v8.1c.ru/8.2/managed-application/logform" xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:sys="http://v8.1c.ru/8.1/data/ui/fonts/system" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:web="http://v8.1c.ru/8.1/data/ui/colors/web" xmlns:win="http://v8.1c.ru/8.1/data/ui/colors/windows" xmlns:xen="http://v8.1c.ru/8.3/xcf/enums" xmlns:xpr="http://v8.1c.ru/8.3/xcf/predef" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"';
-const MD_NS = 'http://v8.1c.ru/8.3/MDClasses';
 const EPF_CLASS_ID = 'c3831ec8-d8d5-4f93-8a22-f9bfae07327f';
 const ERF_CLASS_ID = 'e41aff26-25cf-4bb6-b6c1-3f478a75f374';
 const GUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -267,7 +267,7 @@ export class ExternalObjectService {
       };
     }
 
-    let xml = '';
+    let xml: string;
     try {
       xml = fs.readFileSync(objectPath, 'utf-8');
     } catch (error) {
@@ -289,8 +289,8 @@ export class ExternalObjectService {
     }
 
     type = rootMatch[2] as 'ExternalDataProcessor' | 'ExternalReport';
-    const objectOpenAttrs = rootMatch[3] ?? '';
-    const version = /version="([^"]+)"/.exec(rootMatch[1] ?? '')?.[1] ?? '';
+    const objectOpenAttrs = rootMatch[3];
+    const version = /version="([^"]+)"/.exec(rootMatch[1])?.[1] ?? '';
     const uuid = /uuid="([^"]+)"/.exec(objectOpenAttrs)?.[1] ?? '';
     name = extractTag(xml, 'Name') ?? '(unknown)';
     lines.unshift(`=== Validation: ${type === 'ExternalDataProcessor' ? 'EPF' : 'ERF'}.${name} ===`);
@@ -892,12 +892,12 @@ function validateInternalInfo(
   }
   const expectedPrefix = `${type}Object.`;
   for (const match of generatedTypeMatches) {
-    const generatedName = /name="([^"]+)"/.exec(match[1] ?? '')?.[1] ?? '';
+    const generatedName = /name="([^"]+)"/.exec(match[1])?.[1] ?? '';
     if (name !== '(unknown)' && generatedName && !generatedName.startsWith(expectedPrefix)) {
       reportWarn(`2. GeneratedType name "${generatedName}" does not start with "${expectedPrefix}".`);
     }
   }
-  reportOk(`2. InternalInfo: ClassId correct, ${generatedTypeMatches.length} GeneratedType`);
+  reportOk(`2. InternalInfo: ClassId correct, ${String(generatedTypeMatches.length)} GeneratedType`);
 }
 
 function validateChildObjects(
@@ -924,7 +924,7 @@ function validateChildObjects(
   }
   const summary = [...counts.entries()]
     .sort((a, b) => (CHILD_ORDER[a[0]] ?? 99) - (CHILD_ORDER[b[0]] ?? 99))
-    .map(([tag, count]) => `${tag}(${count})`)
+    .map(([tag, count]) => `${tag}(${String(count)})`)
     .join(', ');
   reportOk(summary ? `4. ChildObjects: ${summary}` : '4. ChildObjects: empty');
 }
@@ -994,7 +994,7 @@ function validateAttributes(
     }
   }
   if (attributes.length > 0) {
-    reportOk(`6. Attributes: ${attributes.length} checked.`);
+    reportOk(`6. Attributes: ${String(attributes.length)} checked.`);
   }
 }
 
@@ -1015,7 +1015,7 @@ function validateNameUniqueness(
     }
     seen.set(child.name, child.tag);
   }
-  reportOk(`8. Name uniqueness: ${seen.size} names, all unique.`);
+  reportOk(`8. Name uniqueness: ${String(seen.size)} names, all unique.`);
 }
 
 function validateExternalObjectFiles(
@@ -1060,7 +1060,7 @@ function validateExternalObjectFiles(
     checked++;
   }
   if (checked > 0) {
-    reportOk(`9. File existence: ${checked} files verified.`);
+    reportOk(`9. File existence: ${String(checked)} files verified.`);
   }
 }
 
@@ -1076,9 +1076,11 @@ function parseChildObjects(inner: string): ExternalChild[] {
   const tagRegex = /<([A-Za-z][A-Za-z0-9]*)\b([^>]*)>([\s\S]*?)<\/\1>|<([A-Za-z][A-Za-z0-9]*)\b([^>]*)\/>/g;
   let match: RegExpExecArray | null;
   while ((match = tagRegex.exec(inner)) !== null) {
-    const tag = match[1] ?? match[4] ?? '';
-    const attrs = match[2] ?? match[5] ?? '';
-    const body = match[3] ?? '';
+    // Опциональные альтернативы регулярки фактически могут вернуть undefined.
+    const groups = match as unknown as readonly (string | undefined)[];
+    const tag = groups[1] ?? groups[4] ?? '';
+    const attrs = groups[2] ?? groups[5] ?? '';
+    const body = groups[3] ?? '';
     if (!tag) {
       continue;
     }
@@ -1103,10 +1105,10 @@ function finalizeValidation(
 ): ExternalObjectValidationResult {
   const checks = errors + warnings + ok;
   if (errors === 0 && warnings === 0 && lines.length === 1) {
-    lines.push(`=== Validation OK: ${type}.${name} (${checks} checks) ===`);
+    lines.push(`=== Validation OK: ${type}.${name} (${String(checks)} checks) ===`);
   } else {
     lines.push('');
-    lines.push(`=== Result: ${errors} errors, ${warnings} warnings (${checks} checks) ===`);
+    lines.push(`=== Result: ${String(errors)} errors, ${String(warnings)} warnings (${String(checks)} checks) ===`);
   }
   return { objectPath, type, name, errors, warnings, checks, lines };
 }
@@ -1119,7 +1121,7 @@ function extractBlock(xml: string, tagName: string): string | null {
 function extractTag(xml: string, tagName: string): string | undefined {
   const re = new RegExp(`<${escapeRegExp(tagName)}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${escapeRegExp(tagName)}>`);
   const value = re.exec(xml)?.[1]?.trim();
-  return value || undefined;
+  return value !== undefined && value.length > 0 ? value : undefined;
 }
 
 function validateName(value: string): void {

@@ -40,7 +40,7 @@ async function validateMxl(node: MetadataNode | undefined, services: CommandServ
     return;
   }
   const result = services.mxlTemplateService.validate({ templatePath, detailed: true, maxErrors: 100 });
-  await openReport(`Валидация MXL: ${result.errors} ошибок`, result.lines.join('\n'));
+  await openReport(`Валидация MXL: ${String(result.errors)} ошибок`, result.lines.join('\n'));
 }
 
 async function showSkdInfo(node: MetadataNode | undefined, services: CommandServices): Promise<void> {
@@ -60,7 +60,7 @@ async function validateSkd(node: MetadataNode | undefined, services: CommandServ
     return;
   }
   const result = services.dataCompositionSchemaService.validate({ templatePath, detailed: true, maxErrors: 100 });
-  await openReport(`Валидация СКД: ${result.errors} ошибок`, result.lines.join('\n'));
+  await openReport(`Валидация СКД: ${String(result.errors)} ошибок`, result.lines.join('\n'));
 }
 
 async function openReport(title: string, content: string): Promise<void> {

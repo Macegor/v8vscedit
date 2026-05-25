@@ -25,10 +25,12 @@ suite('RepositoryService', () => {
     restoreFile(statePath, stateBackup);
   });
 
-  test('Запрещает редактирование незахваченного модуля объекта при активном подключении к хранилищу', () => {
-    const objectName = 'УдалитьЗаявкаКабинетСотрудника';
-    const xmlPath = path.join(EXAMPLE_CF, 'BusinessProcesses', `${objectName}.xml`);
-    const modulePath = path.join(EXAMPLE_CF, 'BusinessProcesses', objectName, 'Ext', 'ObjectModule.bsl');
+  test('Запрещает редактирование незахваченного модуля объекта при активном подключении к хранилищу', function () {
+    const target_ = findFirstCatalogWithModule();
+    if (!target_) {
+      this.skip();
+    }
+    const { xmlPath, modulePath, objectName } = target_;
     const target = service.resolveTargetByXmlPath(xmlPath);
 
     assert.ok(target, 'Не удалось определить цель хранилища для примера.');
@@ -43,29 +45,22 @@ suite('RepositoryService', () => {
     assert.strictEqual(service.isEditRestricted(modulePath), true);
 
     const fullName = service.resolveFullName({
-      nodeKind: 'BusinessProcess',
+      nodeKind: 'Catalog',
       label: objectName,
       xmlPath,
     });
-    assert.strictEqual(fullName, 'БизнесПроцесс.УдалитьЗаявкаКабинетСотрудника');
+    assert.strictEqual(fullName, `Справочник.${objectName}`);
 
     service.setLocked(target, [fullName], true);
     assert.strictEqual(service.isEditRestricted(modulePath), false);
   });
 
-  test('Для модуля формы использует захват корневого объекта', () => {
-    const objectName = 'УдалитьЗаявкаКабинетСотрудника';
-    const xmlPath = path.join(EXAMPLE_CF, 'BusinessProcesses', `${objectName}.xml`);
-    const formModulePath = path.join(
-      EXAMPLE_CF,
-      'BusinessProcesses',
-      objectName,
-      'Forms',
-      'ФормаСписка',
-      'Ext',
-      'Form',
-      'Module.bsl'
-    );
+  test('Для модуля формы использует захват корневого объекта', function () {
+    const target_ = findFirstCatalogWithForm();
+    if (!target_) {
+      this.skip();
+    }
+    const { xmlPath, formModulePath, objectName } = target_;
     const target = service.resolveTargetByXmlPath(xmlPath);
 
     assert.ok(target, 'Не удалось определить цель хранилища для примера.');
@@ -79,7 +74,7 @@ suite('RepositoryService', () => {
 
     assert.strictEqual(service.isEditRestricted(formModulePath), true);
 
-    service.setLocked(target, ['БизнесПроцесс.УдалитьЗаявкаКабинетСотрудника'], true);
+    service.setLocked(target, [`Справочник.${objectName}`], true);
     assert.strictEqual(service.isEditRestricted(formModulePath), false);
   });
   test('Для создания корневых объектов требуется захват корня конфигурации', () => {
@@ -110,6 +105,55 @@ suite('RepositoryService', () => {
     assert.strictEqual(service.isMetadataEditRestricted(target), false);
   });
 });
+
+// Ищет справочник, у которого есть XML и реальный ObjectModule.bsl рядом.
+function findFirstCatalogWithModule(): { xmlPath: string; modulePath: string; objectName: string } | null {
+  const catalogsDir = path.join(EXAMPLE_CF, 'Catalogs');
+  if (!fs.existsSync(catalogsDir)) {
+    return null;
+  }
+  for (const entry of fs.readdirSync(catalogsDir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.xml')) {
+      continue;
+    }
+    const objectName = path.basename(entry.name, '.xml');
+    const xmlPath = path.join(catalogsDir, entry.name);
+    const modulePath = path.join(catalogsDir, objectName, 'Ext', 'ObjectModule.bsl');
+    if (fs.existsSync(modulePath)) {
+      return { xmlPath, modulePath, objectName };
+    }
+  }
+  return null;
+}
+
+// Ищет справочник, у которого есть XML и модуль формы рядом.
+function findFirstCatalogWithForm(): { xmlPath: string; formModulePath: string; objectName: string } | null {
+  const catalogsDir = path.join(EXAMPLE_CF, 'Catalogs');
+  if (!fs.existsSync(catalogsDir)) {
+    return null;
+  }
+  for (const entry of fs.readdirSync(catalogsDir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.xml')) {
+      continue;
+    }
+    const objectName = path.basename(entry.name, '.xml');
+    const xmlPath = path.join(catalogsDir, entry.name);
+    const formsDir = path.join(catalogsDir, objectName, 'Forms');
+    if (!fs.existsSync(formsDir)) {
+      continue;
+    }
+    for (const formEntry of fs.readdirSync(formsDir, { withFileTypes: true })) {
+      if (!formEntry.isDirectory()) {
+        continue;
+      }
+      const formModulePath = path.join(formsDir, formEntry.name, 'Ext', 'Form', 'Module.bsl');
+      if (fs.existsSync(formModulePath)) {
+        return { xmlPath, formModulePath, objectName };
+      }
+    }
+  }
+  return null;
+}
 
 function restoreFile(filePath: string, backup: string | undefined): void {
   if (backup === undefined) {

@@ -1,4 +1,5 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
 import * as path from 'path';
 import { SupportInfoService, SupportMode } from '../../infra/support/SupportInfoService';
 import type { Logger } from '../../infra/support/Logger';
@@ -14,7 +15,14 @@ class TestLogger implements Logger {
 }
 
 suite('SupportInfoService', () => {
-  test('Трактует код 1 из ParentConfigurations.bin как редактирование с сохранением поддержки', () => {
+  test('Трактует код 1 из ParentConfigurations.bin как редактирование с сохранением поддержки', function () {
+    // Тест требует наличия ParentConfigurations.bin в example/. В минимальной
+    // выгрузке без поддержки бинарника нет — тогда тест неприменим, а сервис
+    // корректно возвращает None для любого пути (это покрывают другие тесты).
+    const binPath = path.join(EXAMPLE_CF, 'Ext', 'ParentConfigurations.bin');
+    if (!fs.existsSync(binPath)) {
+      this.skip();
+    }
     const service = new SupportInfoService(new TestLogger());
     const configurationXml = path.join(EXAMPLE_CF, 'Configuration.xml');
 

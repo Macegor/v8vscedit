@@ -166,7 +166,7 @@ function applyOperation(state: RoleRightsState, operation: RoleRightsEditOperati
     case 'setFlags':
       return applySetFlags(state, operation);
     case 'addTemplate':
-      state.templates.set(operation.name, operation.condition ?? '');
+      state.templates.set(operation.name, operation.condition);
       return [];
     case 'removeTemplate':
       if (!state.templates.delete(operation.name)) {

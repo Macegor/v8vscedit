@@ -43,6 +43,23 @@ export interface McpPropertyMutationResult {
   readonly changedFiles: readonly string[];
 }
 
+export interface McpSetPropertiesAppliedItem {
+  readonly propertyKey: string;
+  readonly changed: boolean;
+  readonly message: string;
+}
+
+export interface McpSetPropertiesFailedItem {
+  readonly propertyKey: string;
+  readonly message: string;
+}
+
+export interface McpSetPropertiesResult {
+  readonly applied: readonly McpSetPropertiesAppliedItem[];
+  readonly failed: readonly McpSetPropertiesFailedItem[];
+  readonly changedFiles: readonly string[];
+}
+
 export interface McpSetTypeInput {
   readonly items: readonly string[];
   readonly stringQualifiers?: {
@@ -169,6 +186,8 @@ export class McpPropertyService {
         ? ['Свойство хранит типизированное XML-значение; запись простой строкой через set_property запрещена.']
       : property.key === 'Name' && this.isRootRename(node)
         ? ['Переименование корневого объекта выполняется отдельным инструментом, чтобы обновить файл, ссылки и кэш дерева.']
+      : property.kind === 'metadataType'
+        ? [buildMetadataTypeNote(property.key)]
         : ['Для этого свойства нужен специализированный инструмент с дополнительным контрактом значения.'];
 
     return {
@@ -258,6 +277,43 @@ export class McpPropertyService {
       value: typeof normalized === 'string' ? this.toCanonicalObjectPropertyInput(property.key, normalized) : normalized,
     });
     return this.toMutationResult(saved.success, saved.changed, property.key, saved.changedFiles, saved.errors);
+  }
+
+  /**
+   * Пакетная установка простых свойств за один проход.
+   * Последовательно вызывает `setProperty` для каждой пары; ошибки одной пары
+   * не прерывают цикл. Возвращает массивы успешных и неуспешных применений
+   * и объединённый уникальный список изменённых файлов. Накопление файлов
+   * нужно, чтобы вызывающий код (V8McpServer) сделал один общий
+   * `afterMutation`, а не дёргал refresh дерева на каждое свойство.
+   */
+  setProperties(node: MetadataNode, properties: Record<string, unknown>): McpSetPropertiesResult {
+    const applied: McpSetPropertiesAppliedItem[] = [];
+    const failed: McpSetPropertiesFailedItem[] = [];
+    const changedFiles = new Set<string>();
+    for (const [propertyKey, value] of Object.entries(properties)) {
+      try {
+        const result = this.setProperty(node, propertyKey, value);
+        if (result.success) {
+          applied.push({
+            propertyKey,
+            changed: result.changed,
+            message: result.message,
+          });
+          for (const file of result.changedFiles) {
+            changedFiles.add(file);
+          }
+        } else {
+          failed.push({ propertyKey, message: result.message });
+        }
+      } catch (error) {
+        failed.push({
+          propertyKey,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return { applied, failed, changedFiles: [...changedFiles] };
   }
 
   rename(node: MetadataNode, newName: string): McpPropertyMutationResult {
@@ -436,6 +492,20 @@ export class McpPropertyService {
       changedFiles,
     };
   }
+}
+
+/**
+ * Подсказка в `notes` для свойств с типом `metadataType`. Поясняет, каким
+ * инструментом менять значение и где брать список доступных типов.
+ */
+function buildMetadataTypeNote(propertyKey: string): string {
+  if (propertyKey === 'Source') {
+    return 'Тип источника подписки. Для смены вызови v8vscedit_set_type с propertyKey="Source". Доступные источники — v8vscedit_list_available_types.';
+  }
+  if (propertyKey === 'CommandParameterType') {
+    return 'Тип параметра команды. Для смены вызови v8vscedit_set_type с propertyKey="CommandParameterType".';
+  }
+  return 'Для смены значения вызови v8vscedit_set_type. Список доступных типов конфигурации возвращает v8vscedit_list_available_types с теми же path и propertyKey, базовый реестр типов — v8vscedit_list_supported_types.';
 }
 
 function readTypeInput(value: unknown): McpSetTypeInput {

@@ -398,9 +398,12 @@ function buildCalculatedFieldXml(field: string | SkdCalculatedFieldDefinition): 
 }
 
 function buildTotalFieldXml(value: string): string {
-  const [rawPath, rawExpression] = value.split(':');
-  const dataPath = rawPath.trim();
-  const expression = rawExpression?.trim().includes('(') ? rawExpression.trim() : `${rawExpression?.trim() ?? 'Сумма'}(${dataPath})`;
+  // split возвращает string[], но второй элемент может быть undefined.
+  const parts = value.split(':');
+  const dataPath = parts[0].trim();
+  const rawExpression = parts[1] as string | undefined;
+  const trimmedExpression = (rawExpression ?? '').trim();
+  const expression = trimmedExpression.includes('(') ? trimmedExpression : `${trimmedExpression || 'Сумма'}(${dataPath})`;
   return ['\t<totalField>', `\t\t<dataPath>${escapeXmlText(dataPath)}</dataPath>`, `\t\t<expression>${escapeXmlText(expression)}</expression>`, '\t</totalField>'].join('\n');
 }
 
@@ -460,7 +463,7 @@ function buildFilterXml(value: string, indent: string): string {
   return [
     `${indent}<filter>`,
     `${indent}\t<item xsi:type="dcsset:FilterItemComparison">`,
-    filter.use === false ? `${indent}\t\t<use>false</use>` : '',
+    !filter.use ? `${indent}\t\t<use>false</use>` : '',
     `${indent}\t\t<left>${escapeXmlText(filter.field)}</left>`,
     `${indent}\t\t<comparisonType>${escapeXmlText(filter.op)}</comparisonType>`,
     filter.value ? `${indent}\t\t<right>${escapeXmlText(filter.value)}</right>` : '',
@@ -612,7 +615,9 @@ function buildConditionalAppearanceItemXml(value: string): string {
   if (!match) {
     throw new Error('add-conditionalAppearance ожидает формат: Параметр = значение [when условие] [for Поле1, Поле2].');
   }
-  const fields = (match[4] ?? '').split(',').map((item) => item.trim()).filter(Boolean);
+  // Опциональная группа регулярки фактически может быть undefined, тип RegExpExecArray этого не отражает.
+  const rawFields = match[4] as string | undefined;
+  const fields = (rawFields ?? '').split(',').map((item) => item.trim()).filter(Boolean);
   return [
     '<item>',
     '<appearance>',
@@ -833,11 +838,14 @@ function normalizeCalculated(field: SkdCalculatedFieldDefinition): ReturnType<ty
 
 function parseParameter(value: string): SkdParameterDefinition {
   let text = value;
-  const autoHidden = /@hidden/.test(text);
+  const autoHidden = text.includes('@hidden');
   text = text.replace(/\s*@\w+/g, '');
   const title = /\[([^\]]+)\]/.exec(text)?.[1] ?? '';
   text = text.replace(/\s*\[[^\]]+\]/, '');
-  const [left, rawValue] = text.split(/=(.+)/);
+  // split возвращает string[], но второй элемент может быть undefined при отсутствии "=".
+  const parts = text.split(/=(.+)/);
+  const left = parts[0];
+  const rawValue = parts[1] as string | undefined;
   const [name, type = ''] = left.split(':');
   return { name: name.trim(), title, type: resolveType(type.trim()), value: rawValue?.trim(), hidden: autoHidden };
 }

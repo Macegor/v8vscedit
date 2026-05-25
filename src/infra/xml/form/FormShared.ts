@@ -234,7 +234,7 @@ export function validateName(value: string, label: string): void {
 
 export function writeNewTextFile(filePath: string, content: string): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `﻿${content}`, 'utf-8');
+  fs.writeFileSync(filePath, `\uFEFF${content}`, 'utf-8');
 }
 
 export function unique(values: readonly string[]): string[] {
@@ -272,6 +272,20 @@ export function appendBoolean(lines: string[], indent: string, tag: string, valu
 
 export function appendScalar(lines: string[], indent: string, tag: string, value: unknown): void {
   if (value !== undefined) {
-    lines.push(`${indent}<${tag}>${escapeXml(String(value))}</${tag}>`);
+    lines.push(`${indent}<${tag}>${escapeXml(stringifyScalar(value))}</${tag}>`);
   }
+}
+
+function stringifyScalar(value: unknown): string {
+  if (value === null) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return String(value);
+  }
+  // Объект/массив — сериализуем явно, чтобы не получить "[object Object]".
+  return JSON.stringify(value);
 }

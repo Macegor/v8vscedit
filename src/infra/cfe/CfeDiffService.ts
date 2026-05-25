@@ -151,7 +151,7 @@ export class CfeDiffService {
 }
 
 function isMetaKind(value: string): value is MetaKind {
-  return getMetaFolder(value as MetaKind) !== undefined;
+  return getMetaFolder(value as MetaKind) !== null;
 }
 
 function countChildObjects(xml: string): Record<string, number> {

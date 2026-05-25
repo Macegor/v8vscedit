@@ -280,56 +280,85 @@ Python-скрипты из `.codex/skills` и не через прямую пр�
 `treeProvider.refresh()` →
 `refreshActionsView()`.
 
-Текущий набор инструментов расширения:
-- `v8vscedit_workspace_overview` — возвращает основную конфигурацию и расширения: имена, корни, версии и счётчики объектов.
-- `v8vscedit_search_metadata` — ищет метаданные по части строки в предметных путях выбранной конфигурации; при нескольких корнях требует `configuration`.
-- `v8vscedit_list_metadata` — возвращает список объектов группы или дочерних элементов по предметному пути без `nodeId`; при нескольких корнях требует `configuration`.
-- `v8vscedit_get_properties` — возвращает все свойства объекта по предметному пути: значения, readonly и допустимые enum/multiEnum-значения.
-- `v8vscedit_set_property_by_path` — меняет простое свойство по предметному пути через `McpPropertyService` и `ConfigurationXmlEditor`; enum/boolean/readonly проверяются до записи.
-- `v8vscedit_list_available_types` — возвращает стандартные и конфигурационные типы для `Тип`, `Источник`, `Тип параметра команды`; основное значение для агента — русское поле `value`; для CFE возвращает только собственные и заимствованные объекты.
-- `v8vscedit_set_type` — меняет тип через тот же реестр и `ConfigurationXmlEditor.modifyObjectType`, что пользовательская панель свойств; принимает русские значения типа, длину строки/числа и точность числа.
-- `v8vscedit_rename_metadata` — переименовывает объект или дочерний элемент; корневые объекты проходят через `ConfigurationXmlEditor.renameMetadataObject`.
-- `v8vscedit_add_metadata_by_path` — создаёт корневой объект или дочерний элемент по предметному пути через `MetadataMutationService` и `MetadataXmlCreator`; для табличной части использовать сегмент `ТабличныеЧасти`.
-- `v8vscedit_configuration_info` — возвращает отчёт по CF/CFE: свойства, счётчики ChildObjects, роли по умолчанию.
-- `v8vscedit_validate_configuration` — валидирует `Configuration.xml`, `DefaultLanguage`, `ChildObjects` и базовые enum-значения.
-- `v8vscedit_metadata_info` — возвращает структуру объекта метаданных: реквизиты, табличные части, формы, команды, макеты и drill-down по имени элемента.
-- `v8vscedit_validate_metadata` — валидирует XML объекта метаданных: тип из `META_TYPES`, имя, UUID, допустимые дочерние элементы и связанные файлы.
-- `v8vscedit_subsystem_info` — возвращает структуру подсистемы: свойства, Content, дочерние подсистемы, дерево и CommandInterface.xml.
-- `v8vscedit_validate_subsystem` — валидирует XML подсистемы: обязательные свойства, UUID, Content, ChildObjects, дочерние файлы и CommandInterface.xml.
-- `v8vscedit_compile_subsystem` — создаёт подсистему из JSON DSL через `SubsystemToolsService`, пишет `Subsystems/<Имя>.xml` и регистрирует её в `Configuration.xml` или родительской подсистеме.
-- `v8vscedit_edit_subsystem_content` — точечно добавляет и удаляет объекты из `Content` подсистемы по предметному пути подсистемы; принимает ссылки или предметные пути объектов.
-- `v8vscedit_edit_command_interface` — редактирует `CommandInterface.xml` через `CommandInterfaceService`: hide/show/place/order/subsystem-order/group-order.
-- `v8vscedit_validate_command_interface` — валидирует `CommandInterface.xml`: разделы, порядок, дубли, ссылки команд и списки подсистем/групп.
-- `v8vscedit_mxl_info` — возвращает сводку табличного документа: области, параметры, текст, объединения и статистику через `MxlTemplateService`.
-- `v8vscedit_validate_mxl` — валидирует `Template.xml` табличного документа: строки, колонки, палитры форматов, области и объединения.
-- `v8vscedit_compile_mxl` — создаёт `Template.xml` табличного документа из JSON DSL через `MxlTemplateService`.
-- `v8vscedit_decompile_mxl` — возвращает редактируемый JSON DSL по существующему `Template.xml` табличного документа.
-- `v8vscedit_skd_info` — возвращает сводку СКД: наборы, запросы, поля, параметры, итоги и варианты через `DataCompositionSchemaService`.
-- `v8vscedit_validate_skd` — валидирует `Template.xml` схемы компоновки данных: XML, корень, дубли наборов, полей, параметров и вариантов.
-- `v8vscedit_compile_skd` — создаёт `Template.xml` СКД из JSON DSL через `DataCompositionSchemaService`.
-- `v8vscedit_edit_skd` — точечно редактирует СКД: поля, итоги, вычисляемые поля, параметры, запрос, выборку, фильтры и варианты.
-- `v8vscedit_add_help` — создаёт встроенную справку объекта (`Ext/Help.xml`, `Ext/Help/<lang>.html`) через `ExternalObjectService` и дописывает `IncludeHelpInContents` в формы при отсутствии.
-- `v8vscedit_create_epf` — создаёт XML-исходники внешней обработки EPF: корневой XML, каталог объекта и `Ext/ObjectModule.bsl`.
-- `v8vscedit_create_erf` — создаёт XML-исходники внешнего отчёта ERF; опционально добавляет основную СКД и `MainDataCompositionSchema`.
-- `v8vscedit_validate_external_object` — валидирует XML-исходники EPF/ERF: `InternalInfo`, `Properties`, `ChildObjects`, ссылки и связанные файлы.
-- `v8vscedit_epf_bsp_init` — добавляет функцию `СведенияОВнешнейОбработке()` и базовый обработчик команды БСП в `ObjectModule.bsl`.
-- `v8vscedit_epf_bsp_add_command` — добавляет команду в регистрацию БСП и создаёт/дополняет серверный, клиентский или печатный обработчик.
-- `v8vscedit_form_info` — возвращает структуру управляемой формы: элементы, реквизиты, команды, события и BaseForm.
-- `v8vscedit_validate_form` — валидирует `Form.xml`: `AutoCommandBar`, уникальность ID, `DataPath`, команды, события, `callType` и типы.
-- `v8vscedit_add_form` — создаёт форму объекта: `Forms/<Имя>.xml`, `Forms/<Имя>/Ext/Form.xml`, `Module.bsl` и регистрацию в `ChildObjects`.
-- `v8vscedit_remove_form` — удаляет форму, каталог формы, регистрацию в `ChildObjects` и очищает default-ссылки.
-- `v8vscedit_compile_form` — создаёт `Form.xml` из JSON DSL или по метаданным объекта через `FormToolsService`.
-- `v8vscedit_edit_form` — точечно добавляет элементы, реквизиты, команды и события в существующий `Form.xml`.
-- `v8vscedit_role_info` — возвращает сводку `Rights.xml`: разрешённые/запрещённые права, RLS и шаблоны ограничений.
-- `v8vscedit_validate_role` — валидирует `Rights.xml`, метаданные роли и регистрацию роли в `Configuration.xml`.
-- `v8vscedit_compile_role` — создаёт роль из JSON DSL через `RoleRightsService`, пишет `Roles/<Имя>.xml`, `Roles/<Имя>/Ext/Rights.xml` и регистрирует роль в `Configuration.xml`.
-- `v8vscedit_create_configuration` — создаёт scaffold CF (`Configuration.xml`, `Languages/Русский.xml`) через `ConfigurationScaffoldService`.
-- `v8vscedit_create_extension` — создаёт scaffold CFE (`Configuration.xml`, язык, опциональная роль) через `ConfigurationScaffoldService`.
-- `v8vscedit_remove_metadata` — удаляет объект или дочерний элемент по предметному пути через `MetadataXmlRemover`; для корневых объектов блокирует удаление при найденных ссылках.
-- `v8vscedit_cfe_borrow` — заимствует объект, форму или дочерний элемент из CF в CFE через `CfeBorrowService`.
-- `v8vscedit_cfe_patch_method` — добавляет BSL-перехватчик метода в CFE через `CfePatchMethodService`; модуль задаётся `ModulePath` (`Catalog.Товары.ObjectModule`, `Document.Заказ.Form.ФормаДокумента`, `CommonModule.ОбщийМодуль`).
-- `v8vscedit_cfe_diff` — читает состав CFE и перехватчики через `CfeDiffService`; в режиме `transfer` проверяет, перенесены ли блоки `#Вставка` в CF.
-- `v8vscedit_execute_command` — только allowlist из безопасных команд: `refresh`, `importConfigurations`, `updateChangedConfigurations`; новые произвольные команды сюда не добавлять без отдельного обоснования.
+#### Канон именования путей
+
+Полный справочник — `./docs/mcp-paths.md`. Ключевые правила:
+
+- Корни-коллекции метаданных — **только множественное число** в каноне
+  (`Справочники.Контрагенты`, `Документы.РасходТовара`, `РегистрыСведений.КурсыВалют`).
+  Единственное число — только для `Подсистема`, `Конфигурация`, `Расширение`.
+- Реквизиты и табличные части — прямые сегменты без роли-префикса
+  (`Справочники.Контрагенты.ИНН`, `Справочники.Контрагенты.КонтактныеЛица`).
+  Внутри ТЧ сегменты возвращаются: `…ТабличнаяЧасть.Имя.Реквизит.Имя`.
+- Английских алиасов (`Catalog.X`, `Catalogs.X`) и legacy-форм 7.7/8.0 нет;
+  любая такая форма отбивается с подсказкой канона.
+
+После рефакторинга E5 у всех инструментов, работающих с одним узлом, аргумент
+называется одинаково — `path`. Парные `compile_*` принимают `parentPath` —
+канонический путь родителя (`Конфигурация`, `Расширение`, `Подсистема.X.Y`,
+корневой объект). Никаких `objectPath`, `formPath`, `templatePath`,
+`rightsPath`, `subsystemPath`, `ciPath`, `modulePath`.
+
+Текущий набор инструментов расширения (формат `path` указан там, где он
+применим; полный канон см. `./docs/mcp-paths.md`):
+
+- `v8vscedit_workspace_overview` — основная конфигурация, расширения, корни, счётчики.
+- `v8vscedit_search_metadata` — поиск по части строки в предметных путях; при нескольких корнях требует `configuration`.
+- `v8vscedit_list_metadata` — список объектов группы или дочерних элементов; `parentPath` в каноне.
+- `v8vscedit_tree` — плоский массив канонических путей конфигурации (scope/depth/include/limit). Используй вместо пагинации `list` на больших конфигурациях.
+- `v8vscedit_resolve_path` — нормализует канонический путь и проверяет существование узла. Отдаёт `canonical` и `exists`. Используй для отладки сомнительных путей.
+- `v8vscedit_list_supported_types` — реестр платформенных типов по контексту (`metadataAttribute`/`formAttribute`/`commandParameter`/`eventSource`). Базовая группа выдаётся даже без `configuration`.
+- `v8vscedit_configuration_info` — свойства корня и счётчики ChildObjects. `path = Конфигурация` или `Расширение`.
+- `v8vscedit_validate_configuration` — валидирует Configuration.xml. `path = Конфигурация`/`Расширение`.
+- `v8vscedit_metadata_info` — структура объекта метаданных. `path` в каноне (`Справочники.X`, `Документы.X`, `РегистрыСведений.X`, …).
+- `v8vscedit_validate_metadata` — валидирует XML объекта; поддерживает массив `paths` для пакетной проверки.
+- `v8vscedit_subsystem_info` — свойства, Content, дерево подсистемы, CommandInterface. `path = Подсистема.X.Y`.
+- `v8vscedit_validate_subsystem` — валидирует XML подсистемы. `path = Подсистема.X.Y`.
+- `v8vscedit_compile_subsystem` — создаёт подсистему из JSON DSL. `parentPath = Конфигурация`/`Расширение`/`Подсистема.X.Y`.
+- `v8vscedit_edit_subsystem_content` — добавляет/удаляет объекты в Content. `path = Подсистема.X.Y`.
+- `v8vscedit_edit_command_interface` — hide/show/place/order/subsystem-order/group-order в CommandInterface.xml. `path = Подсистема.X.Y`.
+- `v8vscedit_validate_command_interface` — валидирует CommandInterface.xml подсистемы.
+- `v8vscedit_mxl_info` — сводка табличного документа. `path = Справочники.X.Макет.Y` или `ОбщиеМакеты.X`.
+- `v8vscedit_validate_mxl` — валидирует Template.xml табличного документа.
+- `v8vscedit_compile_mxl` — перезаписывает MXL из JSON DSL. Для нового макета сначала используй `add_metadata_by_path`.
+- `v8vscedit_decompile_mxl` — JSON DSL по существующему Template.xml.
+- `v8vscedit_skd_info` — сводка СКД (наборы, поля, параметры, варианты). `path = Отчеты.X.Макет.ОсновнаяСхема`.
+- `v8vscedit_validate_skd` — валидирует СКД Template.xml.
+- `v8vscedit_compile_skd` — перезаписывает СКД из JSON DSL.
+- `v8vscedit_edit_skd` — точечное редактирование СКД (поля, итоги, фильтры, …).
+- `v8vscedit_add_help` — создаёт Ext/Help.xml и Help/<lang>.html. `path = Справочники.X`, `Документы.X`.
+- `v8vscedit_create_epf` — scaffold внешней обработки EPF; FS-параметры (`outputDir`).
+- `v8vscedit_create_erf` — scaffold внешнего отчёта ERF; FS-параметры.
+- `v8vscedit_validate_external_object` — валидирует EPF/ERF XML; FS-параметр `objectPath`.
+- `v8vscedit_epf_bsp_init` — добавляет регистрацию БСП в ObjectModule.bsl; FS-параметр `objectPath`.
+- `v8vscedit_epf_bsp_add_command` — добавляет команду в БСП-регистрацию.
+- `v8vscedit_form_info` — структура управляемой формы. `path = Справочники.X.Форма.Y` или `ОбщиеФормы.X`.
+- `v8vscedit_validate_form` — валидирует Form.xml.
+- `v8vscedit_add_form` — создаёт форму. `parentPath = Справочники.X`, `name` — идентификатор формы.
+- `v8vscedit_remove_form` — удаляет форму. `path = Справочники.X.Форма.Y`.
+- `v8vscedit_compile_form` — перезаписывает Form.xml из JSON DSL.
+- `v8vscedit_edit_form` — точечное редактирование формы.
+- `v8vscedit_role_info` — права, RLS, шаблоны. `path = Роли.X`.
+- `v8vscedit_validate_role` — валидирует Rights.xml.
+- `v8vscedit_compile_role` — создаёт роль из JSON DSL. `parentPath = Конфигурация`/`Расширение`.
+- `v8vscedit_edit_role` — точечное редактирование прав роли. `path = Роли.X`.
+- `v8vscedit_list_default_roles` — список `<DefaultRoles>`. `path = Конфигурация`/`Расширение`.
+- `v8vscedit_add_default_role` / `v8vscedit_remove_default_role` / `v8vscedit_set_default_roles` — работа со списком `<DefaultRoles>`.
+- `v8vscedit_create_configuration` — scaffold CF (Configuration.xml + язык).
+- `v8vscedit_create_extension` — scaffold CFE.
+- `v8vscedit_get_properties` — ВСЕ свойства узла по каноническому пути, включая readonly, со всеми допустимыми enum/multiEnum-значениями; для свойств `metadataType` (`Type`, `Source`, `CommandParameterType`) в `notes` указано, какой tool вызывать для смены и где брать список доступных типов.
+- `v8vscedit_set_property_by_path` — меняет простое свойство по каноническому пути.
+- `v8vscedit_set_properties` — пакетная смена нескольких простых свойств одного узла за один вызов; принимает объект `{ propertyKey: value, ... }`, возвращает массивы `applied`/`failed` и единый `changedFiles`; типы (`Type`/`Source`/`CommandParameterType`) надо менять через `v8vscedit_set_type`.
+- `v8vscedit_list_available_types` — стандартные и конфигурационные типы для свойства Тип/Источник/параметра команды.
+- `v8vscedit_set_type` — меняет тип. Принимает русские значения, квалификаторы (length/digits/fractionDigits/dateFractions).
+- `v8vscedit_rename_metadata` — переименовывает объект или дочерний элемент.
+- `v8vscedit_remove_metadata` — удаляет объект или дочерний элемент. Для корневых блокирует удаление при найденных ссылках.
+- `v8vscedit_add_<root>` — отдельный tool на каждый корневой тип метаданных (`v8vscedit_add_catalog`, `v8vscedit_add_document`, `v8vscedit_add_common_module`, `v8vscedit_add_information_register`, … — всего ~45 инструментов; полный список в `./docs/mcp-paths.md` §6.1). Принимает `name` и опциональный `configuration`. Для `v8vscedit_add_common_template` дополнительно — `templateType`.
+- `v8vscedit_add_<child>` — отдельный tool на каждый дочерний тип: `v8vscedit_add_attribute`, `v8vscedit_add_tabular_section`, `v8vscedit_add_dimension`, `v8vscedit_add_resource`, `v8vscedit_add_enum_value`, `v8vscedit_add_column`, `v8vscedit_add_template`, `v8vscedit_add_command`, `v8vscedit_add_addressing_attribute`. Принимает `path` к объекту-владельцу и `name`. Резолвер проверяет совместимость типа владельца с типом дочернего элемента.
+- `v8vscedit_cfe_borrow` — заимствует объект/форму/дочерний элемент из CF в CFE; FS-параметры (`configRoot`/`extensionRoot`).
+- `v8vscedit_cfe_patch_method` — BSL-перехватчик метода в CFE. `path = Справочники.X.МодульОбъекта` / `Справочники.X.Форма.Y.МодульФормы` / `ОбщиеМодули.X`.
+- `v8vscedit_cfe_diff` — состав CFE и проверка переноса `#Вставка`; FS-параметр `extensionPath`.
+- `v8vscedit_execute_command` — allowlist команд расширения: `refresh`, `importConfigurations`, `updateChangedConfigurations`.
 
 Для новой функции из `.codex/skills` порядок переноса такой:
 1. Перенести бизнес-логику в `infra/<область>/<Service>.ts` без `vscode` и без shell.
@@ -473,6 +502,7 @@ BSL-модули открываются только как реальные `fi
 13. **Справочники свойств не живут в UI.** Подписи, boolean/enum/localized-классификация и значения enum должны жить в `infra/xml/PropertySchema.ts` или специализированном infra-реестре; UI только рендерит готовые данные.
 14. **Команды контекстного меню не хардкодятся в `UniversalPanelViewProvider`.** Метод `addModuleActions` читает `META_TYPES[nodeKind].modules` и строит меню через `MODULE_SLOT_ACTIONS`. Добавление нового типа или слота — только через `META_TYPES` + `MODULE_SLOT_ACTIONS`, без новых `if`/regex в `addModuleActions`.
 15. **Нативный TreeView — не основной UI.** Контекстное меню `package.json → menus.view/item/context` не является основным для пользователя — основной UI это `UniversalPanelViewProvider`. Не тратить усилия на дублирование логики меню в `package.json`, если оно уже реализовано в `addModuleActions`.
+16. **MCP-инструменты принимают только канон.** Никаких legacy-форм, английских алиасов (`Catalog.X`, `Catalogs.X`), единственного числа для коллекций (`Справочник.X`) или грязных сегментов (`Справочники.X.Реквизиты.Y`). Полный справочник правил именования путей и типов — `./docs/mcp-paths.md`.
 
 ---
 

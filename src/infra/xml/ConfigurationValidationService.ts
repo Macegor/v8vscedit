@@ -160,8 +160,7 @@ function validateChildObjects(
 ): void {
   const configRoot = path.dirname(configXmlPath);
   for (const [kind, names] of childObjects.entries()) {
-    const known = META_TYPES[kind as MetaKind];
-    if (!known) {
+    if (!Object.prototype.hasOwnProperty.call(META_TYPES, kind)) {
       warn(`Неизвестный тип ChildObjects: ${kind}`);
       continue;
     }

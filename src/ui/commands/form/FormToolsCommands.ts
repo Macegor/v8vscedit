@@ -38,7 +38,7 @@ async function validateForm(node: MetadataNode | undefined, services: CommandSer
     return;
   }
   const result = services.formToolsService.validate({ formPath, detailed: true, maxErrors: 100 });
-  await openReport(`Валидация формы: ${result.errors} ошибок`, result.lines.join('\n'));
+  await openReport(`Валидация формы: ${String(result.errors)} ошибок`, result.lines.join('\n'));
 }
 
 async function addForm(node: MetadataNode | undefined, services: CommandServices): Promise<void> {
@@ -75,7 +75,7 @@ async function removeForm(node: MetadataNode | undefined, services: CommandServi
   if (!objectPath) {
     return;
   }
-  const formName = node?.nodeKind === 'Form' ? String(node.label) : await vscode.window.showInputBox({ title: 'Имя формы для удаления' });
+  const formName = node?.nodeKind === 'Form' ? resolveLabel(node.label) : await vscode.window.showInputBox({ title: 'Имя формы для удаления' });
   if (!formName) {
     return;
   }
@@ -86,6 +86,16 @@ async function removeForm(node: MetadataNode | undefined, services: CommandServi
   } catch (error) {
     await vscode.window.showErrorMessage(`Не удалось удалить форму: ${String(error)}`);
   }
+}
+
+function resolveLabel(label: vscode.TreeItem['label']): string {
+  if (typeof label === 'string') {
+    return label;
+  }
+  if (label && typeof label === 'object') {
+    return label.label;
+  }
+  return '';
 }
 
 function resolveOwnerObjectXml(formDescriptorPath: string): string {

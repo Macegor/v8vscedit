@@ -3,7 +3,7 @@ export type FormPurpose = 'Object' | 'List' | 'Choice' | 'Record';
 export interface AddFormOptions {
   readonly objectPath: string;
   readonly formName: string;
-  readonly purpose?: FormPurpose | string;
+  readonly purpose?: string;
   readonly synonym?: string;
   readonly setDefault?: boolean;
   /**

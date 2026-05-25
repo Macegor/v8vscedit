@@ -4,7 +4,6 @@ import { XMLValidator } from 'fast-xml-parser';
 import { writeTextFilePreservingBomAndEol } from './XmlUtils';
 
 const SPREADSHEET_NS = 'http://v8.1c.ru/8.2/data/spreadsheet';
-const XSI_NS = 'http://www.w3.org/2001/XMLSchema-instance';
 
 export interface MxlCompileOptions {
   readonly outputPath: string;
@@ -13,7 +12,7 @@ export interface MxlCompileOptions {
 
 export interface MxlDefinition {
   readonly columns: number;
-  readonly page?: 'A4-landscape' | 'A4-portrait' | number | string;
+  readonly page?: number | string;
   readonly defaultWidth?: number;
   readonly columnWidths?: Record<string, string | number>;
   readonly fonts?: Record<string, MxlFontDefinition>;
@@ -296,7 +295,7 @@ function normalizeDefinition(definition: MxlDefinition): MxlDefinition {
   if (!definition.columns || definition.columns < 1) {
     throw new Error('MXL DSL: поле columns обязательно и должно быть больше 0.');
   }
-  if (!definition.areas?.length) {
+  if (definition.areas.length === 0) {
     throw new Error('MXL DSL: поле areas обязательно.');
   }
   const defaultWidth = calculateDefaultWidth(definition);
@@ -308,7 +307,7 @@ function calculateDefaultWidth(definition: MxlDefinition): number {
   const pageTargets: Record<string, number> = { 'A4-landscape': 780, 'A4-portrait': 540 };
   const target = typeof definition.page === 'number'
     ? definition.page
-    : definition.page ? pageTargets[String(definition.page)] ?? Number(definition.page) : 0;
+    : definition.page ? pageTargets[definition.page] ?? Number(definition.page) : 0;
   if (!target || !definition.columnWidths) {
     return explicit;
   }
@@ -419,7 +418,7 @@ class FormatRegistry {
     return this.add({ kind: 'height', value: height });
   }
 
-  cell(styleName: string, fillType: string, styles: Record<string, MxlStyleDefinition>): number {
+  cell(styleName: string, fillType: string, styles: Partial<Record<string, MxlStyleDefinition>>): number {
     const style = styles[styleName];
     if (style?.border && style.border !== 'none') {
       if (style.borderWidth === 'thick') {
@@ -442,7 +441,7 @@ class FormatRegistry {
     return lines;
   }
 
-  formatXml(styles: Record<string, MxlStyleDefinition>): string[] {
+  formatXml(styles: Partial<Record<string, MxlStyleDefinition>>): string[] {
     return this.formats.map((format) => {
       if (format.kind === 'width') {
         return `\t<format><width>${String(format.value ?? 10)}</width></format>`;
@@ -507,7 +506,7 @@ function buildColumnFormats(definition: MxlDefinition, formats: FormatRegistry):
   return lines;
 }
 
-function buildRowXml(rowIndex: number, row: MxlRowDefinition, cells: readonly MxlCellDefinition[], formats: FormatRegistry, styles: Record<string, MxlStyleDefinition>, merges: string[]): string {
+function buildRowXml(rowIndex: number, row: MxlRowDefinition, cells: readonly MxlCellDefinition[], formats: FormatRegistry, styles: Partial<Record<string, MxlStyleDefinition>>, merges: string[]): string {
   const parts = ['\t<rowsItem>', `\t\t<index>${String(rowIndex)}</index>`, '\t\t<row>'];
   if (row.height) {
     parts.push(`\t\t\t<formatIndex>${String(formats.height(row.height))}</formatIndex>`);
@@ -742,7 +741,7 @@ function readLocalizedContent(xml: string): string {
 }
 
 function inferFillType(cellXml: string): string {
-  if (/<parameter>/.test(cellXml)) {
+  if (cellXml.includes('<parameter>')) {
     return 'Parameter';
   }
   const text = readLocalizedContent(cellXml);

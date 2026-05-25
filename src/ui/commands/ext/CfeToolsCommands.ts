@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { META_TYPES, type MetaKind } from '../../../domain/MetaTypes';
+import { META_TYPES } from '../../../domain/MetaTypes';
 import type { ModuleSlot } from '../../../domain/ModuleSlot';
 import { getObjectLocationFromXml } from '../../../infra/fs/MetaPathResolver';
 import { parseConfigXml } from '../../../infra/xml';
@@ -183,8 +183,8 @@ async function resolveModulePath(node: MetadataNode | undefined): Promise<string
     return `${node.metaContext.rootMetaKind}.${owner.objectName}.Form.${node.textLabel}`;
   }
 
-  const def = META_TYPES[node.nodeKind as MetaKind];
-  const modules = def?.modules ?? [];
+  const def = META_TYPES[node.nodeKind];
+  const modules = def.modules ?? [];
   if (modules.length === 0) {
     return undefined;
   }

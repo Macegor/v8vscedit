@@ -35,7 +35,7 @@ export class RoleCompileService {
 
   compile(options: RoleCompileOptions): RoleCompileResult {
     const definition = options.definition;
-    const name = definition.name?.trim();
+    const name = definition.name.trim();
     if (!name || !/^[\p{L}_][\p{L}\p{Nd}_]*$/u.test(name)) {
       throw new Error('JSON роли должен содержать корректное поле name.');
     }
@@ -98,7 +98,7 @@ function parseRoleObject(entry: RoleObjectDefinition, warnings: string[]): Parse
       rights: rightNames.map((name) => ({ name, value: 'true' })),
     };
   }
-  const objectName = translateObjectName(String(entry.name ?? '').trim());
+  const objectName = translateObjectName((entry.name ?? '').trim());
   if (!objectName) {
     warnings.push('Объект прав без поля name пропущен.');
     return null;
@@ -108,7 +108,8 @@ function parseRoleObject(entry: RoleObjectDefinition, warnings: string[]): Parse
     rights.set(presetRight, { name: presetRight, value: 'true' });
   }
   if (Array.isArray(entry.rights)) {
-    for (const item of entry.rights) {
+    const items: readonly string[] = entry.rights;
+    for (const item of items) {
       const rightName = translateRightName(item);
       rights.set(rightName, { name: rightName, value: 'true' });
     }
@@ -141,7 +142,7 @@ function resolvePreset(objectType: string, rawPreset: string, warnings: string[]
 }
 
 function buildRoleMetadataXml(definition: RoleDefinition, formatVersion: string): string {
-  const synonym = definition.synonym || definition.name;
+  const synonym = definition.synonym ?? definition.name;
   const comment = definition.comment ?? '';
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',

@@ -3,7 +3,7 @@ import * as path from 'path';
 import type { ChildTag } from '../../domain/ChildTag';
 import { CHILD_TAG_CONFIG } from '../../domain/ChildTag';
 import type { MetaChild, MetaObject } from '../../domain/MetaObject';
-import { META_TYPES, type MetaKind } from '../../domain/MetaTypes';
+import { META_TYPES } from '../../domain/MetaTypes';
 import { ObjectXmlReader } from './ObjectXmlReader';
 
 export type MetadataInfoMode = 'overview' | 'brief' | 'full';
@@ -94,14 +94,15 @@ function getKindLabel(kind: string): string {
 }
 
 function countChildren(children: readonly MetaChild[]): Record<string, number> {
-  const result: Record<string, number> = {};
+  // Используем Partial, чтобы корректно учесть отсутствующие ключи без ослабления типизации.
+  const result: Partial<Record<string, number>> = {};
   for (const child of children) {
     result[child.tag] = (result[child.tag] ?? 0) + 1;
     if (child.tag === 'TabularSection') {
       result.Column = (result.Column ?? 0) + (child.columns?.length ?? 0);
     }
   }
-  return result;
+  return result as Record<string, number>;
 }
 
 function findChildByName(children: readonly MetaChild[], name: string): MetaChild | undefined {

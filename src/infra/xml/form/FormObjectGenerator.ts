@@ -50,9 +50,14 @@ export function generateFormDefinitionForObject(
   options: { title?: string } = {},
 ): FormDefinition | undefined {
   const meta = parseObjectMeta(objectXmlPath);
-  if (!meta) return undefined;
+  if (!meta) {return undefined;}
+  // Без `noUncheckedIndexedAccess` в tsconfig тип индексации Record выглядит
+  // как non-nullable; в рантайме это не так, поэтому проверяем `in`.
+  if (!(meta.kind in SUPPORT_MATRIX)) {
+    return undefined;
+  }
   const supported = SUPPORT_MATRIX[meta.kind];
-  if (!supported || !supported.includes(purpose)) {
+  if (!supported.includes(purpose)) {
     return undefined;
   }
   const title = options.title ?? meta.synonym;
@@ -94,10 +99,10 @@ const SUPPORT_MATRIX: Record<string, readonly FormPurpose[]> = {
 // ─── Object metadata parsing ────────────────────────────────────────────────
 
 function parseObjectMeta(objectXmlPath: string): ObjectMeta | undefined {
-  if (!fs.existsSync(objectXmlPath)) return undefined;
+  if (!fs.existsSync(objectXmlPath)) {return undefined;}
   const loc = resolveObjectLocation(objectXmlPath);
   const obj = reader.read(loc.xmlPath);
-  if (!obj) return undefined;
+  if (!obj) {return undefined;}
   const xml = fs.readFileSync(loc.xmlPath, 'utf-8');
   const propsBlock = extractInnerBlock(xml, 'Properties') ?? '';
   const childObjects = extractInnerBlock(xml, 'ChildObjects') ?? '';
@@ -141,7 +146,7 @@ function extractFields(childObjects: string, tag: string): AttrMeta[] {
     const body = m[1];
     const props = extractInnerBlock(body, 'Properties') ?? body;
     const name = extractTagText(props, 'Name');
-    if (!name) continue;
+    if (!name) {continue;}
     const typeBlock = extractInnerBlock(props, 'Type') ?? '';
     const types = [...typeBlock.matchAll(/<v8:Type>([^<]+)<\/v8:Type>/g)].map((t) => t[1]);
     result.push({ name, type: types.join(' | ') });
@@ -157,7 +162,7 @@ function extractTabularSections(childObjects: string): { name: string; columns: 
     const body = m[1];
     const props = extractInnerBlock(body, 'Properties') ?? '';
     const name = extractTagText(props, 'Name');
-    if (!name) continue;
+    if (!name) {continue;}
     const tsChildren = extractInnerBlock(body, 'ChildObjects') ?? '';
     const columns = extractFields(tsChildren, 'Attribute');
     result.push({ name, columns });
@@ -177,7 +182,7 @@ function extractTagText(xml: string, tag: string): string | undefined {
 
 function extractSynonym(propsBlock: string): string | undefined {
   const synBlock = extractInnerBlock(propsBlock, 'Synonym');
-  if (!synBlock) return undefined;
+  if (!synBlock) {return undefined;}
   return /<v8:content>([\s\S]*?)<\/v8:content>/.exec(synBlock)?.[1]?.trim();
 }
 
@@ -194,7 +199,7 @@ function isBooleanType(t: string): boolean {
 }
 
 function isRefType(t: string): boolean {
-  return /Ref\./.test(t);
+  return t.includes('Ref.');
 }
 
 function fieldElement(attrName: string, dataPath: string, type: string): FormElementDefinition {
@@ -205,7 +210,7 @@ function fieldElement(attrName: string, dataPath: string, type: string): FormEle
   if (isRefType(type)) {
     el.choiceButton = true;
   }
-  return el as FormElementDefinition;
+  return el;
 }
 
 function columnElement(attrName: string, dataPath: string, type: string): FormElementDefinition {
@@ -273,7 +278,7 @@ function generateCatalogLikeDsl(meta: ObjectMeta, purpose: FormPurpose, title: s
   }
   // Custom attributes
   for (const a of meta.attributes) {
-    if (!isDisplayable(a.type)) continue;
+    if (!isDisplayable(a.type)) {continue;}
     headerChildren.push(fieldElement(a.name, `Объект.${a.name}`, a.type));
   }
 
@@ -286,12 +291,12 @@ function generateCatalogLikeDsl(meta: ObjectMeta, purpose: FormPurpose, title: s
   // Tabular sections inline
   const skipTs = new Set(['ДополнительныеРеквизиты', 'Представления']);
   for (const ts of meta.tabularSections) {
-    if (skipTs.has(ts.name)) continue;
+    if (skipTs.has(ts.name)) {continue;}
     const cols: FormElementDefinition[] = [
       { labelField: `${ts.name}НомерСтроки`, path: `Объект.${ts.name}.LineNumber` },
     ];
     for (const col of ts.columns) {
-      if (!isDisplayable(col.type)) continue;
+      if (!isDisplayable(col.type)) {continue;}
       cols.push(columnElement(`${ts.name}${col.name}`, `Объект.${ts.name}.${col.name}`, col.type));
     }
     rootElements.push({ table: ts.name, path: `Объект.${ts.name}`, columns: cols });
@@ -322,7 +327,7 @@ function generateDocumentDsl(meta: ObjectMeta, purpose: FormPurpose, title: stri
   };
   const headerChildren: FormElementDefinition[] = [numDate];
   for (const a of meta.attributes) {
-    if (!isDisplayable(a.type)) continue;
+    if (!isDisplayable(a.type)) {continue;}
     headerChildren.push(fieldElement(a.name, `Объект.${a.name}`, a.type));
   }
   const headerGroup: FormElementDefinition = {
@@ -347,7 +352,7 @@ function generateDocumentDsl(meta: ObjectMeta, purpose: FormPurpose, title: stri
         { labelField: `${ts.name}НомерСтроки`, path: `Объект.${ts.name}.LineNumber` },
       ];
       for (const col of ts.columns) {
-        if (!isDisplayable(col.type)) continue;
+        if (!isDisplayable(col.type)) {continue;}
         cols.push(columnElement(`${ts.name}${col.name}`, `Объект.${ts.name}.${col.name}`, col.type));
       }
       pages.push({
@@ -373,7 +378,7 @@ function generateDocumentListDsl(meta: ObjectMeta, purpose: FormPurpose, title: 
     { labelField: 'Дата', path: 'Список.Date' },
   ];
   for (const a of meta.attributes) {
-    if (!isDisplayable(a.type)) continue;
+    if (!isDisplayable(a.type)) {continue;}
     columns.push({ labelField: a.name, path: `Список.${a.name}` });
   }
   columns.push({ labelField: 'Ссылка', path: 'Список.Ref', userVisible: false });
@@ -411,7 +416,7 @@ function generateListDsl(meta: ObjectMeta, purpose: FormPurpose, title: string, 
     columns.push({ labelField: 'Код', path: 'Список.Code' });
   }
   for (const a of meta.attributes) {
-    if (!isDisplayable(a.type)) continue;
+    if (!isDisplayable(a.type)) {continue;}
     columns.push({ labelField: a.name, path: `Список.${a.name}` });
   }
   columns.push({ labelField: 'Ссылка', path: 'Список.Ref', userVisible: false });
@@ -435,7 +440,7 @@ function generateListDsl(meta: ObjectMeta, purpose: FormPurpose, title: string, 
   return {
     title,
     properties: props,
-    elements: [table as FormElementDefinition],
+    elements: [table],
     attributes: [mainListAttribute(meta)],
   };
 }
@@ -444,24 +449,24 @@ function generateListDsl(meta: ObjectMeta, purpose: FormPurpose, title: string, 
 
 function generateInfoRegisterDsl(meta: ObjectMeta, purpose: FormPurpose, title: string): FormDefinition {
   if (purpose === 'List') {
-    return generateRegisterListDsl(meta, title, /*hasRecorder*/ meta.writeMode === 'RecorderSubordinate', /*hasPeriod*/ meta.periodicity != null && meta.periodicity !== 'Nonperiodical', meta.kind);
+    return generateRegisterListDsl(meta, title, /*hasRecorder*/ meta.writeMode === 'RecorderSubordinate', /*hasPeriod*/ meta.periodicity !== undefined && meta.periodicity !== 'Nonperiodical', meta.kind);
   }
   // Record
   const elements: FormElementDefinition[] = [];
-  const isPeriodic = meta.periodicity != null && meta.periodicity !== 'Nonperiodical';
+  const isPeriodic = meta.periodicity !== undefined && meta.periodicity !== 'Nonperiodical';
   if (isPeriodic) {
     elements.push({ input: 'Период', path: 'Запись.Period' });
   }
   for (const dim of meta.dimensions) {
-    if (!isDisplayable(dim.type)) continue;
+    if (!isDisplayable(dim.type)) {continue;}
     elements.push(fieldElement(dim.name, `Запись.${dim.name}`, dim.type));
   }
   for (const res of meta.resources) {
-    if (!isDisplayable(res.type)) continue;
+    if (!isDisplayable(res.type)) {continue;}
     elements.push(fieldElement(res.name, `Запись.${res.name}`, res.type));
   }
   for (const a of meta.attributes) {
-    if (!isDisplayable(a.type)) continue;
+    if (!isDisplayable(a.type)) {continue;}
     elements.push(fieldElement(a.name, `Запись.${a.name}`, a.type));
   }
   return {
@@ -479,21 +484,21 @@ function generateAccumRegisterDsl(meta: ObjectMeta, _purpose: FormPurpose, title
 
 function generateRegisterListDsl(meta: ObjectMeta, title: string, hasRecorder: boolean, hasPeriod: boolean, kind: string): FormDefinition {
   const columns: FormElementDefinition[] = [];
-  if (hasPeriod) columns.push({ labelField: 'Период', path: 'Список.Period' });
+  if (hasPeriod) {columns.push({ labelField: 'Период', path: 'Список.Period' });}
   if (hasRecorder) {
     columns.push({ labelField: 'Регистратор', path: 'Список.Recorder' });
     columns.push({ labelField: 'НомерСтроки', path: 'Список.LineNumber' });
   }
   for (const dim of meta.dimensions) {
-    if (!isDisplayable(dim.type)) continue;
+    if (!isDisplayable(dim.type)) {continue;}
     columns.push({ labelField: dim.name, path: `Список.${dim.name}` });
   }
   for (const res of meta.resources) {
-    if (!isDisplayable(res.type)) continue;
+    if (!isDisplayable(res.type)) {continue;}
     columns.push(columnElement(res.name, `Список.${res.name}`, res.type));
   }
   for (const a of meta.attributes) {
-    if (!isDisplayable(a.type)) continue;
+    if (!isDisplayable(a.type)) {continue;}
     columns.push(columnElement(a.name, `Список.${a.name}`, a.type));
   }
   const table: FormElementDefinition = {

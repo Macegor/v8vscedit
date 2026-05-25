@@ -5,3 +5,4 @@ export * from './MetaObject';
 export * from './Configuration';
 export * from './Ownership';
 export * from './StandardAttribute';
+export * from './CanonicalNames';

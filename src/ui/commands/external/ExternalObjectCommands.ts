@@ -48,7 +48,7 @@ async function addHelp(node: MetadataNode | undefined, services: CommandServices
     services.markChangedConfigurationByFiles([...result.changedFiles]);
     services.treeProvider.refresh();
     services.refreshActionsView();
-    await vscode.window.showInformationMessage(`Справка создана. Изменено файлов: ${result.changedFiles.length}.`);
+    await vscode.window.showInformationMessage(`Справка создана. Изменено файлов: ${String(result.changedFiles.length)}.`);
   } catch (error) {
     await vscode.window.showErrorMessage(`Не удалось создать справку: ${String(error)}`);
   }
@@ -95,7 +95,7 @@ async function validateExternalObject(node: MetadataNode | undefined, services: 
     return;
   }
   const result = services.externalObjectService.validate({ objectPath, detailed: true, maxErrors: 100 });
-  await openReport(`Валидация внешнего объекта: ${result.errors} ошибок`, result.lines.join('\n'));
+  await openReport(`Валидация внешнего объекта: ${String(result.errors)} ошибок`, result.lines.join('\n'));
 }
 
 async function initBspRegistration(node: MetadataNode | undefined, services: CommandServices): Promise<void> {

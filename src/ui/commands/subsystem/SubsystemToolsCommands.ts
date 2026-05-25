@@ -36,7 +36,7 @@ async function validateSubsystem(node: MetadataNode | undefined, services: Comma
     return;
   }
   const result = services.subsystemToolsService.validate({ subsystemPath, detailed: true, maxErrors: 100 });
-  await openReport(`Валидация подсистемы: ${result.errors} ошибок`, result.lines.join('\n'));
+  await openReport(`Валидация подсистемы: ${String(result.errors)} ошибок`, result.lines.join('\n'));
 }
 
 async function validateCommandInterface(node: MetadataNode | undefined, services: CommandServices): Promise<void> {
@@ -51,7 +51,7 @@ async function validateCommandInterface(node: MetadataNode | undefined, services
     return;
   }
   const result = services.commandInterfaceService.validate({ ciPath: subsystem.commandInterfacePath, detailed: true, maxErrors: 100 });
-  await openReport(`Валидация командного интерфейса: ${result.errors} ошибок`, result.lines.join('\n'));
+  await openReport(`Валидация командного интерфейса: ${String(result.errors)} ошибок`, result.lines.join('\n'));
 }
 
 async function openReport(title: string, content: string): Promise<void> {

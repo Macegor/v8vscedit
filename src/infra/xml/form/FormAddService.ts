@@ -54,14 +54,12 @@ export class FormAddService {
         formXmlContent = buildFormXmlFromDefinition(definition, formatVersion);
       }
     }
-    if (formXmlContent == null) {
-      formXmlContent = buildInitialFormXml({
-        objectKind: loc.kind,
-        objectName: loc.name,
-        purpose,
-        formatVersion,
-      });
-    }
+    formXmlContent ??= buildInitialFormXml({
+      objectKind: loc.kind,
+      objectName: loc.name,
+      purpose,
+      formatVersion,
+    });
     writeNewTextFile(formXmlPath, formXmlContent);
     writeNewTextFile(modulePath, buildFormModule(purpose !== 'Object' || !isExternalKind(loc.kind)));
 

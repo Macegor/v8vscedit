@@ -6,7 +6,6 @@ import { getMetaFolder, META_TYPES } from '../../domain/MetaTypes';
 import { ConfigurationXmlEditor } from './ConfigurationXmlEditor';
 import { CommandInterfaceService, type CommandInterfaceInfoResult, type CommandInterfaceValidationResult } from './CommandInterfaceService';
 import { SubsystemXmlService, type SubsystemInfo } from './SubsystemXmlService';
-import { writeTextFilePreservingBomAndEol } from './XmlUtils';
 
 const DEFAULT_FORMAT_VERSION = '2.18';
 const IDENTIFIER_RE = /^[A-Za-zА-Яа-яЁё_][A-Za-z0-9А-Яа-яЁё_]*$/;

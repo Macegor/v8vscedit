@@ -33,6 +33,7 @@ const typeScriptStrictConfigs = [
 export default tseslint.config(
   {
     ignores: [
+      '.claude/**',
       '.codex/**',
       '.cursor/**',
       'dist/**',

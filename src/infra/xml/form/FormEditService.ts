@@ -63,7 +63,7 @@ function findNamedElementCloseEnd(xml: string, name: string, fromIndex = 0): num
   const re = new RegExp(`<([A-Za-z]+)\\b[^>]*\\bname="${escapeRegExp(name)}"[^>]*?(\\/?)>`, 'g');
   re.lastIndex = fromIndex;
   const match = re.exec(xml);
-  if (!match) return null;
+  if (!match) {return null;}
   const tag = match[1];
   if (match[2] === '/') {
     return match.index + match[0].length;
@@ -75,12 +75,12 @@ function findNamedElementCloseEnd(xml: string, name: string, fromIndex = 0): num
   let pos = match.index + match[0].length;
   while (depth > 0 && pos < xml.length) {
     const nextClose = xml.indexOf(closeTag, pos);
-    if (nextClose < 0) return null;
+    if (nextClose < 0) {return null;}
     openRe.lastIndex = pos;
     let nextOpen = -1;
-    while (true) {
+    for (;;) {
       const o = openRe.exec(xml);
-      if (!o || o.index > nextClose) break;
+      if (!o || o.index > nextClose) {break;}
       nextOpen = o.index;
       depth++;
       openRe.lastIndex = o.index + o[0].length;
@@ -157,7 +157,7 @@ function insertAfterNamedInsideContainer(xml: string, containerOpenAt: number, c
   const containerInnerStart = containerOpenAt + `<${containerTag}>`.length;
   // Найти named element строго внутри container
   const closeAt = findNamedElementCloseEnd(xml.slice(0, containerClose), afterName, containerInnerStart);
-  if (closeAt == null) {
+  if (closeAt === null) {
     warnings.push(`[WARN] after='${afterName}' не найден в ${containerTag}, добавление в конец.`);
     return `${xml.slice(0, containerClose).trimEnd()}\n${content}\n\t${xml.slice(containerClose)}`;
   }

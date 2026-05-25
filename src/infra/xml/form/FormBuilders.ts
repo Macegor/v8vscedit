@@ -10,7 +10,7 @@ import {
   createIdAllocator,
   escapeXml,
   FORM_XMLNS,
-  IdAllocator,
+  type IdAllocator,
   validateName,
 } from './FormShared';
 import type {
@@ -349,7 +349,7 @@ function normalizeDefinition(definition: FormDefinition): NormalizedDefinition {
   if (Array.isArray(defn.elements)) {
     const autoBars = defn.elements.filter((el) => isPlainObject(el) && (el as Record<string, unknown>).autoCmdBar !== undefined);
     if (autoBars.length > 1) {
-      throw new Error(`form-compile: more than one autoCmdBar in def.elements (found ${autoBars.length}); only one allowed.`);
+      throw new Error(`form-compile: more than one autoCmdBar in def.elements (found ${String(autoBars.length)}); only one allowed.`);
     }
     if (autoBars.length === 1) {
       mainAcb = autoBars[0];
@@ -360,9 +360,9 @@ function normalizeDefinition(definition: FormDefinition): NormalizedDefinition {
 
   // 1b.3 Infer main attribute
   if (Array.isArray(defn.attributes)) {
-    const hasExplicitMain = defn.attributes.some((a) => a?.main === true);
+    const hasExplicitMain = defn.attributes.some((a) => a.main === true);
     if (!hasExplicitMain) {
-      const candidates = defn.attributes.filter((a) => a && (a as { main?: unknown }).main !== false && isObjectLikeType(String(a.type ?? '')));
+      const candidates = defn.attributes.filter((a) => (a as { main?: unknown }).main !== false && isObjectLikeType(a.type ?? ''));
       if (candidates.length === 1) {
         (candidates[0] as { main?: boolean }).main = true;
         warn(`[INFO] Inferred main attribute: ${candidates[0].name} (${candidates[0].type ?? ''})`);
@@ -374,12 +374,12 @@ function normalizeDefinition(definition: FormDefinition): NormalizedDefinition {
 
   // 1b.4 DynamicList → table heuristic
   if (Array.isArray(defn.attributes) && Array.isArray(defn.elements)) {
-    const mainAttr = defn.attributes.find((a) => a?.main === true);
-    if (mainAttr && String(mainAttr.type ?? '') === 'DynamicList') {
-      const settings = (mainAttr.settings ?? {}) as Record<string, unknown>;
+    const mainAttr = defn.attributes.find((a) => a.main === true);
+    if (mainAttr && (mainAttr.type ?? '') === 'DynamicList') {
+      const settings = (mainAttr.settings ?? {});
       const hasMt = Boolean(settings.mainTable);
       for (const el of defn.elements) {
-        applyDlistTableHeuristic(el, String(mainAttr.name ?? ''), hasMt);
+        applyDlistTableHeuristic(el, mainAttr.name, hasMt);
       }
     }
   }
@@ -391,12 +391,13 @@ function normalizeSynonyms(el: unknown): void {
   if (!isPlainObject(el)) {
     return;
   }
-  const map: Record<string, string> = { commandBar: 'cmdBar', autoCommandBar: 'autoCmdBar' };
-  for (const [src, dst] of Object.entries(map)) {
-    if (src in el && !(dst in el)) {
-      el[dst] = el[src];
-      delete el[src];
-    }
+  if ('commandBar' in el && !('cmdBar' in el)) {
+    el.cmdBar = el.commandBar;
+    delete el.commandBar;
+  }
+  if ('autoCommandBar' in el && !('autoCmdBar' in el)) {
+    el.autoCmdBar = el.autoCommandBar;
+    delete el.autoCommandBar;
   }
   if (Array.isArray(el.children)) {
     for (const child of el.children) {
@@ -430,7 +431,7 @@ function applyDlistTableHeuristic(el: unknown, listName: string, hasMainTable: b
   if (!isPlainObject(el)) {
     return;
   }
-  if (el.table !== undefined && String(el.path ?? '') === listName) {
+  if (el.table !== undefined && xmlStr(el.path) === listName) {
     if (!('tableAutofill' in el)) {
       el.tableAutofill = false;
     }
@@ -449,8 +450,8 @@ function applyDlistTableHeuristic(el: unknown, listName: string, hasMainTable: b
 }
 
 function isObjectLikeType(t: string): boolean {
-  if (!t) return false;
-  if (t === 'DynamicList' || t === 'ConstantsSet') return true;
+  if (!t) {return false;}
+  if (t === 'DynamicList' || t === 'ConstantsSet') {return true;}
   const objectSuffixes = [
     'CatalogObject', 'DocumentObject', 'DataProcessorObject', 'ReportObject',
     'ExternalDataProcessorObject', 'ExternalReportObject', 'BusinessProcessObject',
@@ -474,13 +475,15 @@ function emitMainAutoCommandBar(lines: string[], defn: NormalizedDefinition, id:
   if (main) {
     const autoCmdBarValue = (main as Record<string, unknown>).autoCmdBar;
     if (autoCmdBarValue) {
-      acbName = String(autoCmdBarValue);
+      acbName = xmlStr(autoCmdBarValue);
     }
-    if (typeof (main as Record<string, unknown>).name === 'string') {
-      acbName = String((main as Record<string, unknown>).name);
+    const mainName = (main as Record<string, unknown>).name;
+    if (typeof mainName === 'string') {
+      acbName = mainName;
     }
-    if (typeof (main as Record<string, unknown>).horizontalAlign === 'string') {
-      acbHorizontalAlign = String((main as Record<string, unknown>).horizontalAlign);
+    const horizontalAlign = (main as Record<string, unknown>).horizontalAlign;
+    if (typeof horizontalAlign === 'string') {
+      acbHorizontalAlign = horizontalAlign;
     }
     if ('autofill' in main) {
       acbAutofill = Boolean((main as Record<string, unknown>).autofill);
@@ -524,14 +527,19 @@ export function emitElement(lines: string[], raw: FormElementDefinition, indent:
   if (!isPlainObject(raw)) {
     return;
   }
-  const el = { ...raw } as Record<string, unknown>;
-
-  // Silent synonyms
-  for (const [src, dst] of Object.entries(ELEMENT_TYPE_SYNONYMS)) {
-    if (src in el && !(dst in el)) {
-      el[dst] = el[src];
-      delete el[src];
+  // Перестраиваем объект, переименовывая ключи-синонимы: динамический delete
+  // запрещён линтером, поэтому собираем новый объект из исходных пар.
+  const rawObj = raw as Record<string, unknown>;
+  const el: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(rawObj)) {
+    if (key in ELEMENT_TYPE_SYNONYMS) {
+      const dst = ELEMENT_TYPE_SYNONYMS[key];
+      if (!(dst in rawObj)) {
+        el[dst] = value;
+        continue;
+      }
     }
+    el[key] = value;
   }
 
   let typeKey: string | undefined;
@@ -546,7 +554,7 @@ export function emitElement(lines: string[], raw: FormElementDefinition, indent:
     return;
   }
 
-  const name = String(el.name ?? el[typeKey] ?? '');
+  const name = xmlStr(el.name ?? el[typeKey]);
   const eid = id.nextElement();
   switch (typeKey) {
     case 'group': emitGroup(lines, el, name, eid, indent, id); break;
@@ -571,10 +579,10 @@ export function emitElement(lines: string[], raw: FormElementDefinition, indent:
 // ─── Element emitters ───────────────────────────────────────────────────────
 
 function emitGroup(lines: string[], el: Record<string, unknown>, name: string, eid: number, indent: string, id: IdAllocator): void {
-  lines.push(`${indent}<UsualGroup name="${escapeXml(name)}" id="${eid}">`);
+  lines.push(`${indent}<UsualGroup name="${escapeXml(name)}" id="${String(eid)}">`);
   const inner = `${indent}\t`;
   emitTitle(lines, el, name, inner);
-  const groupVal = String(el.group ?? '');
+  const groupVal = xmlStr(el.group ?? '');
   const orientationMap: Record<string, string> = { horizontal: 'Horizontal', vertical: 'Vertical', alwaysHorizontal: 'AlwaysHorizontal', alwaysVertical: 'AlwaysVertical' };
   const orientation = orientationMap[groupVal];
   if (orientation) {
@@ -589,7 +597,7 @@ function emitGroup(lines: string[], el: Record<string, unknown>, name: string, e
   }
   if (el.representation) {
     const reprMap: Record<string, string> = { none: 'None', normal: 'NormalSeparation', weak: 'WeakSeparation', strong: 'StrongSeparation' };
-    const reprVal = reprMap[String(el.representation)] ?? String(el.representation);
+    const reprVal = reprMap[xmlStr(el.representation)] ?? xmlStr(el.representation);
     lines.push(`${inner}<Representation>${escapeXml(reprVal)}</Representation>`);
   }
   if (el.showTitle === false) {
@@ -611,10 +619,10 @@ function emitGroup(lines: string[], el: Record<string, unknown>, name: string, e
 }
 
 function emitColumnGroup(lines: string[], el: Record<string, unknown>, name: string, eid: number, indent: string, id: IdAllocator): void {
-  lines.push(`${indent}<ColumnGroup name="${escapeXml(name)}" id="${eid}">`);
+  lines.push(`${indent}<ColumnGroup name="${escapeXml(name)}" id="${String(eid)}">`);
   const inner = `${indent}\t`;
   emitTitle(lines, el, name, inner);
-  const groupVal = String(el.columnGroup ?? '');
+  const groupVal = xmlStr(el.columnGroup ?? '');
   const orientationMap: Record<string, string> = { horizontal: 'Horizontal', vertical: 'Vertical', inCell: 'InCell' };
   const orientation = orientationMap[groupVal];
   if (orientation) {
@@ -624,10 +632,10 @@ function emitColumnGroup(lines: string[], el: Record<string, unknown>, name: str
     lines.push(`${inner}<ShowTitle>false</ShowTitle>`);
   }
   if (el.showInHeader !== undefined && el.showInHeader !== null) {
-    lines.push(`${inner}<ShowInHeader>${el.showInHeader ? 'true' : 'false'}</ShowInHeader>`);
+    lines.push(`${inner}<ShowInHeader>${el.showInHeader === true ? 'true' : 'false'}</ShowInHeader>`);
   }
   if (el.width) {
-    lines.push(`${inner}<Width>${escapeXml(String(el.width))}</Width>`);
+    lines.push(`${inner}<Width>${escapeXml(xmlStr(el.width))}</Width>`);
   }
   emitCommonFlags(lines, el, inner);
   emitCompanion(lines, 'ExtendedTooltip', `${name}РасширеннаяПодсказка`, inner, id);
@@ -642,40 +650,40 @@ function emitColumnGroup(lines: string[], el: Record<string, unknown>, name: str
 }
 
 function emitInput(lines: string[], el: Record<string, unknown>, name: string, eid: number, indent: string, id: IdAllocator): void {
-  lines.push(`${indent}<InputField name="${escapeXml(name)}" id="${eid}">`);
+  lines.push(`${indent}<InputField name="${escapeXml(name)}" id="${String(eid)}">`);
   const inner = `${indent}\t`;
   if (el.path) {
-    lines.push(`${inner}<DataPath>${escapeXml(String(el.path))}</DataPath>`);
+    lines.push(`${inner}<DataPath>${escapeXml(xmlStr(el.path))}</DataPath>`);
   }
   emitTitle(lines, el, name, inner, !el.path);
   emitCommonFlags(lines, el, inner);
   if (el.titleLocation) {
     const locMap: Record<string, string> = { none: 'None', left: 'Left', right: 'Right', top: 'Top', bottom: 'Bottom' };
-    lines.push(`${inner}<TitleLocation>${escapeXml(locMap[String(el.titleLocation)] ?? String(el.titleLocation))}</TitleLocation>`);
+    lines.push(`${inner}<TitleLocation>${escapeXml(locMap[xmlStr(el.titleLocation)] ?? xmlStr(el.titleLocation))}</TitleLocation>`);
   }
-  if (el.multiLine === true) lines.push(`${inner}<MultiLine>true</MultiLine>`);
-  if (el.passwordMode === true) lines.push(`${inner}<PasswordMode>true</PasswordMode>`);
-  if (el.choiceButton === false) lines.push(`${inner}<ChoiceButton>false</ChoiceButton>`);
-  if (el.clearButton === true) lines.push(`${inner}<ClearButton>true</ClearButton>`);
-  if (el.spinButton === true) lines.push(`${inner}<SpinButton>true</SpinButton>`);
-  if (el.dropListButton === true) lines.push(`${inner}<DropListButton>true</DropListButton>`);
-  if (el.markIncomplete === true) lines.push(`${inner}<AutoMarkIncomplete>true</AutoMarkIncomplete>`);
-  if (el.textEdit === false) lines.push(`${inner}<TextEdit>false</TextEdit>`);
-  if (el.skipOnInput === true) lines.push(`${inner}<SkipOnInput>true</SkipOnInput>`);
+  if (el.multiLine === true) {lines.push(`${inner}<MultiLine>true</MultiLine>`);}
+  if (el.passwordMode === true) {lines.push(`${inner}<PasswordMode>true</PasswordMode>`);}
+  if (el.choiceButton === false) {lines.push(`${inner}<ChoiceButton>false</ChoiceButton>`);}
+  if (el.clearButton === true) {lines.push(`${inner}<ClearButton>true</ClearButton>`);}
+  if (el.spinButton === true) {lines.push(`${inner}<SpinButton>true</SpinButton>`);}
+  if (el.dropListButton === true) {lines.push(`${inner}<DropListButton>true</DropListButton>`);}
+  if (el.markIncomplete === true) {lines.push(`${inner}<AutoMarkIncomplete>true</AutoMarkIncomplete>`);}
+  if (el.textEdit === false) {lines.push(`${inner}<TextEdit>false</TextEdit>`);}
+  if (el.skipOnInput === true) {lines.push(`${inner}<SkipOnInput>true</SkipOnInput>`);}
   if ('autoMaxWidth' in el) {
-    if (el.autoMaxWidth === false) lines.push(`${inner}<AutoMaxWidth>false</AutoMaxWidth>`);
+    if (el.autoMaxWidth === false) {lines.push(`${inner}<AutoMaxWidth>false</AutoMaxWidth>`);}
   } else if (el.multiLine === true) {
     lines.push(`${inner}<AutoMaxWidth>false</AutoMaxWidth>`);
   }
-  if (el.maxWidth !== undefined && el.maxWidth !== null) lines.push(`${inner}<MaxWidth>${escapeXml(String(el.maxWidth))}</MaxWidth>`);
-  if (el.autoMaxHeight === false) lines.push(`${inner}<AutoMaxHeight>false</AutoMaxHeight>`);
-  if (el.maxHeight !== undefined && el.maxHeight !== null) lines.push(`${inner}<MaxHeight>${escapeXml(String(el.maxHeight))}</MaxHeight>`);
-  if (el.width) lines.push(`${inner}<Width>${escapeXml(String(el.width))}</Width>`);
-  if (el.height) lines.push(`${inner}<Height>${escapeXml(String(el.height))}</Height>`);
-  if (el.horizontalStretch === true) lines.push(`${inner}<HorizontalStretch>true</HorizontalStretch>`);
-  if (el.verticalStretch === true) lines.push(`${inner}<VerticalStretch>true</VerticalStretch>`);
+  if (el.maxWidth !== undefined && el.maxWidth !== null) {lines.push(`${inner}<MaxWidth>${escapeXml(xmlStr(el.maxWidth))}</MaxWidth>`);}
+  if (el.autoMaxHeight === false) {lines.push(`${inner}<AutoMaxHeight>false</AutoMaxHeight>`);}
+  if (el.maxHeight !== undefined && el.maxHeight !== null) {lines.push(`${inner}<MaxHeight>${escapeXml(xmlStr(el.maxHeight))}</MaxHeight>`);}
+  if (el.width) {lines.push(`${inner}<Width>${escapeXml(xmlStr(el.width))}</Width>`);}
+  if (el.height) {lines.push(`${inner}<Height>${escapeXml(xmlStr(el.height))}</Height>`);}
+  if (el.horizontalStretch === true) {lines.push(`${inner}<HorizontalStretch>true</HorizontalStretch>`);}
+  if (el.verticalStretch === true) {lines.push(`${inner}<VerticalStretch>true</VerticalStretch>`);}
   if (el.inputHint) {
-    lines.push(...buildLocalizedTag(inner, 'InputHint', String(el.inputHint)).split('\n'));
+    lines.push(...buildLocalizedTag(inner, 'InputHint', xmlStr(el.inputHint)).split('\n'));
   }
   emitCompanion(lines, 'ContextMenu', `${name}КонтекстноеМеню`, inner, id);
   emitCompanion(lines, 'ExtendedTooltip', `${name}РасширеннаяПодсказка`, inner, id);
@@ -684,14 +692,14 @@ function emitInput(lines: string[], el: Record<string, unknown>, name: string, e
 }
 
 function emitCheck(lines: string[], el: Record<string, unknown>, name: string, eid: number, indent: string, id: IdAllocator): void {
-  lines.push(`${indent}<CheckBoxField name="${escapeXml(name)}" id="${eid}">`);
+  lines.push(`${indent}<CheckBoxField name="${escapeXml(name)}" id="${String(eid)}">`);
   const inner = `${indent}\t`;
   if (el.path) {
-    lines.push(`${inner}<DataPath>${escapeXml(String(el.path))}</DataPath>`);
+    lines.push(`${inner}<DataPath>${escapeXml(xmlStr(el.path))}</DataPath>`);
   }
   emitTitle(lines, el, name, inner, !el.path);
   emitCommonFlags(lines, el, inner);
-  const tl = el.titleLocation ? String(el.titleLocation) : 'Right';
+  const tl = el.titleLocation ? xmlStr(el.titleLocation) : 'Right';
   lines.push(`${inner}<TitleLocation>${escapeXml(tl)}</TitleLocation>`);
   emitCompanion(lines, 'ContextMenu', `${name}КонтекстноеМеню`, inner, id);
   emitCompanion(lines, 'ExtendedTooltip', `${name}РасширеннаяПодсказка`, inner, id);
@@ -700,31 +708,31 @@ function emitCheck(lines: string[], el: Record<string, unknown>, name: string, e
 }
 
 function emitRadioButtonField(lines: string[], el: Record<string, unknown>, name: string, eid: number, indent: string, id: IdAllocator): void {
-  lines.push(`${indent}<RadioButtonField name="${escapeXml(name)}" id="${eid}">`);
+  lines.push(`${indent}<RadioButtonField name="${escapeXml(name)}" id="${String(eid)}">`);
   const inner = `${indent}\t`;
   if (el.path) {
-    lines.push(`${inner}<DataPath>${escapeXml(String(el.path))}</DataPath>`);
+    lines.push(`${inner}<DataPath>${escapeXml(xmlStr(el.path))}</DataPath>`);
   }
   emitTitle(lines, el, name, inner, !el.path);
   emitCommonFlags(lines, el, inner);
   let tl: string;
   if (el.titleLocation) {
     const locMap: Record<string, string> = { none: 'None', left: 'Left', right: 'Right', top: 'Top', bottom: 'Bottom' };
-    tl = locMap[String(el.titleLocation)] ?? String(el.titleLocation);
+    tl = locMap[xmlStr(el.titleLocation)] ?? xmlStr(el.titleLocation);
   } else {
     tl = 'None';
   }
   lines.push(`${inner}<TitleLocation>${escapeXml(tl)}</TitleLocation>`);
   lines.push(`${inner}<RadioButtonType>${escapeXml(normalizeRadioButtonType(el.radioButtonType))}</RadioButtonType>`);
   if (el.columnsCount !== undefined && el.columnsCount !== null) {
-    lines.push(`${inner}<ColumnsCount>${escapeXml(String(el.columnsCount))}</ColumnsCount>`);
+    lines.push(`${inner}<ColumnsCount>${escapeXml(xmlStr(el.columnsCount))}</ColumnsCount>`);
   }
   const choiceList = Array.isArray(el.choiceList) ? el.choiceList : [];
   if (choiceList.length > 0) {
     lines.push(`${inner}<ChoiceList>`);
     const itemIndent = `${inner}\t`;
     for (const item of choiceList) {
-      if (!isPlainObject(item)) continue;
+      if (!isPlainObject(item)) {continue;}
       const valRaw = item.value ?? item['значение'];
       const hasPres = 'presentation' in item || 'представление' in item || 'title' in item;
       let presRaw: unknown = item.presentation ?? item['представление'] ?? item.title;
@@ -756,26 +764,26 @@ function emitRadioButtonField(lines: string[], el: Record<string, unknown>, name
 }
 
 function emitLabel(lines: string[], el: Record<string, unknown>, name: string, eid: number, indent: string, id: IdAllocator): void {
-  lines.push(`${indent}<LabelDecoration name="${escapeXml(name)}" id="${eid}">`);
+  lines.push(`${indent}<LabelDecoration name="${escapeXml(name)}" id="${String(eid)}">`);
   const inner = `${indent}\t`;
-  const labelTitle = el.title ?? titleFromName(name);
-  if (labelTitle) {
+  const labelTitle = xmlStr(el.title ?? titleFromName(name));
+  if (labelTitle.length > 0) {
     const formatted = el.hyperlink === true ? 'true' : 'false';
     lines.push(`${inner}<Title formatted="${formatted}">`);
     lines.push(`${inner}\t<v8:item>`);
     lines.push(`${inner}\t\t<v8:lang>ru</v8:lang>`);
-    lines.push(`${inner}\t\t<v8:content>${escapeXml(String(labelTitle))}</v8:content>`);
+    lines.push(`${inner}\t\t<v8:content>${escapeXml(labelTitle)}</v8:content>`);
     lines.push(`${inner}\t</v8:item>`);
     lines.push(`${inner}</Title>`);
   }
   emitCommonFlags(lines, el, inner);
-  if (el.hyperlink === true) lines.push(`${inner}<Hyperlink>true</Hyperlink>`);
-  if (el.autoMaxWidth === false) lines.push(`${inner}<AutoMaxWidth>false</AutoMaxWidth>`);
-  if (el.maxWidth !== undefined && el.maxWidth !== null) lines.push(`${inner}<MaxWidth>${escapeXml(String(el.maxWidth))}</MaxWidth>`);
-  if (el.autoMaxHeight === false) lines.push(`${inner}<AutoMaxHeight>false</AutoMaxHeight>`);
-  if (el.maxHeight !== undefined && el.maxHeight !== null) lines.push(`${inner}<MaxHeight>${escapeXml(String(el.maxHeight))}</MaxHeight>`);
-  if (el.width) lines.push(`${inner}<Width>${escapeXml(String(el.width))}</Width>`);
-  if (el.height) lines.push(`${inner}<Height>${escapeXml(String(el.height))}</Height>`);
+  if (el.hyperlink === true) {lines.push(`${inner}<Hyperlink>true</Hyperlink>`);}
+  if (el.autoMaxWidth === false) {lines.push(`${inner}<AutoMaxWidth>false</AutoMaxWidth>`);}
+  if (el.maxWidth !== undefined && el.maxWidth !== null) {lines.push(`${inner}<MaxWidth>${escapeXml(xmlStr(el.maxWidth))}</MaxWidth>`);}
+  if (el.autoMaxHeight === false) {lines.push(`${inner}<AutoMaxHeight>false</AutoMaxHeight>`);}
+  if (el.maxHeight !== undefined && el.maxHeight !== null) {lines.push(`${inner}<MaxHeight>${escapeXml(xmlStr(el.maxHeight))}</MaxHeight>`);}
+  if (el.width) {lines.push(`${inner}<Width>${escapeXml(xmlStr(el.width))}</Width>`);}
+  if (el.height) {lines.push(`${inner}<Height>${escapeXml(xmlStr(el.height))}</Height>`);}
   emitCompanion(lines, 'ContextMenu', `${name}КонтекстноеМеню`, inner, id);
   emitCompanion(lines, 'ExtendedTooltip', `${name}РасширеннаяПодсказка`, inner, id);
   emitEvents(lines, el, name, inner, 'label');
@@ -783,14 +791,14 @@ function emitLabel(lines: string[], el: Record<string, unknown>, name: string, e
 }
 
 function emitLabelField(lines: string[], el: Record<string, unknown>, name: string, eid: number, indent: string, id: IdAllocator): void {
-  lines.push(`${indent}<LabelField name="${escapeXml(name)}" id="${eid}">`);
+  lines.push(`${indent}<LabelField name="${escapeXml(name)}" id="${String(eid)}">`);
   const inner = `${indent}\t`;
   if (el.path) {
-    lines.push(`${inner}<DataPath>${escapeXml(String(el.path))}</DataPath>`);
+    lines.push(`${inner}<DataPath>${escapeXml(xmlStr(el.path))}</DataPath>`);
   }
   emitTitle(lines, el, name, inner, !el.path);
   emitCommonFlags(lines, el, inner);
-  if (el.hyperlink === true) lines.push(`${inner}<Hyperlink>true</Hyperlink>`);
+  if (el.hyperlink === true) {lines.push(`${inner}<Hyperlink>true</Hyperlink>`);}
   emitCompanion(lines, 'ContextMenu', `${name}КонтекстноеМеню`, inner, id);
   emitCompanion(lines, 'ExtendedTooltip', `${name}РасширеннаяПодсказка`, inner, id);
   emitEvents(lines, el, name, inner, 'labelField');
@@ -798,33 +806,33 @@ function emitLabelField(lines: string[], el: Record<string, unknown>, name: stri
 }
 
 function emitTable(lines: string[], el: Record<string, unknown>, name: string, eid: number, indent: string, id: IdAllocator): void {
-  lines.push(`${indent}<Table name="${escapeXml(name)}" id="${eid}">`);
+  lines.push(`${indent}<Table name="${escapeXml(name)}" id="${String(eid)}">`);
   const inner = `${indent}\t`;
   if (el.path) {
-    lines.push(`${inner}<DataPath>${escapeXml(String(el.path))}</DataPath>`);
+    lines.push(`${inner}<DataPath>${escapeXml(xmlStr(el.path))}</DataPath>`);
   }
   emitTitle(lines, el, name, inner, !el.path);
   emitCommonFlags(lines, el, inner);
-  if (el.representation) lines.push(`${inner}<Representation>${escapeXml(String(el.representation))}</Representation>`);
-  if (el.changeRowSet === true) lines.push(`${inner}<ChangeRowSet>true</ChangeRowSet>`);
-  if (el.changeRowOrder === true) lines.push(`${inner}<ChangeRowOrder>true</ChangeRowOrder>`);
-  if (el.height) lines.push(`${inner}<HeightInTableRows>${escapeXml(String(el.height))}</HeightInTableRows>`);
-  if (el.header === false) lines.push(`${inner}<Header>false</Header>`);
-  if (el.footer === true) lines.push(`${inner}<Footer>true</Footer>`);
-  if (el.commandBarLocation) lines.push(`${inner}<CommandBarLocation>${escapeXml(String(el.commandBarLocation))}</CommandBarLocation>`);
-  if (el.searchStringLocation) lines.push(`${inner}<SearchStringLocation>${escapeXml(String(el.searchStringLocation))}</SearchStringLocation>`);
-  if (el.choiceMode === true) lines.push(`${inner}<ChoiceMode>true</ChoiceMode>`);
-  if (el.initialTreeView) lines.push(`${inner}<InitialTreeView>${escapeXml(String(el.initialTreeView))}</InitialTreeView>`);
-  if (el.enableStartDrag === true) lines.push(`${inner}<EnableStartDrag>true</EnableStartDrag>`);
-  if (el.enableDrag === true) lines.push(`${inner}<EnableDrag>true</EnableDrag>`);
-  if (el.rowPictureDataPath) lines.push(`${inner}<RowPictureDataPath>${escapeXml(String(el.rowPictureDataPath))}</RowPictureDataPath>`);
+  if (el.representation) {lines.push(`${inner}<Representation>${escapeXml(xmlStr(el.representation))}</Representation>`);}
+  if (el.changeRowSet === true) {lines.push(`${inner}<ChangeRowSet>true</ChangeRowSet>`);}
+  if (el.changeRowOrder === true) {lines.push(`${inner}<ChangeRowOrder>true</ChangeRowOrder>`);}
+  if (el.height) {lines.push(`${inner}<HeightInTableRows>${escapeXml(xmlStr(el.height))}</HeightInTableRows>`);}
+  if (el.header === false) {lines.push(`${inner}<Header>false</Header>`);}
+  if (el.footer === true) {lines.push(`${inner}<Footer>true</Footer>`);}
+  if (el.commandBarLocation) {lines.push(`${inner}<CommandBarLocation>${escapeXml(xmlStr(el.commandBarLocation))}</CommandBarLocation>`);}
+  if (el.searchStringLocation) {lines.push(`${inner}<SearchStringLocation>${escapeXml(xmlStr(el.searchStringLocation))}</SearchStringLocation>`);}
+  if (el.choiceMode === true) {lines.push(`${inner}<ChoiceMode>true</ChoiceMode>`);}
+  if (el.initialTreeView) {lines.push(`${inner}<InitialTreeView>${escapeXml(xmlStr(el.initialTreeView))}</InitialTreeView>`);}
+  if (el.enableStartDrag === true) {lines.push(`${inner}<EnableStartDrag>true</EnableStartDrag>`);}
+  if (el.enableDrag === true) {lines.push(`${inner}<EnableDrag>true</EnableDrag>`);}
+  if (el.rowPictureDataPath) {lines.push(`${inner}<RowPictureDataPath>${escapeXml(xmlStr(el.rowPictureDataPath))}</RowPictureDataPath>`);}
 
   emitCompanion(lines, 'ContextMenu', `${name}КонтекстноеМеню`, inner, id);
   if (el.tableAutofill !== undefined && el.tableAutofill !== null) {
     const acbId = id.nextElement();
     const acbName = `${name}КоманднаяПанель`;
-    const afVal = el.tableAutofill ? 'true' : 'false';
-    lines.push(`${inner}<AutoCommandBar name="${escapeXml(acbName)}" id="${acbId}">`);
+    const afVal = el.tableAutofill === true ? 'true' : 'false';
+    lines.push(`${inner}<AutoCommandBar name="${escapeXml(acbName)}" id="${String(acbId)}">`);
     lines.push(`${inner}\t<Autofill>${afVal}</Autofill>`);
     lines.push(`${inner}</AutoCommandBar>`);
   } else {
@@ -846,10 +854,10 @@ function emitTable(lines: string[], el: Record<string, unknown>, name: string, e
 }
 
 function emitPages(lines: string[], el: Record<string, unknown>, name: string, eid: number, indent: string, id: IdAllocator): void {
-  lines.push(`${indent}<Pages name="${escapeXml(name)}" id="${eid}">`);
+  lines.push(`${indent}<Pages name="${escapeXml(name)}" id="${String(eid)}">`);
   const inner = `${indent}\t`;
   if (el.pagesRepresentation) {
-    lines.push(`${inner}<PagesRepresentation>${escapeXml(String(el.pagesRepresentation))}</PagesRepresentation>`);
+    lines.push(`${inner}<PagesRepresentation>${escapeXml(xmlStr(el.pagesRepresentation))}</PagesRepresentation>`);
   }
   emitCommonFlags(lines, el, inner);
   emitCompanion(lines, 'ExtendedTooltip', `${name}РасширеннаяПодсказка`, inner, id);
@@ -865,13 +873,13 @@ function emitPages(lines: string[], el: Record<string, unknown>, name: string, e
 }
 
 function emitPage(lines: string[], el: Record<string, unknown>, name: string, eid: number, indent: string, id: IdAllocator): void {
-  lines.push(`${indent}<Page name="${escapeXml(name)}" id="${eid}">`);
+  lines.push(`${indent}<Page name="${escapeXml(name)}" id="${String(eid)}">`);
   const inner = `${indent}\t`;
   emitTitle(lines, el, name, inner, true);
   emitCommonFlags(lines, el, inner);
   if (el.group) {
     const orientationMap: Record<string, string> = { horizontal: 'Horizontal', vertical: 'Vertical', alwaysHorizontal: 'AlwaysHorizontal', alwaysVertical: 'AlwaysVertical' };
-    const orientation = orientationMap[String(el.group)];
+    const orientation = orientationMap[xmlStr(el.group)];
     if (orientation) {
       lines.push(`${inner}<Group>${orientation}</Group>`);
     }
@@ -888,11 +896,11 @@ function emitPage(lines: string[], el: Record<string, unknown>, name: string, ei
 }
 
 function emitButton(lines: string[], el: Record<string, unknown>, name: string, eid: number, indent: string, id: IdAllocator, inCmdBar: boolean): void {
-  lines.push(`${indent}<Button name="${escapeXml(name)}" id="${eid}">`);
+  lines.push(`${indent}<Button name="${escapeXml(name)}" id="${String(eid)}">`);
   const inner = `${indent}\t`;
   let btnType: string | undefined;
   if (el.type) {
-    const raw = String(el.type);
+    const raw = xmlStr(el.type);
     if (inCmdBar) {
       const cmdBarMap: Record<string, string> = {
         usual: 'CommandBarButton', UsualButton: 'CommandBarButton',
@@ -918,10 +926,10 @@ function emitButton(lines: string[], el: Record<string, unknown>, name: string, 
   }
 
   if (el.command) {
-    lines.push(`${inner}<CommandName>Form.Command.${escapeXml(String(el.command))}</CommandName>`);
+    lines.push(`${inner}<CommandName>Form.Command.${escapeXml(xmlStr(el.command))}</CommandName>`);
   }
   if (el.stdCommand) {
-    const sc = String(el.stdCommand);
+    const sc = xmlStr(el.stdCommand);
     const m = /^(.+)\.(.+)$/.exec(sc);
     if (m) {
       lines.push(`${inner}<CommandName>Form.Item.${escapeXml(m[1])}.StandardCommand.${escapeXml(m[2])}</CommandName>`);
@@ -929,37 +937,37 @@ function emitButton(lines: string[], el: Record<string, unknown>, name: string, 
       lines.push(`${inner}<CommandName>Form.StandardCommand.${escapeXml(sc)}</CommandName>`);
     }
   }
-  emitTitle(lines, el, name, inner, !(el.command || el.stdCommand));
+  emitTitle(lines, el, name, inner, !(el.command ?? el.stdCommand));
   emitCommonFlags(lines, el, inner);
-  if (el.defaultButton === true) lines.push(`${inner}<DefaultButton>true</DefaultButton>`);
+  if (el.defaultButton === true) {lines.push(`${inner}<DefaultButton>true</DefaultButton>`);}
   if (el.picture) {
     lines.push(`${inner}<Picture>`);
-    lines.push(`${inner}\t<xr:Ref>${escapeXml(String(el.picture))}</xr:Ref>`);
+    lines.push(`${inner}\t<xr:Ref>${escapeXml(xmlStr(el.picture))}</xr:Ref>`);
     lines.push(`${inner}\t<xr:LoadTransparent>true</xr:LoadTransparent>`);
     lines.push(`${inner}</Picture>`);
   }
-  if (el.representation) lines.push(`${inner}<Representation>${escapeXml(String(el.representation))}</Representation>`);
-  if (el.locationInCommandBar) lines.push(`${inner}<LocationInCommandBar>${escapeXml(String(el.locationInCommandBar))}</LocationInCommandBar>`);
+  if (el.representation) {lines.push(`${inner}<Representation>${escapeXml(xmlStr(el.representation))}</Representation>`);}
+  if (el.locationInCommandBar) {lines.push(`${inner}<LocationInCommandBar>${escapeXml(xmlStr(el.locationInCommandBar))}</LocationInCommandBar>`);}
   emitCompanion(lines, 'ExtendedTooltip', `${name}РасширеннаяПодсказка`, inner, id);
   emitEvents(lines, el, name, inner, 'button');
   lines.push(`${indent}</Button>`);
 }
 
 function emitPictureDecoration(lines: string[], el: Record<string, unknown>, name: string, eid: number, indent: string, id: IdAllocator): void {
-  lines.push(`${indent}<PictureDecoration name="${escapeXml(name)}" id="${eid}">`);
+  lines.push(`${indent}<PictureDecoration name="${escapeXml(name)}" id="${String(eid)}">`);
   const inner = `${indent}\t`;
   emitTitle(lines, el, name, inner);
   emitCommonFlags(lines, el, inner);
   if (el.picture || el.src) {
-    const ref = String(el.src ?? el.picture);
+    const ref = xmlStr(el.src ?? el.picture);
     lines.push(`${inner}<Picture>`);
     lines.push(`${inner}\t<xr:Ref>${escapeXml(ref)}</xr:Ref>`);
     lines.push(`${inner}\t<xr:LoadTransparent>true</xr:LoadTransparent>`);
     lines.push(`${inner}</Picture>`);
   }
-  if (el.hyperlink === true) lines.push(`${inner}<Hyperlink>true</Hyperlink>`);
-  if (el.width) lines.push(`${inner}<Width>${escapeXml(String(el.width))}</Width>`);
-  if (el.height) lines.push(`${inner}<Height>${escapeXml(String(el.height))}</Height>`);
+  if (el.hyperlink === true) {lines.push(`${inner}<Hyperlink>true</Hyperlink>`);}
+  if (el.width) {lines.push(`${inner}<Width>${escapeXml(xmlStr(el.width))}</Width>`);}
+  if (el.height) {lines.push(`${inner}<Height>${escapeXml(xmlStr(el.height))}</Height>`);}
   emitCompanion(lines, 'ContextMenu', `${name}КонтекстноеМеню`, inner, id);
   emitCompanion(lines, 'ExtendedTooltip', `${name}РасширеннаяПодсказка`, inner, id);
   emitEvents(lines, el, name, inner, 'picture');
@@ -967,15 +975,15 @@ function emitPictureDecoration(lines: string[], el: Record<string, unknown>, nam
 }
 
 function emitPictureField(lines: string[], el: Record<string, unknown>, name: string, eid: number, indent: string, id: IdAllocator): void {
-  lines.push(`${indent}<PictureField name="${escapeXml(name)}" id="${eid}">`);
+  lines.push(`${indent}<PictureField name="${escapeXml(name)}" id="${String(eid)}">`);
   const inner = `${indent}\t`;
   if (el.path) {
-    lines.push(`${inner}<DataPath>${escapeXml(String(el.path))}</DataPath>`);
+    lines.push(`${inner}<DataPath>${escapeXml(xmlStr(el.path))}</DataPath>`);
   }
   emitTitle(lines, el, name, inner);
   emitCommonFlags(lines, el, inner);
-  if (el.width) lines.push(`${inner}<Width>${escapeXml(String(el.width))}</Width>`);
-  if (el.height) lines.push(`${inner}<Height>${escapeXml(String(el.height))}</Height>`);
+  if (el.width) {lines.push(`${inner}<Width>${escapeXml(xmlStr(el.width))}</Width>`);}
+  if (el.height) {lines.push(`${inner}<Height>${escapeXml(xmlStr(el.height))}</Height>`);}
   emitCompanion(lines, 'ContextMenu', `${name}КонтекстноеМеню`, inner, id);
   emitCompanion(lines, 'ExtendedTooltip', `${name}РасширеннаяПодсказка`, inner, id);
   emitEvents(lines, el, name, inner, 'picField');
@@ -983,10 +991,10 @@ function emitPictureField(lines: string[], el: Record<string, unknown>, name: st
 }
 
 function emitCalendar(lines: string[], el: Record<string, unknown>, name: string, eid: number, indent: string, id: IdAllocator): void {
-  lines.push(`${indent}<CalendarField name="${escapeXml(name)}" id="${eid}">`);
+  lines.push(`${indent}<CalendarField name="${escapeXml(name)}" id="${String(eid)}">`);
   const inner = `${indent}\t`;
   if (el.path) {
-    lines.push(`${inner}<DataPath>${escapeXml(String(el.path))}</DataPath>`);
+    lines.push(`${inner}<DataPath>${escapeXml(xmlStr(el.path))}</DataPath>`);
   }
   emitTitle(lines, el, name, inner, !el.path);
   emitCommonFlags(lines, el, inner);
@@ -997,9 +1005,9 @@ function emitCalendar(lines: string[], el: Record<string, unknown>, name: string
 }
 
 function emitCommandBar(lines: string[], el: Record<string, unknown>, name: string, eid: number, indent: string, id: IdAllocator): void {
-  lines.push(`${indent}<CommandBar name="${escapeXml(name)}" id="${eid}">`);
+  lines.push(`${indent}<CommandBar name="${escapeXml(name)}" id="${String(eid)}">`);
   const inner = `${indent}\t`;
-  if (el.autofill === true) lines.push(`${inner}<Autofill>true</Autofill>`);
+  if (el.autofill === true) {lines.push(`${inner}<Autofill>true</Autofill>`);}
   emitCommonFlags(lines, el, inner);
   if (Array.isArray(el.children) && el.children.length > 0) {
     lines.push(`${inner}<ChildItems>`);
@@ -1012,17 +1020,17 @@ function emitCommandBar(lines: string[], el: Record<string, unknown>, name: stri
 }
 
 function emitPopup(lines: string[], el: Record<string, unknown>, name: string, eid: number, indent: string, id: IdAllocator): void {
-  lines.push(`${indent}<Popup name="${escapeXml(name)}" id="${eid}">`);
+  lines.push(`${indent}<Popup name="${escapeXml(name)}" id="${String(eid)}">`);
   const inner = `${indent}\t`;
   emitTitle(lines, el, name, inner, true);
   emitCommonFlags(lines, el, inner);
   if (el.picture) {
     lines.push(`${inner}<Picture>`);
-    lines.push(`${inner}\t<xr:Ref>${escapeXml(String(el.picture))}</xr:Ref>`);
+    lines.push(`${inner}\t<xr:Ref>${escapeXml(xmlStr(el.picture))}</xr:Ref>`);
     lines.push(`${inner}\t<xr:LoadTransparent>true</xr:LoadTransparent>`);
     lines.push(`${inner}</Picture>`);
   }
-  if (el.representation) lines.push(`${inner}<Representation>${escapeXml(String(el.representation))}</Representation>`);
+  if (el.representation) {lines.push(`${inner}<Representation>${escapeXml(xmlStr(el.representation))}</Representation>`);}
   if (Array.isArray(el.children) && el.children.length > 0) {
     lines.push(`${inner}<ChildItems>`);
     for (const child of el.children) {
@@ -1053,37 +1061,42 @@ function emitCommonFlags(lines: string[], el: Record<string, unknown>, indent: s
 }
 
 function emitTitle(lines: string[], el: Record<string, unknown>, name: string, indent: string, auto = false): void {
-  let title = el.title;
+  let title: unknown = el.title;
   if (!title && auto && name) {
     title = titleFromName(name);
   }
   if (title) {
-    lines.push(...buildLocalizedTag(indent, 'Title', String(title)).split('\n'));
+    lines.push(...buildLocalizedTag(indent, 'Title', xmlStr(title)).split('\n'));
   }
 }
 
 function emitCompanion(lines: string[], tag: string, name: string, indent: string, id: IdAllocator): void {
-  lines.push(`${indent}<${tag} name="${escapeXml(name)}" id="${id.nextElement()}"/>`);
+  lines.push(`${indent}<${tag} name="${escapeXml(name)}" id="${String(id.nextElement())}"/>`);
 }
 
 function emitEvents(lines: string[], el: Record<string, unknown>, elementName: string, indent: string, typeKey: string): void {
   if (!Array.isArray(el.on) || el.on.length === 0) {
     return;
   }
-  const allowed = KNOWN_EVENTS[typeKey];
-  if (allowed && allowed.length > 0) {
-    for (const evt of el.on) {
-      if (!allowed.includes(String(evt))) {
-        warn(`[WARN] Unknown event '${evt}' for ${typeKey} '${elementName}'. Known: ${allowed.join(', ')}`);
+  const onList = el.on as unknown[];
+  if (typeKey in KNOWN_EVENTS) {
+    const allowed = KNOWN_EVENTS[typeKey];
+    if (allowed.length > 0) {
+      for (const evt of onList) {
+        const evtName = xmlStr(evt);
+        if (!allowed.includes(evtName)) {
+          warn(`[WARN] Unknown event '${evtName}' for ${typeKey} '${elementName}'. Known: ${allowed.join(', ')}`);
+        }
       }
     }
   }
   lines.push(`${indent}<Events>`);
   const handlers = isPlainObject(el.handlers) ? el.handlers : null;
-  for (const evt of el.on) {
-    const evtName = String(evt);
-    const handler = handlers && typeof handlers[evtName] === 'string' && handlers[evtName]
-      ? String(handlers[evtName])
+  for (const evt of onList) {
+    const evtName = xmlStr(evt);
+    const handlerVal = handlers ? handlers[evtName] : undefined;
+    const handler = typeof handlerVal === 'string' && handlerVal
+      ? handlerVal
       : getHandlerName(elementName, evtName);
     lines.push(`${indent}\t<Event name="${escapeXml(evtName)}">${escapeXml(handler)}</Event>`);
   }
@@ -1096,11 +1109,11 @@ function getHandlerName(elementName: string, eventName: string): string {
 }
 
 function titleFromName(name: string): string {
-  if (!name) return '';
+  if (!name) {return '';}
   let s = name.replace(/([А-ЯA-Z])([А-ЯA-Z][а-яa-z])/g, '$1 $2');
   s = s.replace(/([а-яa-z0-9])([А-ЯA-Z])/g, '$1 $2');
   const parts = s.split(' ');
-  if (parts.length === 0) return s;
+  if (parts.length === 0) {return s;}
   const out = [parts[0]];
   for (const p of parts.slice(1)) {
     out.push(p.length > 1 && p === p.toUpperCase() ? p : p.toLowerCase());
@@ -1109,12 +1122,13 @@ function titleFromName(name: string): string {
 }
 
 function normalizeRadioButtonType(raw: unknown): string {
-  if (!raw) return 'Auto';
-  const s = String(raw).trim().toLowerCase();
-  if (s === 'auto' || s === 'авто') return 'Auto';
-  if (['radiobutton', 'radiobuttons', 'переключатель', 'радио'].includes(s)) return 'RadioButtons';
-  if (['tumbler', 'тумблер'].includes(s)) return 'Tumbler';
-  return String(raw).trim();
+  if (!raw) {return 'Auto';}
+  const rawStr = xmlStr(raw);
+  const s = rawStr.trim().toLowerCase();
+  if (s === 'auto' || s === 'авто') {return 'Auto';}
+  if (['radiobutton', 'radiobuttons', 'переключатель', 'радио'].includes(s)) {return 'RadioButtons';}
+  if (['tumbler', 'тумблер'].includes(s)) {return 'Tumbler';}
+  return rawStr.trim();
 }
 
 interface ChoiceValueShape { xsiType: string; text: string }
@@ -1126,8 +1140,8 @@ function normalizeChoiceValue(value: unknown): ChoiceValueShape {
   if (typeof value === 'number') {
     return { xsiType: 'xs:decimal', text: String(value) };
   }
-  const s = value == null ? '' : String(value);
-  if (!s) return { xsiType: 'xs:string', text: '' };
+  const s = value === null || value === undefined ? '' : xmlStr(value);
+  if (!s) {return { xsiType: 'xs:string', text: '' };}
   const parts = s.split('.');
   if (parts.length >= 2) {
     const root = parts[0];
@@ -1162,7 +1176,7 @@ function normalizeChoiceValue(value: unknown): ChoiceValueShape {
 }
 
 function emitChoicePresentation(lines: string[], pres: unknown, indent: string): void {
-  if (pres == null || pres === '') {
+  if (pres === null || pres === undefined || pres === '') {
     lines.push(`${indent}<Presentation/>`);
     return;
   }
@@ -1170,9 +1184,9 @@ function emitChoicePresentation(lines: string[], pres: unknown, indent: string):
   if (typeof pres === 'string') {
     pairs = [['ru', pres]];
   } else if (isPlainObject(pres)) {
-    pairs = Object.entries(pres).map(([k, v]) => [String(k), String(v)]);
+    pairs = Object.entries(pres).map(([k, v]) => [k, xmlStr(v)]);
   } else {
-    pairs = [['ru', String(pres)]];
+    pairs = [['ru', xmlStr(pres)]];
   }
   lines.push(`${indent}<Presentation>`);
   for (const [lang, content] of pairs) {
@@ -1187,7 +1201,7 @@ function emitChoicePresentation(lines: string[], pres: unknown, indent: string):
 // ─── Type emitters ──────────────────────────────────────────────────────────
 
 function resolveTypeStr(typeStr: string): string {
-  if (!typeStr) return typeStr;
+  if (!typeStr) {return typeStr;}
   if (typeStr.startsWith('cfg:')) {
     typeStr = typeStr.slice(4);
   }
@@ -1205,8 +1219,8 @@ function resolveTypeStr(typeStr: string): string {
     const r = FORM_TYPE_SYNONYMS[prefix.toLowerCase()];
     return r ? `${r}${suffix}` : typeStr;
   }
-  const r = FORM_TYPE_SYNONYMS[typeStr.toLowerCase()];
-  return r ?? typeStr;
+  const key = typeStr.toLowerCase();
+  return key in FORM_TYPE_SYNONYMS ? FORM_TYPE_SYNONYMS[key] : typeStr;
 }
 
 function emitSingleType(lines: string[], rawType: string, indent: string): void {
@@ -1217,7 +1231,9 @@ function emitSingleType(lines: string[], rawType: string, indent: string): void 
   }
   const mString = /^string(\((\d+)\))?$/.exec(typeStr);
   if (mString) {
-    const length = mString[2] ?? '0';
+    // Группа 2 формально типизирована как `string`, но фактически может быть
+    // undefined при отсутствии скобок — берём явным присвоением для совместимости.
+    const length: string = mString[2] || '0';
     lines.push(`${indent}<v8:Type>xs:string</v8:Type>`);
     lines.push(`${indent}<v8:StringQualifiers>`);
     lines.push(`${indent}\t<v8:Length>${length}</v8:Length>`);
@@ -1284,7 +1300,7 @@ function emitType(lines: string[], typeStr: string, indent: string): void {
     lines.push(`${indent}<Type/>`);
     return;
   }
-  const parts = String(typeStr).split(/[|+]/).map((s) => s.trim()).filter(Boolean);
+  const parts = typeStr.split(/[|+]/).map((s) => s.trim()).filter(Boolean);
   lines.push(`${indent}<Type>`);
   for (const part of parts) {
     emitSingleType(lines, part, `${indent}\t`);
@@ -1295,22 +1311,22 @@ function emitType(lines: string[], typeStr: string, indent: string): void {
 // ─── Attributes / Parameters / Commands / Properties ────────────────────────
 
 function emitAttributes(lines: string[], attrs: readonly FormAttributeDefinition[] | undefined, indent: string, id: IdAllocator): void {
-  if (!attrs || attrs.length === 0) return;
+  if (!attrs || attrs.length === 0) {return;}
   lines.push(`${indent}<Attributes>`);
   for (const attr of attrs) {
     validateName(attr.name, 'Имя реквизита формы');
     const attrId = id.nextAttribute();
-    lines.push(`${indent}\t<Attribute name="${escapeXml(attr.name)}" id="${attrId}">`);
+    lines.push(`${indent}\t<Attribute name="${escapeXml(attr.name)}" id="${String(attrId)}">`);
     const inner = `${indent}\t\t`;
     let attrTitle = (attr as { title?: string }).title;
     if (!attrTitle && attr.main !== true) {
       attrTitle = titleFromName(attr.name);
     }
     if (attrTitle) {
-      lines.push(...buildLocalizedTag(inner, 'Title', String(attrTitle)).split('\n'));
+      lines.push(...buildLocalizedTag(inner, 'Title', attrTitle).split('\n'));
     }
     if (attr.type) {
-      emitType(lines, String(attr.type), inner);
+      emitType(lines, attr.type, inner);
     } else {
       lines.push(`${inner}<Type/>`);
     }
@@ -1319,7 +1335,7 @@ function emitAttributes(lines: string[], attrs: readonly FormAttributeDefinition
     }
     let mainSaved = false;
     if (attr.main === true && attr.type) {
-      const t = String(attr.type);
+      const t = attr.type;
       mainSaved = /^(CatalogObject|DocumentObject|ChartOfAccountsObject|ChartOfCalculationTypesObject|ChartOfCharacteristicTypesObject|ExchangePlanObject|BusinessProcessObject|TaskObject)\./.test(t) || t.includes('RecordManager.');
     }
     if (attr.savedData === true || mainSaved) {
@@ -1327,28 +1343,28 @@ function emitAttributes(lines: string[], attrs: readonly FormAttributeDefinition
     }
     const fillChecking = (attr as { fillChecking?: string }).fillChecking;
     if (fillChecking) {
-      lines.push(`${inner}<FillChecking>${escapeXml(String(fillChecking))}</FillChecking>`);
+      lines.push(`${inner}<FillChecking>${escapeXml(fillChecking)}</FillChecking>`);
     }
     if (attr.columns && attr.columns.length > 0) {
       lines.push(`${inner}<Columns>`);
       for (const col of attr.columns) {
         const colId = id.nextAttribute();
-        lines.push(`${inner}\t<Column name="${escapeXml(col.name)}" id="${colId}">`);
+        lines.push(`${inner}\t<Column name="${escapeXml(col.name)}" id="${String(colId)}">`);
         const colTitle = (col as { title?: string }).title;
         if (colTitle) {
-          lines.push(...buildLocalizedTag(`${inner}\t\t`, 'Title', String(colTitle)).split('\n'));
+          lines.push(...buildLocalizedTag(`${inner}\t\t`, 'Title', colTitle).split('\n'));
         }
-        emitType(lines, String(col.type ?? ''), `${inner}\t\t`);
+        emitType(lines, col.type ?? '', `${inner}\t\t`);
         lines.push(`${inner}\t</Column>`);
       }
       lines.push(`${inner}</Columns>`);
     }
     if (attr.settings) {
-      const s = attr.settings as Record<string, unknown>;
+      const s = attr.settings;
       lines.push(`${inner}<Settings xsi:type="DynamicList">`);
       const si = `${inner}\t`;
       if (s.mainTable) {
-        lines.push(`${si}<MainTable>${escapeXml(String(s.mainTable))}</MainTable>`);
+        lines.push(`${si}<MainTable>${escapeXml(xmlStr(s.mainTable))}</MainTable>`);
       }
       const mq = s.manualQuery ? 'true' : 'false';
       lines.push(`${si}<ManualQuery>${mq}</ManualQuery>`);
@@ -1362,12 +1378,12 @@ function emitAttributes(lines: string[], attrs: readonly FormAttributeDefinition
 }
 
 function emitParameters(lines: string[], params: readonly Record<string, unknown>[] | undefined, indent: string): void {
-  if (!params || params.length === 0) return;
+  if (!params || params.length === 0) {return;}
   lines.push(`${indent}<Parameters>`);
   for (const param of params) {
-    lines.push(`${indent}\t<Parameter name="${escapeXml(String(param.name))}">`);
+    lines.push(`${indent}\t<Parameter name="${escapeXml(xmlStr(param.name))}">`);
     const inner = `${indent}\t\t`;
-    emitType(lines, String(param.type ?? ''), inner);
+    emitType(lines, xmlStr(param.type), inner);
     if (param.key === true) {
       lines.push(`${inner}<KeyParameter>true</KeyParameter>`);
     }
@@ -1377,16 +1393,16 @@ function emitParameters(lines: string[], params: readonly Record<string, unknown
 }
 
 function emitCommands(lines: string[], cmds: readonly FormCommandDefinition[] | undefined, indent: string, id: IdAllocator): void {
-  if (!cmds || cmds.length === 0) return;
+  if (!cmds || cmds.length === 0) {return;}
   lines.push(`${indent}<Commands>`);
   for (const cmd of cmds) {
     validateName(cmd.name, 'Имя команды формы');
     const cmdId = id.nextCommand();
-    lines.push(`${indent}\t<Command name="${escapeXml(cmd.name)}" id="${cmdId}">`);
+    lines.push(`${indent}\t<Command name="${escapeXml(cmd.name)}" id="${String(cmdId)}">`);
     const inner = `${indent}\t\t`;
     const cmdTitle = cmd.title ?? titleFromName(cmd.name);
     if (cmdTitle) {
-      lines.push(...buildLocalizedTag(inner, 'Title', String(cmdTitle)).split('\n'));
+      lines.push(...buildLocalizedTag(inner, 'Title', cmdTitle).split('\n'));
     }
     if (cmd.action) {
       lines.push(`${inner}<Action>${escapeXml(cmd.action)}</Action>`);
@@ -1402,7 +1418,7 @@ function emitCommands(lines: string[], cmds: readonly FormCommandDefinition[] | 
     }
     const representation = (cmd as { representation?: string }).representation;
     if (representation) {
-      lines.push(`${inner}<Representation>${escapeXml(String(representation))}</Representation>`);
+      lines.push(`${inner}<Representation>${escapeXml(representation)}</Representation>`);
     }
     lines.push(`${indent}\t</Command>`);
   }
@@ -1410,10 +1426,10 @@ function emitCommands(lines: string[], cmds: readonly FormCommandDefinition[] | 
 }
 
 function emitProperties(lines: string[], props: Record<string, unknown>, indent: string): void {
-  if (!props || Object.keys(props).length === 0) return;
+  if (Object.keys(props).length === 0) {return;}
   for (const [pName, pValue] of Object.entries(props)) {
-    const xmlName = PROP_MAP[pName] ?? `${pName.charAt(0).toUpperCase()}${pName.slice(1)}`;
-    const val = typeof pValue === 'boolean' ? (pValue ? 'true' : 'false') : String(pValue);
+    const xmlName = pName in PROP_MAP ? PROP_MAP[pName] : `${pName.charAt(0).toUpperCase()}${pName.slice(1)}`;
+    const val = typeof pValue === 'boolean' ? (pValue ? 'true' : 'false') : xmlStr(pValue);
     lines.push(`${indent}<${xmlName}>${escapeXml(val)}</${xmlName}>`);
   }
 }
@@ -1423,34 +1439,34 @@ function emitProperties(lines: string[], props: Record<string, unknown>, indent:
 export function buildAttributeXml(attr: FormAttributeDefinition, indent: string, id: number): string {
   const lines: string[] = [];
   validateName(attr.name, 'Имя реквизита формы');
-  lines.push(`${indent}<Attribute name="${escapeXml(attr.name)}" id="${id}">`);
+  lines.push(`${indent}<Attribute name="${escapeXml(attr.name)}" id="${String(id)}">`);
   const inner = `${indent}\t`;
   const attrTitle = (attr as { title?: string }).title;
   if (attrTitle) {
-    lines.push(...buildLocalizedTag(inner, 'Title', String(attrTitle)).split('\n'));
+    lines.push(...buildLocalizedTag(inner, 'Title', attrTitle).split('\n'));
   }
   if (attr.type) {
-    emitType(lines, String(attr.type), inner);
+    emitType(lines, attr.type, inner);
   } else {
     lines.push(`${inner}<Type/>`);
   }
-  if (attr.main === true) lines.push(`${inner}<MainAttribute>true</MainAttribute>`);
-  if (attr.savedData === true) lines.push(`${inner}<SavedData>true</SavedData>`);
+  if (attr.main === true) {lines.push(`${inner}<MainAttribute>true</MainAttribute>`);}
+  if (attr.savedData === true) {lines.push(`${inner}<SavedData>true</SavedData>`);}
   if (attr.columns?.length) {
     lines.push(`${inner}<Columns>`);
     let columnId = 1;
     for (const col of attr.columns) {
-      lines.push(`${inner}\t<Column name="${escapeXml(col.name)}" id="${columnId++}">`);
-      emitType(lines, String(col.type ?? ''), `${inner}\t\t`);
+      lines.push(`${inner}\t<Column name="${escapeXml(col.name)}" id="${String(columnId++)}">`);
+      emitType(lines, col.type ?? '', `${inner}\t\t`);
       lines.push(`${inner}\t</Column>`);
     }
     lines.push(`${inner}</Columns>`);
   }
   if (attr.settings) {
-    const s = attr.settings as Record<string, unknown>;
+    const s = attr.settings;
     lines.push(`${inner}<Settings xsi:type="DynamicList">`);
     if (s.mainTable) {
-      lines.push(`${inner}\t<MainTable>${escapeXml(String(s.mainTable))}</MainTable>`);
+      lines.push(`${inner}\t<MainTable>${escapeXml(xmlStr(s.mainTable))}</MainTable>`);
     }
     if (s.dynamicDataRead === true) {
       lines.push(`${inner}\t<DynamicDataRead>true</DynamicDataRead>`);
@@ -1464,7 +1480,7 @@ export function buildAttributeXml(attr: FormAttributeDefinition, indent: string,
 export function buildCommandXml(cmd: FormCommandDefinition, indent: string, id: number): string {
   const lines: string[] = [];
   validateName(cmd.name, 'Имя команды формы');
-  lines.push(`${indent}<Command name="${escapeXml(cmd.name)}" id="${id}">`);
+  lines.push(`${indent}<Command name="${escapeXml(cmd.name)}" id="${String(id)}">`);
   const inner = `${indent}\t`;
   if (cmd.title) {
     lines.push(...buildLocalizedTag(inner, 'Title', cmd.title).split('\n'));
@@ -1493,6 +1509,26 @@ export function buildElementXml(raw: FormElementDefinition, indent: string, id: 
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+}
+
+/**
+ * Унифицированное приведение значения DSL-элемента (тип `unknown`) к строке
+ * для XML. Нужно потому, что значения свойств элементов формы приходят из
+ * пользовательского JSON и формально имеют тип `unknown`; прямой `String(v)`
+ * на объекте даёт `"[object Object]"`. Здесь объекты/массивы сериализуются
+ * через `JSON.stringify`, а примитивы конвертируются как есть.
+ */
+function xmlStr(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return String(value);
+  }
+  return JSON.stringify(value);
 }
 
 // keep backward exports

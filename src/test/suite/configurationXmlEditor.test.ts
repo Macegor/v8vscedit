@@ -65,13 +65,13 @@ suite('configurationXmlEditor', () => {
     assert.strictEqual(added.success, true);
     assert.strictEqual(added.changed, true);
     const after = fs.readFileSync(configPath, 'utf-8');
-    assert.ok(!/\<DefaultRoles\s*\/\>/.test(after), 'остался self-closing блок');
+    assert.ok(!/<DefaultRoles\s*\/>/.test(after), 'остался self-closing блок');
     assert.ok(after.includes('<xr:Item xsi:type="xr:MDObjectRef">Role.БазовыеПрава</xr:Item>'));
 
     const cleared = editor.setDefaultRoles(configPath, []);
     assert.strictEqual(cleared.success, true);
     const empty = fs.readFileSync(configPath, 'utf-8');
-    assert.ok(/\<DefaultRoles\s*\/\>/.test(empty), 'после очистки блок должен схлопнуться');
+    assert.ok(/<DefaultRoles\s*\/>/.test(empty), 'после очистки блок должен схлопнуться');
   });
 
   test('modifyConfigurationProperty с multiEnum DefaultRoles переиспользует setDefaultRoles', () => {
@@ -98,7 +98,7 @@ suite('configurationXmlEditor', () => {
     const saved = fs.readFileSync(configPath, 'utf-8');
     assert.ok(saved.includes('<xr:Item xsi:type="xr:MDObjectRef">Role.Один</xr:Item>'));
     assert.ok(saved.includes('<xr:Item xsi:type="xr:MDObjectRef">Role.Два</xr:Item>'));
-    assert.ok(!/\<DefaultRoles\>Role\.Один,Role\.Два/.test(saved), 'не должно сериализоваться как scalar строка');
+    assert.ok(!saved.includes('<DefaultRoles>Role.Один,Role.Два'), 'не должно сериализоваться как scalar строка');
   });
 
   test('Добавляет и удаляет объект из ChildObjects', () => {

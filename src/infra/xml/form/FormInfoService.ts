@@ -67,8 +67,8 @@ export function collectElements(xml: string): FormElementInfo[] {
   let match: RegExpExecArray | null;
   while ((match = re.exec(xml)) !== null) {
     const tag = match[1];
-    if (SKIP_ELEMENT_TAGS.has(tag)) continue;
-    const attrs = match[2] ?? '';
+    if (SKIP_ELEMENT_TAGS.has(tag)) {continue;}
+    const attrs = match[2];
     const body = match[3] === '/' ? '' : sliceElementBody(xml, tag, match.index, re.lastIndex);
     result.push({
       tag,
@@ -93,12 +93,12 @@ function findMatchingClose(xml: string, tag: string, from: number): number {
   let pos = from;
   while (depth > 0 && pos < xml.length) {
     const nextClose = xml.indexOf(closeStr, pos);
-    if (nextClose < 0) return -1;
+    if (nextClose < 0) {return -1;}
     openRe.lastIndex = pos;
     let advanced = false;
-    while (true) {
+    for (;;) {
       const o = openRe.exec(xml);
-      if (!o || o.index >= nextClose) break;
+      if (!o || o.index >= nextClose) {break;}
       depth++;
       openRe.lastIndex = o.index + o[0].length;
       pos = openRe.lastIndex;
@@ -119,10 +119,10 @@ export function collectAttributes(xml: string): FormAttributeInfo[] {
   const re = /<Attribute\b([^>]*)>([\s\S]*?)<\/Attribute>/g;
   let match: RegExpExecArray | null;
   while ((match = re.exec(attrsBlock)) !== null) {
-    const body = match[2] ?? '';
+    const body = match[2];
     result.push({
-      name: attr(match[1] ?? '', 'name') ?? '',
-      id: attr(match[1] ?? '', 'id') ?? '',
+      name: attr(match[1], 'name') ?? '',
+      id: attr(match[1], 'id') ?? '',
       types: [...body.matchAll(/<v8:Type>([^<]+)<\/v8:Type>/g)].map((item) => item[1]),
       main: /<MainAttribute>\s*true\s*<\/MainAttribute>/.test(body),
     });
@@ -136,10 +136,10 @@ export function collectCommands(xml: string): FormCommandInfo[] {
   const re = /<Command\b([^>]*)>([\s\S]*?)<\/Command>/g;
   let match: RegExpExecArray | null;
   while ((match = re.exec(cmdsBlock)) !== null) {
-    const body = match[2] ?? '';
+    const body = match[2];
     result.push({
-      name: attr(match[1] ?? '', 'name') ?? '',
-      id: attr(match[1] ?? '', 'id') ?? '',
+      name: attr(match[1], 'name') ?? '',
+      id: attr(match[1], 'id') ?? '',
       actions: [...body.matchAll(/<Action(?:\s[^>]*)?>([^<]+)<\/Action>/g)].map((item) => item[1]),
     });
   }
@@ -148,13 +148,13 @@ export function collectCommands(xml: string): FormCommandInfo[] {
 
 function collectFormEvents(xml: string): string[] {
   const eventsBlock = extractFormLevelBlock(xml, 'Events');
-  if (!eventsBlock) return [];
+  if (!eventsBlock) {return [];}
   const result: string[] = [];
   for (const match of eventsBlock.matchAll(/<Event\b([^>]*)>([^<]*)<\/Event>/g)) {
     const name = attr(match[1], 'name') ?? '';
     const ct = attr(match[1], 'callType');
-    const handler = (match[2] ?? '').trim();
-    if (!name) continue;
+    const handler = match[2].trim();
+    if (!name) {continue;}
     result.push(`${name}${ct ? `[${ct}]` : ''} -> ${handler}`);
   }
   return result;
@@ -163,7 +163,7 @@ function collectFormEvents(xml: string): string[] {
 /** Достаёт блок верхнего уровня формы (т.е. <Events> прямо под <Form>, не внутри элементов). */
 function extractFormLevelBlock(xml: string, tagName: string): string | null {
   const formMatch = /<Form\b[^>]*>([\s\S]*)<\/Form>/.exec(xml);
-  if (!formMatch) return null;
+  if (!formMatch) {return null;}
   const inside = formMatch[1];
   // Простой подход: первый блок на «корневом» уровне ChildItems нам не нужен — Events на верхнем уровне
   // расположены перед/после AutoCommandBar; используем нежадный поиск, но проверяем что он не внутри ChildItems.
@@ -189,13 +189,13 @@ function extractBaseFormVersion(xml: string): string | undefined {
 // ─── Type rendering ─────────────────────────────────────────────────────────
 
 function formatType(typeBlock: string | null): string {
-  if (!typeBlock) return '';
+  if (!typeBlock) {return '';}
   const typeSetMatch = /<v8:TypeSet\b[^>]*>([^<]+)<\/v8:TypeSet>/.exec(typeBlock);
   if (typeSetMatch) {
     return typeSetMatch[1].replace(/^cfg:/, '');
   }
   const raws = [...typeBlock.matchAll(/<v8:Type>([^<]+)<\/v8:Type>/g)].map((m) => m[1]);
-  if (raws.length === 0) return '';
+  if (raws.length === 0) {return '';}
   return raws.map((raw) => renderSingleType(raw, typeBlock)).join(' | ');
 }
 
@@ -203,7 +203,7 @@ function renderSingleType(raw: string, typeBlock: string): string {
   if (raw === 'xs:string') {
     const lengthM = /<v8:StringQualifiers>[\s\S]*?<v8:Length>(\d+)<\/v8:Length>/.exec(typeBlock);
     const length = lengthM ? Number(lengthM[1]) : 0;
-    return length > 0 ? `string(${length})` : 'string';
+    return length > 0 ? `string(${String(length)})` : 'string';
   }
   if (raw === 'xs:decimal') {
     const nqM = /<v8:NumberQualifiers>([\s\S]*?)<\/v8:NumberQualifiers>/.exec(typeBlock);
@@ -214,15 +214,15 @@ function renderSingleType(raw: string, typeBlock: string): string {
     }
     return 'decimal';
   }
-  if (raw === 'xs:boolean') return 'boolean';
+  if (raw === 'xs:boolean') {return 'boolean';}
   if (raw === 'xs:dateTime') {
     const dM = /<v8:DateQualifiers>[\s\S]*?<v8:DateFractions>([^<]+)<\/v8:DateFractions>/.exec(typeBlock);
     const frac = dM?.[1] ?? '';
-    if (frac === 'Date') return 'date';
-    if (frac === 'Time') return 'time';
+    if (frac === 'Date') {return 'date';}
+    if (frac === 'Time') {return 'time';}
     return 'dateTime';
   }
-  if (raw === 'xs:binary') return 'binary';
+  if (raw === 'xs:binary') {return 'binary';}
   if (raw.startsWith('cfg:') || /^d\d+p\d+:/.test(raw)) {
     return raw.replace(/^(?:cfg|d\d+p\d+):/, '');
   }
@@ -234,7 +234,7 @@ function renderSingleType(raw: string, typeBlock: string): string {
     'v8ui:FormattedString': 'FormattedString', 'v8ui:Picture': 'Picture',
     'v8ui:Color': 'Color', 'v8ui:Font': 'Font',
   };
-  if (raw in v8Map) return v8Map[raw];
+  if (raw in v8Map) {return v8Map[raw];}
   if (raw.startsWith('dcsset:') || raw.startsWith('dcssch:') || raw.startsWith('dcscor:')) {
     return raw.replace(/^dcs(?:set|sch|cor):/, 'DCS.');
   }
@@ -352,7 +352,7 @@ function buildInfoReport(
 }
 
 function looksLikeAutoPath(s: string): boolean {
-  return /[\/\\]/.test(s) || s.toLowerCase().endsWith('.xml');
+  return /[/\\]/.test(s) || s.toLowerCase().endsWith('.xml');
 }
 
 function resolveFormContext(formPath: string): { formName: string; objectContext: string } {
@@ -397,7 +397,7 @@ function collectFormProperties(xml: string): string[] {
 function extractRootAutoCommandBar(xml: string): string | null {
   // Главный AutoCommandBar — на верхнем уровне Form, не вложен в <Table>
   const formMatch = /<Form\b[^>]*>([\s\S]*)<\/Form>/.exec(xml);
-  if (!formMatch) return null;
+  if (!formMatch) {return null;}
   const inside = formMatch[1];
   const re = /<AutoCommandBar\b[^>]*>([\s\S]*?)<\/AutoCommandBar>|<AutoCommandBar\b[^/>]*\/>/g;
   let m: RegExpExecArray | null;
@@ -405,10 +405,10 @@ function extractRootAutoCommandBar(xml: string): string | null {
     const before = inside.slice(0, m.index);
     const openCount = (before.match(/<ChildItems>/g) ?? []).length;
     const closeCount = (before.match(/<\/ChildItems>/g) ?? []).length;
-    if (openCount !== closeCount) continue;
+    if (openCount !== closeCount) {continue;}
     const tableOpens = (before.match(/<Table\b/g) ?? []).length;
     const tableCloses = (before.match(/<\/Table>/g) ?? []).length;
-    if (tableOpens !== tableCloses) continue;
+    if (tableOpens !== tableCloses) {continue;}
     return m[0];
   }
   return null;
@@ -416,7 +416,7 @@ function extractRootAutoCommandBar(xml: string): string | null {
 
 function extractRootChildItems(xml: string): string | null {
   const formMatch = /<Form\b[^>]*>([\s\S]*)<\/Form>/.exec(xml);
-  if (!formMatch) return null;
+  if (!formMatch) {return null;}
   const inside = formMatch[1];
   // Найти <ChildItems> верхнего уровня формы (не внутри AutoCommandBar, Table, и т.п.)
   // Это первый <ChildItems> такой, что число открывающих non-self-closing тегов до него
@@ -443,8 +443,8 @@ function atFormRootDepth(before: string): boolean {
     const isClose = m[1] === '/';
     const attrs = m[3];
     const selfClosing = !isClose && attrs.endsWith('/');
-    if (isClose) depth--;
-    else if (!selfClosing) depth++;
+    if (isClose) {depth--;}
+    else if (!selfClosing) {depth++;}
   }
   return depth === 0;
 }
@@ -455,13 +455,13 @@ function findContainerClose(haystack: string, openTag: string, closeTag: string,
   while (depth > 0 && pos < haystack.length) {
     const nextOpen = haystack.indexOf(openTag, pos);
     const nextClose = haystack.indexOf(closeTag, pos);
-    if (nextClose < 0) return -1;
+    if (nextClose < 0) {return -1;}
     if (nextOpen >= 0 && nextOpen < nextClose) {
       depth++;
       pos = nextOpen + openTag.length;
     } else {
       depth--;
-      if (depth === 0) return nextClose;
+      if (depth === 0) {return nextClose;}
       pos = nextClose + closeTag.length;
     }
   }
@@ -470,7 +470,7 @@ function findContainerClose(haystack: string, openTag: string, closeTag: string,
 
 function formatMainAutoCommandBar(acbBlock: string): string[] {
   const autofillM = /<Autofill>([^<]+)<\/Autofill>/.exec(acbBlock);
-  const autofill = !(autofillM && autofillM[1].trim() === 'false');
+  const autofill = !(autofillM?.[1].trim() === 'false');
   const halignM = /<HorizontalAlign>([^<]+)<\/HorizontalAlign>/.exec(acbBlock);
   const flags: string[] = [autofill ? 'autofill' : 'no-autofill'];
   if (halignM) {
@@ -528,7 +528,7 @@ function parseSignificantChildren(containerInner: string): TreeNode[] {
   let pos = 0;
   while (pos < containerInner.length) {
     const m = /<([A-Za-z]+)\b([^>]*?)(\/?)>/.exec(containerInner.slice(pos));
-    if (!m) break;
+    if (!m) {break;}
     const tag = m[1];
     const startAbs = pos + m.index;
     const openEnd = startAbs + m[0].length;
@@ -540,7 +540,7 @@ function parseSignificantChildren(containerInner: string): TreeNode[] {
       continue;
     }
     const closeAt = findMatchingClose(containerInner, tag, openEnd);
-    if (closeAt < 0) break;
+    if (closeAt < 0) {break;}
     if (!SKIP_ELEMENT_TAGS.has(tag)) {
       result.push({
         tag, name: attr(m[2], 'name') ?? '',
@@ -573,19 +573,19 @@ function buildTree(containerInner: string, prefix: string, lines: string[], expa
       const ciInner = extractChildItemsBody(child.body);
       const pageTitle = titleDiffers(child.body, child.name);
       const shouldExpand = expand === '*' || expand === child.name || (pageTitle && expand === pageTitle);
-      if (shouldExpand && ciInner != null) {
+      if (shouldExpand && ciInner !== null) {
         lines.push(line);
         buildTree(ciInner, prefix + continuation, lines, expand, state);
       } else {
         const cnt = ciInner ? parseSignificantChildren(ciInner).length : 0;
-        line += ` (${cnt} items)`;
+        line += ` (${String(cnt)} items)`;
         state.hasCollapsed = true;
         lines.push(line);
       }
     } else if (CONTAINER_TAGS.has(child.tag)) {
       lines.push(line);
       const ciInner = extractChildItemsBody(child.body);
-      if (ciInner != null) {
+      if (ciInner !== null) {
         buildTree(ciInner, prefix + continuation, lines, expand, state);
       }
     } else {
@@ -596,13 +596,13 @@ function buildTree(containerInner: string, prefix: string, lines: string[], expa
 
 function extractChildItemsBody(body: string): string | null {
   const openIdx = body.indexOf('<ChildItems>');
-  if (openIdx < 0) return null;
+  if (openIdx < 0) {return null;}
   let depth = 1;
   let pos = openIdx + '<ChildItems>'.length;
   while (depth > 0 && pos < body.length) {
     const nextOpen = body.indexOf('<ChildItems>', pos);
     const nextClose = body.indexOf('</ChildItems>', pos);
-    if (nextClose < 0) return null;
+    if (nextClose < 0) {return null;}
     if (nextOpen >= 0 && nextOpen < nextClose) {
       depth++;
       pos = nextOpen + '<ChildItems>'.length;
@@ -625,7 +625,7 @@ function getElementTagDetailed(node: TreeNode): string {
       const map: Record<string, string> = { Vertical: ':V', Horizontal: ':H', AlwaysHorizontal: ':AH', AlwaysVertical: ':AV' };
       orient = map[groupM[1].trim()] ?? '';
     }
-    const collapse = /<Behavior>Collapsible<\/Behavior>/.test(node.body) ? ',collapse' : '';
+    const collapse = node.body.includes('<Behavior>Collapsible</Behavior>') ? ',collapse' : '';
     return `[Group${orient}${collapse}]`;
   }
   return elementTagAbbrev(node.tag);
@@ -633,20 +633,20 @@ function getElementTagDetailed(node: TreeNode): string {
 
 function getElementFlags(body: string): string {
   const flags: string[] = [];
-  if (/<Visible>\s*false\s*<\/Visible>/.test(body)) flags.push('visible:false');
-  if (/<Enabled>\s*false\s*<\/Enabled>/.test(body)) flags.push('enabled:false');
-  if (/<ReadOnly>\s*true\s*<\/ReadOnly>/.test(body)) flags.push('ro');
+  if (/<Visible>\s*false\s*<\/Visible>/.test(body)) {flags.push('visible:false');}
+  if (/<Enabled>\s*false\s*<\/Enabled>/.test(body)) {flags.push('enabled:false');}
+  if (/<ReadOnly>\s*true\s*<\/ReadOnly>/.test(body)) {flags.push('ro');}
   return flags.length ? ` [${flags.join(',')}]` : '';
 }
 
 function getEventsCompact(body: string): string {
   const eventsM = /<Events>([\s\S]*?)<\/Events>/.exec(body);
-  if (!eventsM) return '';
+  if (!eventsM) {return '';}
   const evts: string[] = [];
   for (const m of eventsM[1].matchAll(/<Event\b([^>]*)>/g)) {
     const name = attr(m[1], 'name') ?? '';
     const ct = attr(m[1], 'callType');
-    if (!name) continue;
+    if (!name) {continue;}
     evts.push(ct ? `${name}[${ct}]` : name);
   }
   return evts.length ? ` {${evts.join(', ')}}` : '';
@@ -654,14 +654,14 @@ function getEventsCompact(body: string): string {
 
 function getBindingString(body: string): string {
   const dp = /<DataPath>([^<]+)<\/DataPath>/.exec(body);
-  if (dp) return ` -> ${dp[1]}`;
+  if (dp) {return ` -> ${dp[1]}`;}
   const cn = /<CommandName>([^<]+)<\/CommandName>/.exec(body);
   if (cn) {
     const v = cn[1];
     const std = /^Form\.StandardCommand\.(.+)$/.exec(v);
-    if (std) return ` -> ${std[1]} [std]`;
+    if (std) {return ` -> ${std[1]} [std]`;}
     const fc = /^Form\.Command\.(.+)$/.exec(v);
-    if (fc) return ` -> ${fc[1]} [cmd]`;
+    if (fc) {return ` -> ${fc[1]} [cmd]`;}
     return ` -> ${v}`;
   }
   return '';
@@ -669,16 +669,16 @@ function getBindingString(body: string): string {
 
 function titleDiffers(body: string, name: string): string | null {
   const titleBlockM = /<Title\b[^>]*>([\s\S]*?)<\/Title>/.exec(body);
-  if (!titleBlockM) return null;
+  if (!titleBlockM) {return null;}
   const titleText = extractLocalizedContent(titleBlockM[1]) ?? titleBlockM[1].trim();
-  if (!titleText) return null;
+  if (!titleText) {return null;}
   const normT = titleText.replace(/\s+/g, '').toLowerCase();
   const normN = name.toLowerCase();
   return normT === normN ? null : titleText;
 }
 
 function formatAttributes(xml: string, attributes: readonly FormAttributeInfo[]): string[] {
-  if (attributes.length === 0) return [];
+  if (attributes.length === 0) {return [];}
   const block = extractBlock(xml, 'Attributes') ?? '';
   const lines: string[] = [];
   for (const attrInfo of attributes) {
@@ -691,7 +691,7 @@ function formatAttributes(xml: string, attributes: readonly FormAttributeInfo[])
     let dynTable = '';
     if (typeStr === 'DynamicList') {
       const mt = /<MainTable>([^<]+)<\/MainTable>/.exec(body)?.[1];
-      if (mt) dynTable = ` -> ${mt}`;
+      if (mt) {dynTable = ` -> ${mt}`;}
     }
     let colStr = '';
     const columnsM = /<Columns>([\s\S]*?)<\/Columns>/.exec(body);
@@ -703,7 +703,7 @@ function formatAttributes(xml: string, attributes: readonly FormAttributeInfo[])
         const cType = formatType(cTypeBlock ? cTypeBlock[0] : null);
         cols.push(cType ? `${cName}: ${cType}` : cName);
       }
-      if (cols.length) colStr = ` [${cols.join(', ')}]`;
+      if (cols.length) {colStr = ` [${cols.join(', ')}]`;}
     }
     if (typeStr || colStr || dynTable) {
       lines.push(`  ${prefixChar}${attrInfo.name}: ${typeStr}${colStr}${dynTable}${mainSuffix}`);
@@ -716,7 +716,7 @@ function formatAttributes(xml: string, attributes: readonly FormAttributeInfo[])
 
 function formatParameters(xml: string): string[] {
   const block = extractBlock(xml, 'Parameters');
-  if (!block) return [];
+  if (!block) {return [];}
   const lines: string[] = [];
   for (const m of block.matchAll(/<Parameter\b([^>]*)>([\s\S]*?)<\/Parameter>/g)) {
     const name = attr(m[1], 'name') ?? '';
@@ -730,7 +730,7 @@ function formatParameters(xml: string): string[] {
 }
 
 function formatCommands(xml: string, commands: readonly FormCommandInfo[]): string[] {
-  if (commands.length === 0) return [];
+  if (commands.length === 0) {return [];}
   const block = extractBlock(xml, 'Commands') ?? '';
   const lines: string[] = [];
   for (const cmd of commands) {
@@ -744,13 +744,13 @@ function formatCommands(xml: string, commands: readonly FormCommandInfo[]): stri
       const parts = actions.map((a) => {
         const ct = attr(a[1], 'callType');
         const ctStr = ct ? `[${ct}]` : '';
-        return `${(a[2] ?? '').trim()}${ctStr}`;
+        return `${a[2].trim()}${ctStr}`;
       });
       actionStr = ' -> ' + parts.join(', ');
     } else if (actions.length === 1) {
       const ct = attr(actions[0][1], 'callType');
       const ctStr = ct ? `[${ct}]` : '';
-      actionStr = ` -> ${(actions[0][2] ?? '').trim()}${ctStr}`;
+      actionStr = ` -> ${actions[0][2].trim()}${ctStr}`;
     }
     lines.push(`  ${cmd.name}${actionStr}${scStr}`);
   }
@@ -761,6 +761,11 @@ function formatCommands(xml: string, commands: readonly FormCommandInfo[]): stri
 
 export function collectEvents(xml: string): string[] {
   return [...xml.matchAll(/<Event\b([^>]*)>([^<]*)<\/Event>/g)]
-    .map((match) => `${attr(match[1], 'name') ?? ''}${attr(match[1], 'callType') ? `[${attr(match[1], 'callType')}]` : ''} -> ${(match[2] ?? '').trim()}`)
+    .map((match) => {
+      const name = attr(match[1], 'name') ?? '';
+      const callType = attr(match[1], 'callType');
+      const ct = callType ? `[${callType}]` : '';
+      return `${name}${ct} -> ${match[2].trim()}`;
+    })
     .filter((line) => !line.startsWith(' ->'));
 }

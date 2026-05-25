@@ -87,10 +87,13 @@ export class FormValidateService {
     let errors = 0;
     let warnings = 0;
     let ok = 0;
-    let stopped = false;
+    // Расширяем тип до boolean, иначе TS сужает до литерала false и линтер считает,
+    // что проверки `if (!stopped)` всегда истинны — а на самом деле reportError
+    // выставляет stopped=true как сайд-эффект из замыкания.
+    let stopped = false as boolean;
     const reportOk = (msg: string) => {
       ok++;
-      if (detailed) lines.push(`[OK]    ${msg}`);
+      if (detailed) {lines.push(`[OK]    ${msg}`);}
     };
     const reportWarn = (msg: string) => {
       warnings++;
@@ -99,7 +102,7 @@ export class FormValidateService {
     const reportError = (msg: string) => {
       errors++;
       lines.push(`[ERROR] ${msg}`);
-      if (errors >= maxErrors) stopped = true;
+      if (errors >= maxErrors) {stopped = true;}
     };
 
     let xml: string;
@@ -153,13 +156,13 @@ export class FormValidateService {
 
     // 3. Unique element IDs
     if (!stopped) {
-      stopped = !checkUniqueIds(elements.map((e) => ({ kind: 'element', name: e.name, id: e.id })), reportError, () => reportOk(`Unique element IDs: ${elements.filter((e) => e.id && e.id !== '-1').length} elements`), maxErrors, errors) || stopped;
+      stopped = !checkUniqueIds(elements.map((e) => ({ kind: 'element', name: e.name, id: e.id })), reportError, () => reportOk(`Unique element IDs: ${String(elements.filter((e) => e.id && e.id !== '-1').length)} elements`), maxErrors, errors) || stopped;
     }
     if (!stopped) {
-      stopped = !checkUniqueIds(attributes.map((a) => ({ kind: 'attribute', name: a.name, id: a.id })), reportError, () => attributes.length ? reportOk(`Unique attribute IDs: ${attributes.length} entries`) : undefined, maxErrors, errors) || stopped;
+      stopped = !checkUniqueIds(attributes.map((a) => ({ kind: 'attribute', name: a.name, id: a.id })), reportError, () => attributes.length ? reportOk(`Unique attribute IDs: ${String(attributes.length)} entries`) : undefined, maxErrors, errors) || stopped;
     }
     if (!stopped) {
-      stopped = !checkUniqueIds(commands.map((c) => ({ kind: 'command', name: c.name, id: c.id })), reportError, () => commands.length ? reportOk(`Unique command IDs: ${commands.length} entries`) : undefined, maxErrors, errors) || stopped;
+      stopped = !checkUniqueIds(commands.map((c) => ({ kind: 'command', name: c.name, id: c.id })), reportError, () => commands.length ? reportOk(`Unique command IDs: ${String(commands.length)} entries`) : undefined, maxErrors, errors) || stopped;
     }
 
     // 3b. Column IDs within each attribute
@@ -195,7 +198,7 @@ export class FormValidateService {
     // 9. MainAttribute count
     const mainCount = attributes.filter((a) => a.main).length;
     if (mainCount > 1) {
-      reportError(`Multiple MainAttribute=true (${mainCount} found, expected 0 or 1)`);
+      reportError(`Multiple MainAttribute=true (${String(mainCount)} found, expected 0 or 1)`);
     } else {
       reportOk(`MainAttribute: ${mainCount === 1 ? '1 main attribute' : 'no main attribute'}`);
     }
@@ -231,7 +234,7 @@ function detectConfigContext(formPath: string): boolean {
   let walkDir = path.dirname(path.resolve(formPath));
   for (let i = 0; i < 15; i++) {
     const parent = path.dirname(walkDir);
-    if (parent === walkDir) break;
+    if (parent === walkDir) {break;}
     if (fs.existsSync(path.join(walkDir, 'Configuration.xml'))) {
       return true;
     }
@@ -246,12 +249,12 @@ function checkUniqueIds(items: readonly IdItem[], reportError: (msg: string) => 
   const seen = new Map<string, string>();
   let lastErrors = errorsSoFar;
   for (const item of items) {
-    if (!item.id || item.id === '-1') continue;
+    if (!item.id || item.id === '-1') {continue;}
     const previous = seen.get(item.id);
     if (previous) {
       reportError(`Duplicate ${item.kind} id=${item.id}: '${item.name}' and '${previous}'`);
       lastErrors++;
-      if (lastErrors >= maxErrors) return false;
+      if (lastErrors >= maxErrors) {return false;}
       continue;
     }
     seen.set(item.id, item.name);
@@ -266,12 +269,12 @@ function validateColumnIds(xml: string, attributes: readonly FormAttributeInfo[]
     const re = new RegExp(`<Attribute\\b[^>]*name="${escapeRegExp(attrInfo.name)}"[^>]*>([\\s\\S]*?)<\\/Attribute>`);
     const body = re.exec(attrsBlock)?.[1] ?? '';
     const columnsM = /<Columns>([\s\S]*?)<\/Columns>/.exec(body);
-    if (!columnsM) continue;
+    if (!columnsM) {continue;}
     const ids = new Map<string, string>();
     for (const c of columnsM[1].matchAll(/<Column\b([^>]*)\/?>/g)) {
       const id = attr(c[1], 'id');
       const name = attr(c[1], 'name') ?? '';
-      if (!id) continue;
+      if (!id) {continue;}
       const prev = ids.get(id);
       if (prev) {
         reportError(`Duplicate column id=${id} in '${attrInfo.name}': '${name}' and '${prev}'`);
@@ -286,8 +289,8 @@ function validateCompanions(xml: string, elements: readonly FormElementInfo[], r
   let checked = 0;
   let bad = 0;
   for (const el of elements) {
+    if (!(el.tag in COMPANION_RULES)) {continue;}
     const required = COMPANION_RULES[el.tag];
-    if (!required) continue;
     checked++;
     // Найти XML тела элемента по name + id
     const re = new RegExp(`<${el.tag}\\b[^>]*name="${escapeRegExp(el.name)}"[^>]*\\bid="${escapeRegExp(el.id)}"[^>]*>([\\s\\S]*?)<\\/${el.tag}>`);
@@ -301,7 +304,7 @@ function validateCompanions(xml: string, elements: readonly FormElementInfo[], r
     }
   }
   if (bad === 0 && checked > 0) {
-    reportOk(`Companion elements: ${checked} elements checked`);
+    reportOk(`Companion elements: ${String(checked)} elements checked`);
   }
 }
 
@@ -320,7 +323,7 @@ function validateDataPaths(
   let baseSkipped = 0;
   let bad = 0;
   for (const el of elements) {
-    if (SKIP_DATAPATH_TAGS.has(el.tag)) continue;
+    if (SKIP_DATAPATH_TAGS.has(el.tag)) {continue;}
     if (hasBaseForm && el.id) {
       const intId = parseInt(el.id, 10);
       if (Number.isFinite(intId) && intId < 1000000) {
@@ -329,11 +332,11 @@ function validateDataPaths(
       }
     }
     const dataPath = el.dataPath?.trim();
-    if (!dataPath) continue;
-    if (/^\d+$/.test(dataPath) || /^\d+\/\d+:[0-9a-fA-F-]+$/.test(dataPath)) continue;
+    if (!dataPath) {continue;}
+    if (/^\d+$/.test(dataPath) || /^\d+\/\d+:[0-9a-fA-F-]+$/.test(dataPath)) {continue;}
     checked++;
     let clean = dataPath.replace(/\[\d+\]/g, '');
-    if (clean.startsWith('~')) clean = clean.slice(1);
+    if (clean.startsWith('~')) {clean = clean.slice(1);}
     const segments = clean.split('.');
     let rootAttr = segments[0];
 
@@ -350,9 +353,9 @@ function validateDataPaths(
         continue;
       }
       const tablePath = tableEl.dataPath?.trim();
-      if (!tablePath) continue;
+      if (!tablePath) {continue;}
       let tableClean = tablePath.replace(/\[\d+\]/g, '');
-      if (tableClean.startsWith('~')) tableClean = tableClean.slice(1);
+      if (tableClean.startsWith('~')) {tableClean = tableClean.slice(1);}
       rootAttr = tableClean.split('.')[0];
     }
     if (!attrNames.has(rootAttr)) {
@@ -362,8 +365,8 @@ function validateDataPaths(
   }
   if (bad === 0) {
     const parts: string[] = [];
-    if (checked > 0) parts.push(`${checked} paths checked`);
-    if (baseSkipped > 0) parts.push(`${baseSkipped} base skipped`);
+    if (checked > 0) {parts.push(`${String(checked)} paths checked`);}
+    if (baseSkipped > 0) {parts.push(`${String(baseSkipped)} base skipped`);}
     if (parts.length > 0) {
       reportOk(`DataPath references: ${parts.join(', ')}`);
     }
@@ -375,10 +378,10 @@ function validateCommandRefs(elements: readonly FormElementInfo[], commands: rea
   let checked = 0;
   let bad = 0;
   for (const el of elements) {
-    if (el.tag !== 'Button') continue;
-    if (!el.commandName) continue;
+    if (el.tag !== 'Button') {continue;}
+    if (!el.commandName) {continue;}
     const m = /^Form\.Command\.(.+)$/.exec(el.commandName);
-    if (!m) continue;
+    if (!m) {continue;}
     checked++;
     if (!commandNames.has(m[1])) {
       reportError(`[Button] '${el.name}': CommandName='${el.commandName}' — command '${m[1]}' not found in Commands`);
@@ -386,7 +389,7 @@ function validateCommandRefs(elements: readonly FormElementInfo[], commands: rea
     }
   }
   if (bad === 0 && checked > 0) {
-    reportOk(`Command references: ${checked} buttons checked`);
+    reportOk(`Command references: ${String(checked)} buttons checked`);
   }
 }
 
@@ -395,7 +398,7 @@ function validateEventHandlers(xml: string, reportError: (msg: string) => void, 
   let bad = 0;
   for (const m of xml.matchAll(/<Event\b([^>]*)>([^<]*)<\/Event>/g)) {
     checked++;
-    const handler = (m[2] ?? '').trim();
+    const handler = m[2].trim();
     if (!handler) {
       const name = attr(m[1], 'name') ?? '';
       reportError(`Event '${name}': empty handler name`);
@@ -403,32 +406,32 @@ function validateEventHandlers(xml: string, reportError: (msg: string) => void, 
     }
   }
   if (bad === 0 && checked > 0) {
-    reportOk(`Event handlers: ${checked} events checked`);
+    reportOk(`Event handlers: ${String(checked)} events checked`);
   }
 }
 
 function validateCommandActions(xml: string, commands: readonly FormCommandInfo[], reportError: (msg: string) => void, reportOk: (msg: string) => void): void {
-  if (commands.length === 0) return;
+  if (commands.length === 0) {return;}
   const cmdsBlock = extractBlock(xml, 'Commands') ?? '';
   let bad = 0;
   for (const cmd of commands) {
     const re = new RegExp(`<Command\\b[^>]*name="${escapeRegExp(cmd.name)}"[^>]*>([\\s\\S]*?)<\\/Command>`);
     const body = re.exec(cmdsBlock)?.[1] ?? '';
     const actionM = /<Action\b[^>]*>([^<]*)<\/Action>/.exec(body);
-    if (!actionM || !actionM[1].trim()) {
+    if (!actionM?.[1].trim()) {
       reportError(`Command '${cmd.name}': missing or empty Action`);
       bad++;
     }
   }
   if (bad === 0) {
-    reportOk(`Command actions: ${commands.length} commands checked`);
+    reportOk(`Command actions: ${String(commands.length)} commands checked`);
   }
 }
 
 function validateTitle(xml: string, reportError: (msg: string) => void, reportOk: (msg: string) => void): void {
   // Найти Title верхнего уровня формы
   const formMatch = /<Form\b[^>]*>([\s\S]*)<\/Form>/.exec(xml);
-  if (!formMatch) return;
+  if (!formMatch) {return;}
   const inside = formMatch[1];
   const re = /<Title\b[^>]*>([\s\S]*?)<\/Title>|<Title\b[^/>]*\/>/;
   let titleBlock: string | null = null;
@@ -444,7 +447,7 @@ function validateTitle(xml: string, reportError: (msg: string) => void, reportOk
       break;
     }
   }
-  if (titleBlock == null) {
+  if (titleBlock === null) {
     // self-closing or absent
     if (re.test(inside)) {
       // Title self-closing — OK
@@ -489,11 +492,11 @@ function validateCallTypesAndExtension(
     if (!hasBaseForm) {
       reportWarn('callType attributes found but no BaseForm — possible incorrect structure');
     } else if (ctBad === 0) {
-      reportOk(`callType values: ${ctChecked} checked`);
+      reportOk(`callType values: ${String(ctChecked)} checked`);
     }
   }
 
-  if (!hasBaseForm) return;
+  if (!hasBaseForm) {return;}
 
   // Extension ID ranges
   const baseFormBlockM = /<BaseForm\b[^>]*>([\s\S]*?)<\/BaseForm>/.exec(xml);
@@ -503,19 +506,19 @@ function validateCallTypesAndExtension(
     const baseAttrs = extractBlock(baseFormBlockM[1], 'Attributes') ?? '';
     for (const am of baseAttrs.matchAll(/<Attribute\b([^>]*)>/g)) {
       const n = attr(am[1], 'name');
-      if (n) baseAttrNames.add(n);
+      if (n) {baseAttrNames.add(n);}
     }
     const baseCmds = extractBlock(baseFormBlockM[1], 'Commands') ?? '';
     for (const cm of baseCmds.matchAll(/<Command\b([^>]*)>/g)) {
       const n = attr(cm[1], 'name');
-      if (n) baseCmdNames.add(n);
+      if (n) {baseCmdNames.add(n);}
     }
   }
   let idWarn = 0;
   let extAttr = 0;
   let extCmd = 0;
   for (const a of attributes) {
-    if (!a.name || baseAttrNames.has(a.name)) continue;
+    if (!a.name || baseAttrNames.has(a.name)) {continue;}
     extAttr++;
     const intId = parseInt(a.id, 10);
     if (Number.isFinite(intId) && intId < 1000000) {
@@ -524,7 +527,7 @@ function validateCallTypesAndExtension(
     }
   }
   for (const c of commands) {
-    if (!c.name || baseCmdNames.has(c.name)) continue;
+    if (!c.name || baseCmdNames.has(c.name)) {continue;}
     extCmd++;
     const intId = parseInt(c.id, 10);
     if (Number.isFinite(intId) && intId < 1000000) {
@@ -533,7 +536,7 @@ function validateCallTypesAndExtension(
     }
   }
   if (idWarn === 0 && (extAttr + extCmd) > 0) {
-    reportOk(`Extension ID ranges: ${extAttr} attr(s), ${extCmd} cmd(s) — all >= 1000000`);
+    reportOk(`Extension ID ranges: ${String(extAttr)} attr(s), ${String(extCmd)} cmd(s) — all >= 1000000`);
   }
 }
 
@@ -553,7 +556,7 @@ function validateTypes(
       bad++;
       continue;
     }
-    if (VALID_CLOSED_TYPES.has(tv)) continue;
+    if (VALID_CLOSED_TYPES.has(tv)) {continue;}
     if (tv.startsWith('cfg:')) {
       const suffix = tv.slice(4);
       const prefix = suffix.split('.')[0];
@@ -568,22 +571,22 @@ function validateTypes(
       }
       continue;
     }
-    if (tv.includes(':')) continue;
+    if (tv.includes(':')) {continue;}
     reportWarn(`12. Type "${tv}": bare type without namespace prefix`);
     warn++;
   }
   if (bad === 0 && warn === 0) {
-    reportOk(values.length > 0 ? `12. Types: ${values.length} values, all valid` : '12. Types: no type values to check');
+    reportOk(values.length > 0 ? `12. Types: ${String(values.length)} values, all valid` : '12. Types: no type values to check');
   }
 }
 
 function finalize(formPath: string, errors: number, warnings: number, ok: number, lines: string[]): FormValidationResult {
   const checks = errors + warnings + ok;
   if (errors === 0 && warnings === 0 && lines.length <= 2) {
-    lines.push(`=== Validation OK: ${path.basename(formPath)} (${checks} checks) ===`);
+    lines.push(`=== Validation OK: ${path.basename(formPath)} (${String(checks)} checks) ===`);
   } else {
     lines.push('');
-    lines.push(`=== Result: ${errors} errors, ${warnings} warnings (${checks} checks) ===`);
+    lines.push(`=== Result: ${String(errors)} errors, ${String(warnings)} warnings (${String(checks)} checks) ===`);
   }
   return { formPath, errors, warnings, checks, lines };
 }

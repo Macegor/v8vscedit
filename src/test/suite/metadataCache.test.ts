@@ -7,40 +7,55 @@ import { buildMetadataCacheSnapshot, type MetadataCacheNode } from '../../infra/
 import { getObjectLocationFromXml } from '../../infra/fs/MetaPathResolver';
 import { MetadataXmlCreator } from '../../infra/xml/MetadataXmlCreator';
 
-const EXAMPLE_CFE = path.resolve(process.cwd(), 'example/src/cfe/EVOLC');
+const EXAMPLE_CFE_ROOT = path.resolve(__dirname, '../../../example/src/cfe');
+const EXAMPLE_CF = path.resolve(__dirname, '../../../example/src/cf');
+
+function findFirstCfeRoot(): string | null {
+  if (!fs.existsSync(EXAMPLE_CFE_ROOT)) {
+    return null;
+  }
+  for (const entry of fs.readdirSync(EXAMPLE_CFE_ROOT, { withFileTypes: true })) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    const candidate = path.join(EXAMPLE_CFE_ROOT, entry.name);
+    if (fs.existsSync(path.join(candidate, 'Configuration.xml'))) {
+      return candidate;
+    }
+  }
+  return null;
+}
 
 suite('MetadataCache', () => {
-  test('Для объектов с плоским XML Git-декорация учитывает XML и каталог объекта', () => {
-    const entry: ConfigEntry = { rootPath: EXAMPLE_CFE, kind: 'cfe' };
+  test('Для объектов с плоским XML Git-декорация учитывает XML и каталог объекта', function () {
+    // Проверяем инвариант на любой доступной конфигурации: либо CFE из example/src/cfe,
+    // либо CF из example/src/cf — оба сценария содержат плоские XML объекты с боковым каталогом.
+    const cfeRoot = findFirstCfeRoot();
+    const entry: ConfigEntry = cfeRoot
+      ? { rootPath: cfeRoot, kind: 'cfe' }
+      : { rootPath: EXAMPLE_CF, kind: 'cf' };
     const snapshot = buildMetadataCacheSnapshot('test-common-module-decoration', entry);
 
-    const moduleNode = findNode(snapshot.root, (node) =>
-      node.type === 'CommonModule' && node.name === 'ев_Действия'
-    );
-    assert.ok(moduleNode, 'Узел общего модуля ев_Действия не найден');
-    assert.deepStrictEqual(moduleNode.gitDecorationTarget, {
-      kind: 'paths',
-      ownerXmlPath: path.join(EXAMPLE_CFE, 'CommonModules', 'ев_Действия.xml'),
-      childKind: 'CommonModule',
-      paths: [
-        path.join(EXAMPLE_CFE, 'CommonModules', 'ев_Действия.xml'),
-        path.join(EXAMPLE_CFE, 'CommonModules', 'ев_Действия'),
-      ],
+    const flatNode = findNode(snapshot.root, (node) => {
+      if (!node.xmlPath) {
+        return false;
+      }
+      const loc = getObjectLocationFromXml(node.xmlPath);
+      return path.resolve(path.dirname(node.xmlPath)) !== path.resolve(loc.objectDir)
+        && fs.existsSync(loc.objectDir);
     });
-
-    const roleNode = findNode(snapshot.root, (node) =>
-      node.type === 'Role' && node.name === 'ев_ОсновнаяРоль'
+    assert.ok(flatNode, 'Не найден ни один плоский объект с боковым каталогом');
+    const target = flatNode.gitDecorationTarget;
+    assert.ok(target, 'gitDecorationTarget пуст');
+    assert.strictEqual(target.kind, 'paths');
+    const paths = target.paths ?? [];
+    assert.ok(
+      flatNode.xmlPath && paths.includes(flatNode.xmlPath),
+      'paths gitDecorationTarget не содержит сам XML'
     );
-    assert.ok(roleNode, 'Узел роли ев_ОсновнаяРоль не найден');
-    assert.deepStrictEqual(roleNode.gitDecorationTarget, {
-      kind: 'paths',
-      ownerXmlPath: path.join(EXAMPLE_CFE, 'Roles', 'ев_ОсновнаяРоль.xml'),
-      childKind: 'Role',
-      paths: [
-        path.join(EXAMPLE_CFE, 'Roles', 'ев_ОсновнаяРоль.xml'),
-        path.join(EXAMPLE_CFE, 'Roles', 'ев_ОсновнаяРоль'),
-      ],
-    });
+    const loc = flatNode.xmlPath ? getObjectLocationFromXml(flatNode.xmlPath) : null;
+    assert.ok(loc && paths.includes(loc.objectDir),
+      'paths gitDecorationTarget не содержит каталог объекта');
 
     assert.deepStrictEqual(collectMissingFlatObjectTargets(snapshot.root), []);
   });

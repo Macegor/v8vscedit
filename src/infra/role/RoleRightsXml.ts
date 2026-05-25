@@ -112,7 +112,7 @@ export const RIGHT_ALIASES: Readonly<Record<string, string>> = {
   СохранениеДанныхПользователя: 'SaveUserData',
 };
 
-export const KNOWN_RIGHTS: Readonly<Record<string, readonly string[]>> = {
+export const KNOWN_RIGHTS: Readonly<Partial<Record<string, readonly string[]>>> = {
   Configuration: [
     'Administration', 'DataAdministration', 'UpdateDataBaseConfiguration', 'ConfigurationExtensionsAdministration',
     'ActiveUsers', 'EventLog', 'ExclusiveMode', 'ThinClient', 'ThickClient', 'WebClient', 'MobileClient',
@@ -168,7 +168,7 @@ export const NESTED_RIGHTS = ['View', 'Edit'] as const;
 export const COMMAND_RIGHTS = ['View'] as const;
 export const CHANNEL_RIGHTS = ['Use'] as const;
 
-export const PRESETS: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>> = {
+export const PRESETS: Readonly<Partial<Record<string, Readonly<Partial<Record<string, readonly string[]>>>>>> = {
   view: {
     Catalog: ['Read', 'View', 'InputByString'],
     ExchangePlan: ['Read', 'View', 'InputByString'],

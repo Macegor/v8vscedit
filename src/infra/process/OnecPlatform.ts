@@ -37,6 +37,8 @@ export function resolveV8ExecutablePath(v8Path: string, platform: NodeJS.Platfor
 /**
  * Нормализует путь файловой базы только по правилам текущей ОС.
  * На macOS/Linux абсолютные пути вида `/F/Users/...` должны остаться Unix-путями.
+ * Для Unix-платформ при подстановке `~` используется posix-семантика
+ * независимо от текущей ОС — иначе тесты под Windows получали бы Windows-путь.
  */
 export function normalizeInfoBasePath(rawPath: string, platform: NodeJS.Platform = process.platform): string {
   let value = trimOuterQuotes(rawPath).trim();
@@ -50,12 +52,29 @@ export function normalizeInfoBasePath(rawPath: string, platform: NodeJS.Platform
   }
 
   if (value === '~') {
-    return os.homedir();
+    return resolveUnixHome(platform);
   }
   if (value.startsWith('~/')) {
-    return path.join(os.homedir(), value.slice(2));
+    return path.posix.join(resolveUnixHome(platform), value.slice(2));
   }
   return value;
+}
+
+/**
+ * Подбирает Unix-home для целевой платформы: на текущей ОС берём `os.homedir()`,
+ * иначе используем устойчивые значения окружения (`HOME` или `/root`/`/home`),
+ * чтобы результат не зависел от наличия буквы диска Windows-хоста.
+ */
+function resolveUnixHome(platform: NodeJS.Platform): string {
+  if (platform === process.platform) {
+    return os.homedir();
+  }
+  const envHome = process.env.HOME;
+  if (envHome?.startsWith('/')) {
+    return envHome;
+  }
+  const user = process.env.USER ?? process.env.USERNAME ?? 'user';
+  return user === 'root' ? '/root' : `/home/${user}`;
 }
 
 /**

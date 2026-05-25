@@ -104,14 +104,20 @@ function buildLines(result: Omit<ConfigurationInfoResult, 'lines'>, mode: Config
 function orderedCounts(counts: Record<string, number>): [string, number][] {
   return Object.entries(counts)
     .sort(([left], [right]) => {
-      const leftOrder = META_TYPES[left as MetaKind]?.groupOrder ?? 1_000;
-      const rightOrder = META_TYPES[right as MetaKind]?.groupOrder ?? 1_000;
+      const leftOrder = lookupMetaType(left)?.groupOrder ?? 1_000;
+      const rightOrder = lookupMetaType(right)?.groupOrder ?? 1_000;
       return leftOrder - rightOrder || left.localeCompare(right, 'ru');
     });
 }
 
 function labelForKind(kind: string): string {
-  return META_TYPES[kind as MetaKind]?.pluralLabel ?? kind;
+  return lookupMetaType(kind)?.pluralLabel ?? kind;
+}
+
+function lookupMetaType(kind: string): typeof META_TYPES[MetaKind] | undefined {
+  return Object.prototype.hasOwnProperty.call(META_TYPES, kind)
+    ? META_TYPES[kind as MetaKind]
+    : undefined;
 }
 
 function extractDefaultRoles(xml: string): string[] {

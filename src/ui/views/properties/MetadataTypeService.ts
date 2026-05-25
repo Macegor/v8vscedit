@@ -5,89 +5,134 @@ import type {
   MetadataTypeItem,
   MetadataTypeValue,
 } from './_types';
-import { extractFirstBalancedBlock, extractRepeatedSimpleTagValues, extractSimpleTag } from '../../../infra/xml';
+import {
+  canonicalToXmlToken,
+  extractFirstBalancedBlock,
+  extractRepeatedSimpleTagValues,
+  extractSimpleTag,
+  tokenToCanonical,
+  type TypeContext,
+} from '../../../infra/xml';
 
-const TYPE_SYNONYMS: Record<string, string> = {
-  'xs:string': 'String',
-  'xs:decimal': 'Number',
-  'xs:boolean': 'Boolean',
-  'xs:dateTime': 'DateTime',
-  'xs:base64Binary': 'ValueStorage',
+/**
+ * Сервис разбора и сборки блока `<Type>` объекта метаданных.
+ *
+ * Источник правды о соответствии русских/английских имён и XML-токенов —
+ * `infra/xml/PlatformTypeRegistry`. Здесь — только разбор XML и форматирование
+ * выходного представления. Поле `MetadataTypeItem.canonical` хранит английскую
+ * форму (`String`, `UUID`, `CatalogRef.X`), `display` — русскую.
+ */
+
+// ─── Карты «английская форма ↔ русская/тип-группа» ───────────────────────
+
+/**
+ * Английское имя базового типа → его токен в `<v8:Type>`. Список совпадает
+ * с `BASE_TYPES.english`. Использовать `canonicalToXmlToken` напрямую нельзя:
+ * там вход — русская форма, а `MetadataTypeItem.canonical` хранит английскую.
+ */
+const ENGLISH_BASE_PRIMITIVE_TOKENS: Record<string, string> = {
+  String: 'xs:string',
+  Number: 'xs:decimal',
+  Boolean: 'xs:boolean',
+  Date: 'xs:dateTime',
+  DateTime: 'xs:dateTime',
+  ValueStorage: 'xs:base64Binary',
 };
 
-const DISPLAY_BY_CANONICAL: Record<string, string> = {
+/** Английское имя → токен формы (только для тех, у кого токен не `xs:*`). */
+const ENGLISH_BASE_FORM_TOKENS: Record<string, string> = {
+  UUID: 'v8:UUID',
+  Type: 'v8:Type',
+  TypeDescription: 'v8:TypeDescription',
+  ValueList: 'v8:ValueListType',
+  ValueTable: 'v8:ValueTable',
+  ValueTree: 'v8:ValueTree',
+  SpreadsheetDocument: 'v8:SpreadsheetDocument',
+  Picture: 'v8ui:Picture',
+  FormattedString: 'v8ui:FormattedString',
+};
+
+/** Английское имя → русское для базовых типов. */
+const ENGLISH_BASE_TO_DISPLAY: Record<string, string> = {
   String: 'Строка',
   Number: 'Число',
   Boolean: 'Булево',
   Date: 'Дата',
   DateTime: 'ДатаВремя',
   ValueStorage: 'ХранилищеЗначения',
-  CatalogObject: 'СправочникОбъект',
-  CatalogManager: 'СправочникМенеджер',
-  DocumentObject: 'ДокументОбъект',
-  DocumentManager: 'ДокументМенеджер',
-  ConstantValueManager: 'КонстантаМенеджерЗначения',
-  ExchangePlanObject: 'ПланОбменаОбъект',
-  BusinessProcessObject: 'БизнесПроцессОбъект',
-  BusinessProcessManager: 'БизнесПроцессМенеджер',
-  TaskObject: 'ЗадачаОбъект',
-  ChartOfAccountsObject: 'ПланСчетовОбъект',
-  ChartOfCalculationTypesObject: 'ПланВидовРасчетаОбъект',
-  ChartOfCharacteristicTypesObject: 'ПланВидовХарактеристикОбъект',
-  InformationRegisterRecordSet: 'РегистрСведенийНаборЗаписей',
-  InformationRegisterManager: 'РегистрСведенийМенеджер',
-  AccumulationRegisterRecordSet: 'РегистрНакопленияНаборЗаписей',
-  AccountingRegisterRecordSet: 'РегистрБухгалтерииНаборЗаписей',
-  CalculationRegisterRecordSet: 'РегистрРасчетаНаборЗаписей',
-  SequenceRecordSet: 'ПоследовательностьНаборЗаписей',
-  RecalculationRecordSet: 'ПерерасчетНаборЗаписей',
-  ReportManager: 'ОтчетМенеджер',
-  DataProcessorManager: 'ОбработкаМенеджер',
+  UUID: 'УникальныйИдентификатор',
+  Type: 'Тип',
+  TypeDescription: 'ОписаниеТипов',
+  ValueList: 'СписокЗначений',
+  ValueTable: 'ТаблицаЗначений',
+  ValueTree: 'ДеревоЗначений',
+  SpreadsheetDocument: 'ТабличныйДокумент',
+  Picture: 'Картинка',
+  FormattedString: 'ФорматированнаяСтрока',
+  BinaryData: 'ДвоичныеДанные',
 };
 
-const REF_PREFIXES: { canonical: string; display: string }[] = [
-  { canonical: 'CatalogRef.', display: 'СправочникСсылка.' },
-  { canonical: 'DocumentRef.', display: 'ДокументСсылка.' },
-  { canonical: 'EnumRef.', display: 'ПеречислениеСсылка.' },
-  { canonical: 'ChartOfAccountsRef.', display: 'ПланСчетовСсылка.' },
-  { canonical: 'ChartOfCharacteristicTypesRef.', display: 'ПланВидовХарактеристикСсылка.' },
-  { canonical: 'ChartOfCalculationTypesRef.', display: 'ПланВидовРасчетаСсылка.' },
-  { canonical: 'ExchangePlanRef.', display: 'ПланОбменаСсылка.' },
-  { canonical: 'BusinessProcessRef.', display: 'БизнесПроцессСсылка.' },
-  { canonical: 'TaskRef.', display: 'ЗадачаСсылка.' },
-];
-
+/**
+ * Резолвит «сырое» имя типа из XML (`xs:string`, `v8:UUID`, `d5p1:CatalogRef.X`)
+ * в каноническую английскую форму, которая хранится в `MetadataTypeItem.canonical`.
+ */
 function resolveCanonical(rawType: string): string {
-  return TYPE_SYNONYMS[rawType] ?? rawType;
-}
-
-function toDisplay(canonical: string): string {
-  if (DISPLAY_BY_CANONICAL[canonical]) {
-    return DISPLAY_BY_CANONICAL[canonical];
-  }
-  for (const ref of REF_PREFIXES) {
-    if (canonical.startsWith(ref.canonical)) {
-      return `${ref.display}${canonical.slice(ref.canonical.length)}`;
+  // Сначала пробуем как XML-токен.
+  const russian = tokenToCanonical(rawType);
+  if (russian) {
+    // По русской форме найдём английскую через обратный маппинг.
+    const english = russianToEnglish(russian);
+    if (english) {
+      return english;
     }
   }
-  if (canonical.startsWith('DefinedType.')) {
-    return `ОпределяемыйТип.${canonical.slice('DefinedType.'.length)}`;
-  }
-  const sourceMatch = /^([A-Za-z]+(?:Object|Manager|RecordSet|ValueManager))\.(.+)$/.exec(canonical);
-  if (sourceMatch && DISPLAY_BY_CANONICAL[sourceMatch[1]]) {
-    return `${DISPLAY_BY_CANONICAL[sourceMatch[1]]}.${sourceMatch[2]}`;
-  }
-  return canonical;
+  // Снимаем неймспейс-префикс и возвращаем как есть (для устаревших форм).
+  return rawType.replace(/^d\d+p\d+:/, '').replace(/^cfg:/, '');
 }
 
+function russianToEnglish(russian: string): string | undefined {
+  for (const [english, rus] of Object.entries(ENGLISH_BASE_TO_DISPLAY)) {
+    if (rus === russian) {
+      return english;
+    }
+  }
+  // Ссылочный тип `Префикс.Имя` — пробуем разобрать.
+  const dotIndex = russian.indexOf('.');
+  if (dotIndex <= 0) {
+    return undefined;
+  }
+  // Используем `canonicalToXmlToken` в произвольном контексте, чтобы получить
+  // английскую форму вида `CatalogRef.X`. Если ни metadataAttribute, ни
+  // formAttribute не подходят — возвращаем undefined.
+  for (const ctx of ['metadataAttribute', 'formAttribute'] as TypeContext[]) {
+    const token = canonicalToXmlToken(russian, ctx);
+    if (token && !token.startsWith('xs:') && !token.startsWith('v8:') && !token.startsWith('v8ui:')) {
+      return token;
+    }
+  }
+  return undefined;
+}
+
+/** Английская форма → русская (с восстановлением для ссылочных). */
+function toDisplay(canonical: string): string {
+  const base = ENGLISH_BASE_TO_DISPLAY[canonical];
+  if (base) {
+    return base;
+  }
+  // Ссылочный английский тип `CatalogRef.Имя`.
+  const russian = tokenToCanonical(canonical);
+  return russian ?? canonical;
+}
+
+/** Классификация типа для дерева выбора. */
 function detectGroup(canonical: string): MetadataTypeItem['group'] {
   if (canonical.startsWith('DefinedType.')) {
     return 'defined';
   }
-  if (canonical.includes('Ref.')) {
-    return 'reference';
+  if (ENGLISH_BASE_TO_DISPLAY[canonical]) {
+    return 'primitive';
   }
-  if (/^[A-Za-z]+(?:Object|Manager|RecordSet|ValueManager)(?:\..+)?$/.test(canonical)) {
+  if (/^[A-Za-z]+(?:Ref|Object|Manager|Selection|List|RecordSet|RecordKey|RecordManager|Recalculation|ValueManager|RoutePointRef)(?:\..+)?$/.test(canonical)) {
     return 'reference';
   }
   return 'primitive';
@@ -110,8 +155,7 @@ export function parseMetadataType(typeInner: string): MetadataTypeValue {
   const typeSets = extractRepeatedSimpleTagValues(typeInner, 'TypeSet');
 
   for (const raw of [...rawTypes, ...typeSets]) {
-    const clean = raw.replace(/^d\d+p\d+:/, '').replace(/^cfg:/, '');
-    const canonical = resolveCanonical(clean);
+    const canonical = resolveCanonical(raw);
     if (!canonical || seen.has(canonical)) {
       continue;
     }
@@ -161,7 +205,13 @@ export function buildMetadataTypeInnerXml(typeValue: MetadataTypeValue): string 
       lines.push(`<v8:TypeSet>cfg:${item.canonical}</v8:TypeSet>`);
       continue;
     }
-    if (item.canonical.includes('Ref.')) {
+    // Базовые формовые типы (`UUID`, `Picture` и т.п.) — токен с префиксом `v8:`/`v8ui:`.
+    const formToken = ENGLISH_BASE_FORM_TOKENS[item.canonical];
+    if (formToken) {
+      lines.push(`<v8:Type>${formToken}</v8:Type>`);
+      continue;
+    }
+    if (item.canonical.includes('Ref.') || isCompositeRefCanonical(item.canonical)) {
       lines.push(`<v8:Type xmlns:d5p1="http://v8.1c.ru/8.1/data/enterprise/current-config">d5p1:${item.canonical}</v8:Type>`);
       continue;
     }
@@ -215,7 +265,7 @@ export function buildCommandParameterTypeInnerXml(typeValue: MetadataTypeValue):
     .join('\n');
 }
 
-/** Приводит модель типов к правилам 1С (как в meta-edit.py): добавляет дефолтные квалификаторы примитивов */
+/** Приводит модель типов к правилам 1С: добавляет дефолтные квалификаторы примитивов */
 export function ensureDefaultQualifiers(typeValue: MetadataTypeValue): MetadataTypeValue {
   const hasString = typeValue.items.some((item) => item.canonical === 'String');
   const hasNumber = typeValue.items.some((item) => item.canonical === 'Number');
@@ -247,21 +297,15 @@ export function ensureDefaultQualifiers(typeValue: MetadataTypeValue): MetadataT
 }
 
 function toXmlPrimitive(canonical: string): string {
-  switch (canonical) {
-    case 'String':
-      return 'xs:string';
-    case 'Number':
-      return 'xs:decimal';
-    case 'Boolean':
-      return 'xs:boolean';
-    case 'Date':
-    case 'DateTime':
-      return 'xs:dateTime';
-    case 'ValueStorage':
-      return 'xs:base64Binary';
-    default:
-      return canonical;
-  }
+  return ENGLISH_BASE_PRIMITIVE_TOKENS[canonical] ?? canonical;
+}
+
+/**
+ * Определяет, выглядит ли английская форма как ссылочная производная типа
+ * без суффикса `Ref` (`CatalogObject.X`, `InformationRegisterRecordSet.X`).
+ */
+function isCompositeRefCanonical(canonical: string): boolean {
+  return /^[A-Za-z]+(?:Object|Manager|Selection|List|RecordSet|RecordKey|RecordManager|Recalculation|ValueManager|RoutePointRef)\..+$/.test(canonical);
 }
 
 function parseNumber(value: string | undefined): number | undefined {

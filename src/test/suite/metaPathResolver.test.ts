@@ -6,18 +6,15 @@ import { MetaPathResolver } from '../../infra/fs/MetaPathResolver';
 
 suite('MetaPathResolver', () => {
   test('создаёт отсутствующий модуль объекта в штатном каталоге Ext', () => {
+    // Берём любой Catalog из example/src/cf и копируем его во временный каталог.
+    // Так тест не зависит от конкретного объекта в выгрузке и не модифицирует example/.
+    const catalogsDir = path.join(__dirname, '..', '..', '..', 'example', 'src', 'cf', 'Catalogs');
+    const sourceEntry = fs.readdirSync(catalogsDir, { withFileTypes: true })
+      .find((entry) => entry.isFile() && entry.name.endsWith('.xml'));
+    assert.ok(sourceEntry, 'В example/src/cf/Catalogs нет ни одного справочника');
+    const sourceXmlPath = path.join(catalogsDir, sourceEntry.name);
+
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-module-path-'));
-    const sourceXmlPath = path.join(
-      __dirname,
-      '..',
-      '..',
-      '..',
-      'example',
-      'src',
-      'cf',
-      'Catalogs',
-      'ОКПД2ПоВидамПродукцииИС.xml'
-    );
     const objectName = path.basename(sourceXmlPath, '.xml');
     const targetFolder = path.join(tempRoot, 'Catalogs');
     const targetXmlPath = path.join(targetFolder, `${objectName}.xml`);

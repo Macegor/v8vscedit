@@ -10,7 +10,7 @@ import { McpPropertyService } from '../../ui/mcp/McpPropertyService';
 
 suite('McpPropertyService', () => {
   test('возвращает enum-контракт конкретного свойства конкретного реквизита', () => {
-    const xmlPath = path.resolve('example/src/cf/Catalogs/Банки.xml');
+    const xmlPath = path.resolve(__dirname, '../../../example/src/cf/Catalogs/Пользователи.xml');
     const node = createAttributeNode(xmlPath);
     const service = new McpPropertyService(new ConfigurationXmlEditor());
 
@@ -80,7 +80,7 @@ suite('McpPropertyService', () => {
       fs.writeFileSync(path.join(root, 'Configuration.xml'), buildConfigXml(), 'utf-8');
       const creator = new MetadataXmlCreator();
       const service = new McpPropertyService(new ConfigurationXmlEditor());
-      const cases: Array<{ kind: Parameters<typeof createRootNode>[1]; expected: readonly string[] }> = [
+      const cases: { kind: Parameters<typeof createRootNode>[1]; expected: readonly string[] }[] = [
         { kind: 'DocumentNumerator', expected: ['NumberType', 'NumberLength', 'CheckUnique'] },
         { kind: 'Report', expected: ['UseStandardCommands', 'DefaultForm', 'IncludeHelpInContents'] },
         { kind: 'DataProcessor', expected: ['UseStandardCommands', 'DefaultForm', 'ExtendedPresentation'] },
@@ -128,7 +128,7 @@ suite('McpPropertyService', () => {
       assert.strictEqual(creator.addChildElement({ ownerObjectXmlPath: ownerXmlPath, childTag: 'Form', name: 'Форма' }).success, true);
       assert.strictEqual(creator.addChildElement({ ownerObjectXmlPath: ownerXmlPath, childTag: 'Template', name: 'Макет' }).success, true);
       const service = new McpPropertyService(new ConfigurationXmlEditor());
-      const cases: Array<{ node: MetadataNode; expected: readonly string[] }> = [
+      const cases: { node: MetadataNode; expected: readonly string[] }[] = [
         { node: createChildNode(ownerXmlPath, 'Attribute', 'Реквизит'), expected: ['Type', 'FillChecking', 'Indexing'] },
         { node: createChildNode(ownerXmlPath, 'TabularSection', 'ТабличнаяЧасть'), expected: ['FillChecking', 'LineNumberLength'] },
         { node: createChildNode(ownerXmlPath, 'Column', 'Колонка', 'ТабличнаяЧасть'), expected: ['Type', 'FillChecking', 'Indexing'] },
@@ -220,8 +220,8 @@ suite('McpPropertyService', () => {
     try {
       const catalogDir = path.join(root, 'Catalogs');
       fs.mkdirSync(catalogDir, { recursive: true });
-      const xmlPath = path.join(catalogDir, 'Банки.xml');
-      fs.copyFileSync(path.resolve('example/src/cf/Catalogs/Банки.xml'), xmlPath);
+      const xmlPath = path.join(catalogDir, 'Пользователи.xml');
+      fs.copyFileSync(path.resolve(__dirname, '../../../example/src/cf/Catalogs/Пользователи.xml'), xmlPath);
       const before = fs.readFileSync(xmlPath, 'utf-8');
       const node = createAttributeNode(xmlPath);
       const service = new McpPropertyService(new ConfigurationXmlEditor());
@@ -237,7 +237,7 @@ suite('McpPropertyService', () => {
   });
 
   test('не разрешает простую запись типизированного значения заполнения', () => {
-    const xmlPath = path.resolve('example/src/cf/Catalogs/Банки.xml');
+    const xmlPath = path.resolve(__dirname, '../../../example/src/cf/Catalogs/Пользователи.xml');
     const node = createAttributeNode(xmlPath);
     const service = new McpPropertyService(new ConfigurationXmlEditor());
 
@@ -329,6 +329,48 @@ suite('McpPropertyService', () => {
     }
   });
 
+  test('для свойства metadataType в notes указан tool смены значения', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-mcp-meta-notes-'));
+    try {
+      const xmlPath = path.join(root, 'Параметр.xml');
+      fs.writeFileSync(xmlPath, [
+        '<?xml version="1.0" encoding="utf-8"?>',
+        '<MetaDataObject>',
+        '  <SessionParameter>',
+        '    <Properties>',
+        '      <Name>Параметр</Name>',
+        '      <Type>',
+        '        <v8:Type>xs:string</v8:Type>',
+        '      </Type>',
+        '    </Properties>',
+        '  </SessionParameter>',
+        '</MetaDataObject>',
+      ].join('\n'), 'utf-8');
+      const node = new MetadataNode({
+        label: 'Параметр',
+        nodeKind: 'SessionParameter',
+        xmlPath,
+      }, vscode.TreeItemCollapsibleState.None);
+      const service = new McpPropertyService(new ConfigurationXmlEditor());
+
+      const contract = service.getPropertyContract(node, 'Type');
+
+      assert.strictEqual(contract.kind, 'metadataType');
+      assert.strictEqual(contract.supportedBySetProperty, false);
+      assert.ok(contract.notes.length > 0, 'notes должны быть заполнены для metadataType');
+      assert.ok(
+        contract.notes.some((note) => note.includes('v8vscedit_list_available_types')),
+        'notes должны упоминать v8vscedit_list_available_types'
+      );
+      assert.ok(
+        contract.notes.some((note) => note.includes('v8vscedit_set_type')),
+        'notes должны упоминать v8vscedit_set_type'
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('запрещает ссылочный тип CFE, если объект не заимствован в расширение', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-mcp-cfe-type-'));
     try {
@@ -388,8 +430,15 @@ suite('McpPropertyService', () => {
 });
 
 function createAttributeNode(ownerXmlPath: string): MetadataNode {
+  // Берём имя первого реквизита из XML владельца, чтобы тест не зависел от
+  // конкретного справочника example/.
+  const xml = fs.readFileSync(ownerXmlPath, 'utf-8');
+  const attributeNameMatch = /<Attribute[\s>][^]*?<Name>([^<]+)<\/Name>/.exec(xml);
+  if (!attributeNameMatch) {
+    throw new Error(`В ${ownerXmlPath} нет ни одного реквизита для теста`);
+  }
   return new MetadataNode({
-    label: 'КоррСчет',
+    label: attributeNameMatch[1],
     nodeKind: 'Attribute',
     xmlPath: ownerXmlPath,
     metaContext: {

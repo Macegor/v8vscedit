@@ -105,44 +105,48 @@ export class CommandInterfaceService {
     const lines: string[] = [];
 
     for (const op of options.operations) {
-      if (op.operation === 'hide' || op.operation === 'show') {
-        const result = this.setVisibility(xml, toStringList(op.value), op.operation === 'show');
-        xml = result.xml;
-        added += result.added;
-        modified += result.modified;
-        lines.push(...result.lines);
-        continue;
-      }
-      if (op.operation === 'place') {
-        const result = this.placeCommand(xml, op.value.command, op.value.group);
-        xml = result.xml;
-        added += result.added;
-        modified += result.modified;
-        lines.push(...result.lines);
-        continue;
-      }
-      if (op.operation === 'order') {
-        const result = this.setCommandOrder(xml, op.value.group, op.value.commands);
-        xml = result.xml;
-        added += result.added;
-        removed += result.removed;
-        lines.push(...result.lines);
-        continue;
-      }
-      if (op.operation === 'subsystem-order') {
-        const result = replaceListSection(xml, 'SubsystemsOrder', 'Subsystem', op.value);
-        xml = result.xml;
-        added += result.added;
-        removed += result.removed;
-        lines.push(`Порядок подсистем: ${String(op.value.length)} записей.`);
-        continue;
-      }
-      if (op.operation === 'group-order') {
-        const result = replaceListSection(xml, 'GroupsOrder', 'Group', op.value);
-        xml = result.xml;
-        added += result.added;
-        removed += result.removed;
-        lines.push(`Порядок групп: ${String(op.value.length)} записей.`);
+      switch (op.operation) {
+        case 'hide':
+        case 'show': {
+          const result = this.setVisibility(xml, toStringList(op.value), op.operation === 'show');
+          xml = result.xml;
+          added += result.added;
+          modified += result.modified;
+          lines.push(...result.lines);
+          break;
+        }
+        case 'place': {
+          const result = this.placeCommand(xml, op.value.command, op.value.group);
+          xml = result.xml;
+          added += result.added;
+          modified += result.modified;
+          lines.push(...result.lines);
+          break;
+        }
+        case 'order': {
+          const result = this.setCommandOrder(xml, op.value.group, op.value.commands);
+          xml = result.xml;
+          added += result.added;
+          removed += result.removed;
+          lines.push(...result.lines);
+          break;
+        }
+        case 'subsystem-order': {
+          const result = replaceListSection(xml, 'SubsystemsOrder', 'Subsystem', op.value);
+          xml = result.xml;
+          added += result.added;
+          removed += result.removed;
+          lines.push(`Порядок подсистем: ${String(op.value.length)} записей.`);
+          break;
+        }
+        case 'group-order': {
+          const result = replaceListSection(xml, 'GroupsOrder', 'Group', op.value);
+          xml = result.xml;
+          added += result.added;
+          removed += result.removed;
+          lines.push(`Порядок групп: ${String(op.value.length)} записей.`);
+          break;
+        }
       }
     }
 
@@ -244,7 +248,7 @@ export class CommandInterfaceService {
     const current = parseCommandInterface(xml).placement.map((item) => [item.command, item] as const);
     const map = new Map(current);
     const previous = map.get(command);
-    const changed = !previous || previous.group !== group || previous.placement !== 'Auto';
+    const changed = previous?.group !== group || previous.placement !== 'Auto';
     map.set(command, { command, group, placement: 'Auto' });
     const section = buildPlacementSection([...map.values()]);
     return {

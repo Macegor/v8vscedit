@@ -33,7 +33,7 @@ async function validateRole(node: MetadataNode | undefined, services: CommandSer
     return;
   }
   const result = services.roleRightsService.validate({ rightsPath: rolePath, detailed: true, maxErrors: 100 });
-  await openReport(`Валидация роли: ${result.errors} ошибок`, result.lines.join('\n'));
+  await openReport(`Валидация роли: ${String(result.errors)} ошибок`, result.lines.join('\n'));
 }
 
 async function openReport(title: string, content: string): Promise<void> {
