@@ -244,7 +244,10 @@ suite('roleRightsService', () => {
   });
 });
 
-// Находит первую роль в example/src/cf/Roles, у которой есть Ext/Rights.xml.
+// Находит первую роль в example/src/cf/Roles, у которой есть Ext/Rights.xml
+// с реальным содержимым (хотя бы один <object> или <setForNewObjects>).
+// Самозакрывающийся <Rights/> валиден как XML, но не соответствует контракту
+// RoleRightsXml.readRole — такие роли пропускаются.
 function findFirstRoleRightsPath(): { rightsPath: string; roleName: string } | null {
   const rolesDir = path.join(__dirname, '..', '..', '..', 'example', 'src', 'cf', 'Roles');
   if (!fs.existsSync(rolesDir)) {
@@ -255,9 +258,14 @@ function findFirstRoleRightsPath(): { rightsPath: string; roleName: string } | n
       continue;
     }
     const rightsPath = path.join(rolesDir, entry.name, 'Ext', 'Rights.xml');
-    if (fs.existsSync(rightsPath)) {
-      return { rightsPath, roleName: entry.name };
+    if (!fs.existsSync(rightsPath)) {
+      continue;
     }
+    const content = fs.readFileSync(rightsPath, 'utf-8');
+    if (!/<(?:[^:>\s]+:)?(?:object|setForNewObjects)\b/i.test(content)) {
+      continue;
+    }
+    return { rightsPath, roleName: entry.name };
   }
   return null;
 }

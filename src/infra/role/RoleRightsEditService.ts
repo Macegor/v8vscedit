@@ -3,6 +3,7 @@ import * as path from 'path';
 import { writeTextFilePreservingBomAndEol } from '../xml/XmlUtils';
 import {
   DEFAULT_FORMAT_VERSION,
+  KNOWN_RIGHTS,
   PRESETS,
   asArray,
   getObjectType,
@@ -205,11 +206,19 @@ function applyGrant(state: RoleRightsState, op: { object: string; preset?: strin
   if (Array.isArray(op.rights)) {
     for (const raw of op.rights) {
       const rightName = translateRightName(String(raw));
+      if (!isKnownRight(objectName, rightName)) {
+        warnings.push(unknownRightMessage(objectName, rightName));
+        continue;
+      }
       rights.set(rightName, { ...(rights.get(rightName) ?? {}), value: 'true' });
     }
   } else if (op.rights && typeof op.rights === 'object') {
     for (const [raw, value] of Object.entries(op.rights)) {
       const rightName = translateRightName(raw);
+      if (!isKnownRight(objectName, rightName)) {
+        warnings.push(unknownRightMessage(objectName, rightName));
+        continue;
+      }
       rights.set(rightName, { ...(rights.get(rightName) ?? {}), value: value ? 'true' : 'false' });
     }
   }
@@ -237,6 +246,34 @@ function applyGrant(state: RoleRightsState, op: { object: string; preset?: strin
 
   state.objects.set(objectName, rights);
   return warnings;
+}
+
+function isKnownRight(objectName: string, rightName: string): boolean {
+  // Для вложенных объектов (Catalog.X.Attribute.Y, ...Command.Z, ...Channel.W) допустимы
+  // ограниченные наборы прав — иначе ориентируемся на KNOWN_RIGHTS по типу владельца.
+  const parts = objectName.split('.');
+  if (parts.length >= 3) {
+    const nestedKind = parts[parts.length - 2];
+    if (nestedKind === 'Command') {
+      return rightName === 'View';
+    }
+    if (nestedKind === 'Channel') {
+      return rightName === 'Use';
+    }
+    return rightName === 'View' || rightName === 'Edit';
+  }
+  const objectType = getObjectType(objectName);
+  const allowed = KNOWN_RIGHTS[objectType];
+  if (!allowed) {
+    // Тип объекта не каталогизирован в KNOWN_RIGHTS — пропускаем без отбивки,
+    // чтобы не блокировать пользовательские/расширительные конструкции.
+    return true;
+  }
+  return allowed.includes(rightName);
+}
+
+function unknownRightMessage(objectName: string, rightName: string): string {
+  return `${objectName}: право "${rightName}" не существует в платформе 1С 8.3 и пропущено — проверь имя или удали его из grant.rights.`;
 }
 
 function applyRevoke(state: RoleRightsState, op: { object: string; rights?: readonly string[] }): string[] {

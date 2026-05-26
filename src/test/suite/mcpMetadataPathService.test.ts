@@ -325,6 +325,58 @@ suite('McpMetadataPathService — каноническая навигация', 
       /Справочники|канонические/i,
     );
   });
+
+  // ── Мемоизация buildIndex ─────────────────────────────────────────────
+
+  test('buildIndex — повторный вызов возвращает идентичный массив (memo hit)', () => {
+    const provider = createProvider();
+    const service = new McpMetadataPathService(provider);
+
+    let calls = 0;
+    const original = provider.getAutomationRoots.bind(provider);
+    (provider as unknown as { getAutomationRoots: () => MetadataNode[] }).getAutomationRoots = () => {
+      calls++;
+      return original();
+    };
+
+    service.resolveNode('Справочники.Пользователи');
+    const after1 = calls;
+    service.resolveNode('Справочники.Пользователи');
+    const after2 = calls;
+
+    // При мемоизации повторный resolveNode не должен снова запрашивать корни дерева.
+    assert.strictEqual(after1, 1, `первый resolveNode: ожидался 1 вызов getAutomationRoots, получено ${String(after1)}`);
+    assert.strictEqual(after2, 1, `второй resolveNode: дополнительные вызовы не ожидались, получено ${String(after2)}`);
+  });
+
+  test('buildIndex — onDidChangeTreeData сбрасывает кэш', () => {
+    const emitter = new vscode.EventEmitter<MetadataNode | undefined | null>();
+    const provider = createProvider();
+    (provider as unknown as { onDidChangeTreeData: vscode.Event<MetadataNode | undefined | null> })
+      .onDidChangeTreeData = emitter.event;
+
+    const service = new McpMetadataPathService(provider);
+
+    let calls = 0;
+    const original = provider.getAutomationRoots.bind(provider);
+    (provider as unknown as { getAutomationRoots: () => MetadataNode[] }).getAutomationRoots = () => {
+      calls++;
+      return original();
+    };
+
+    service.resolveNode('Справочники.Пользователи');
+    assert.strictEqual(calls, 1);
+
+    service.resolveNode('Справочники.Пользователи');
+    assert.strictEqual(calls, 1, 'memo hit без событий');
+
+    emitter.fire(undefined);
+
+    service.resolveNode('Справочники.Пользователи');
+    assert.strictEqual(calls, 2, 'после onDidChangeTreeData индекс должен перестроиться');
+
+    emitter.dispose();
+  });
 });
 
 // ─── Тестовые утилиты ─────────────────────────────────────────────────────

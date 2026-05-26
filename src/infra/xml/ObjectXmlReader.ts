@@ -545,15 +545,15 @@ function updatePropertyInElement(
     ? updateLocalizedPropertyContent(propertyMatch[0], Array.isArray(value) ? '' : value)
     : buildPropertyValueBlock(propertyKey, valueKind, value);
 
+  // Если свойство ещё не объявлено в Properties, вставляем его в конец блока
+  // перед закрывающим </Properties>. Раньше вставка шла сразу после <Name> или
+  // <Comment>, из-за чего ServerCall у CommonModule оказывался перед Synonym и
+  // 1С не принимал такой порядок (xs:sequence в схеме).
   const nextPropsInner = propertyMatch
     ? propsInner.replace(propertyMatch[0], nextValueBlock)
     : selfClosingRe.test(propsInner)
     ? propsInner.replace(selfClosingRe, nextValueBlock)
-    : /<Comment[\s\S]*?<\/Comment>/.test(propsInner)
-    ? propsInner.replace(/(<Comment[\s\S]*?<\/Comment>)/, `$1\n${nextValueBlock}`)
-    : /<Name[\s\S]*?<\/Name>/.test(propsInner)
-    ? propsInner.replace(/(<Name[\s\S]*?<\/Name>)/, `$1\n${nextValueBlock}`)
-    : `${propsInner}\n${nextValueBlock}`;
+    : appendPropertyAtEnd(propsInner, nextValueBlock);
 
   if (nextPropsInner === propsInner) {
     return elementXml;
@@ -619,4 +619,15 @@ function escapeXmlText(value: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+function appendPropertyAtEnd(propsInner: string, valueBlock: string): string {
+  const trailingWhitespaceMatch = /([\t ]*)$/.exec(propsInner);
+  const trailingIndent = trailingWhitespaceMatch ? trailingWhitespaceMatch[1] : '';
+  // Восстанавливаем закрывающий отступ Properties (например, "\t\t"), чтобы
+  // новая строка вставала на ту же глубину, что и существующие свойства.
+  const innerIndent = trailingIndent ? `${trailingIndent}\t` : '';
+  const base = propsInner.replace(/[\t ]*$/, '');
+  const baseTrimmed = base.replace(/\n+$/, '');
+  return `${baseTrimmed}\n${innerIndent}${valueBlock}\n${trailingIndent}`;
 }

@@ -491,7 +491,7 @@ export class V8McpServer implements vscode.Disposable {
         title: 'Скомпилировать MXL-макет',
         description: [
           'Перезаписывает содержимое существующего MXL Template.xml из JSON DSL.',
-          'Для нового макета сначала используй v8vscedit_add_metadata_by_path.',
+          'Для нового макета сначала используй v8vscedit_add_template с templateType="Табличный документ".',
           'Принимает канонический путь существующего макета: Справочники.X.Макет.Y.',
         ].join(' '),
         inputSchema: z.object({
@@ -581,7 +581,7 @@ export class V8McpServer implements vscode.Disposable {
         title: 'Скомпилировать СКД',
         description: [
           'Перезаписывает содержимое существующей СКД Template.xml из JSON DSL.',
-          'Для новой СКД сначала используй v8vscedit_add_metadata_by_path с templateType=СКД.',
+          'Для новой СКД сначала используй v8vscedit_add_template с templateType="Схема компоновки данных".',
           'Принимает канонический путь существующего макета СКД.',
         ].join(' '),
         inputSchema: z.object({
@@ -1832,10 +1832,15 @@ export class V8McpServer implements vscode.Disposable {
     }
     this.services.suppressConfigurationReloadForFiles([...filePaths]);
     this.services.markChangedConfigurationByFiles([...filePaths]);
-    // Обновить JSON-кэш дерева по изменённым файлам — без этого treeProvider.refresh()
-    // переэмитит устаревший снимок (новая/удалённая форма не появится).
-    this.services.treeProvider.refreshCacheForFiles([...filePaths]);
-    this.services.treeProvider.refresh();
+    // refreshCacheForFiles сам эмитит onDidChangeTreeData (точечно для изменённых
+    // узлов или полным refresh внутри). Дополнительный refresh() дублировал бы
+    // работу — десятки тысяч new MetadataNode на больших конфигурациях. Делаем
+    // его только если refreshCacheForFiles ничего не обновил (нет совпавших
+    // конфигураций — например, файлы вне дерева).
+    const refreshed = this.services.treeProvider.refreshCacheForFiles([...filePaths]);
+    if (!refreshed) {
+      this.services.treeProvider.refresh();
+    }
     this.services.refreshActionsView();
   }
 }

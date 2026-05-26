@@ -224,7 +224,7 @@ export class MetadataXmlCreator {
     if (options.kind === 'Role') {
       const rightsPath = path.join(objectDir, 'Ext', 'Rights.xml');
       fs.mkdirSync(path.dirname(rightsPath), { recursive: true });
-      fs.writeFileSync(rightsPath, buildEmptyRightsXml(), 'utf-8');
+      fs.writeFileSync(rightsPath, buildEmptyRightsXml(formatVersion), 'utf-8');
       changedFiles.push(rightsPath);
     }
 
@@ -790,10 +790,19 @@ function buildStringType(indent: string): string {
   ].join('\n');
 }
 
-function buildEmptyRightsXml(): string {
+function buildEmptyRightsXml(formatVersion: string): string {
+  // Пустой Rights.xml роли без явно выданных прав. Использует тот же неймспейс
+  // и атрибут version, что и `RoleRightsXml.serializeRightsXml`, чтобы платформа
+  // 1С приняла файл как роль формата, совпадающего с Configuration.xml. Без
+  // явной версии 1С трактует файл как 2.18 и отказывается загружать вместе
+  // с конфигурацией других версий.
   return [
-    '<?xml version="1.0" encoding="utf-8"?>',
-    '<Rights xmlns="http://v8.1c.ru/8.3/xcf/readable" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable"/>',
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    `<Rights xmlns="http://v8.1c.ru/8.2/roles" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="${formatVersion}">`,
+    '\t<setForNewObjects>false</setForNewObjects>',
+    '\t<setForAttributesByDefault>true</setForAttributesByDefault>',
+    '\t<independentRightsOfChildObjects>false</independentRightsOfChildObjects>',
+    '</Rights>',
     '',
   ].join('\n');
 }

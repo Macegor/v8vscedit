@@ -104,6 +104,44 @@ suite('RepositoryService', () => {
     assert.strictEqual(service.isRootLocked(target), true);
     assert.strictEqual(service.isMetadataEditRestricted(target), false);
   });
+
+  test('findConfigRoot — повторный resolveTargetByXmlPath возвращает кэшированный target', () => {
+    const target_ = findFirstCatalogWithModule();
+    if (!target_) {
+      return;
+    }
+    const { xmlPath } = target_;
+
+    const first = service.resolveTargetByXmlPath(xmlPath);
+    assert.ok(first, 'Первый вызов должен найти конфигурацию.');
+
+    // После прогрева внутренний кэш findConfigRoot должен содержать запись
+    // ровно для директории файла. Это и есть наблюдаемое свидетельство мемоизации.
+    const size = service.getConfigRootCacheSize();
+    assert.ok(size > 0, 'Кэш findConfigRoot должен заполниться при первом проходе.');
+
+    const second = service.resolveTargetByXmlPath(xmlPath);
+    assert.deepStrictEqual(second, first);
+    assert.strictEqual(service.getConfigRootCacheSize(), size, 'Повторный вызов не должен расширять кэш.');
+  });
+
+  test('findConfigRoot — invalidateConfigRootCache сбрасывает кэш', () => {
+    const target_ = findFirstCatalogWithModule();
+    if (!target_) {
+      return;
+    }
+    const { xmlPath } = target_;
+
+    service.resolveTargetByXmlPath(xmlPath);
+    assert.ok(service.getConfigRootCacheSize() > 0);
+
+    service.invalidateConfigRootCache();
+    assert.strictEqual(service.getConfigRootCacheSize(), 0);
+
+    // После сброса кэша повторный вызов снова прогревает кэш.
+    service.resolveTargetByXmlPath(xmlPath);
+    assert.ok(service.getConfigRootCacheSize() > 0);
+  });
 });
 
 // Ищет справочник, у которого есть XML и реальный ObjectModule.bsl рядом.

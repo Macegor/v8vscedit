@@ -95,7 +95,7 @@ suite('AiSkillsInstaller', () => {
       };
       const content = fs.readFileSync(rolePath, 'utf-8');
       assert.ok(content.includes('Не редактируй XML-файлы 1С напрямую'));
-      assert.ok(content.includes('Для добавления объекта или дочернего элемента используй'));
+      assert.ok(content.includes('Для добавления используй отдельный инструмент на каждый тип'));
       assert.ok(config.instructions.includes('docs/project-rules.md'));
       assert.ok(config.instructions.includes('.opencode/instructions/*.md'));
       assert.strictEqual(config.mcp.v8vscedit.enabled, true);

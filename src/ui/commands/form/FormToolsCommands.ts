@@ -126,9 +126,11 @@ async function openReport(title: string, content: string): Promise<void> {
 function afterMutation(changedFiles: readonly string[], services: CommandServices): void {
   services.suppressConfigurationReloadForFiles([...changedFiles]);
   services.markChangedConfigurationByFiles([...changedFiles]);
-  // Обновить JSON-кэш дерева по изменённым файлам — иначе treeProvider.refresh()
-  // переэмитит устаревший снимок и новая/удалённая форма не появится в дереве.
-  services.treeProvider.refreshCacheForFiles([...changedFiles]);
-  services.treeProvider.refresh();
+  // refreshCacheForFiles сам эмитит onDidChangeTreeData; вызывать refresh()
+  // дополнительно нужно только если кэш не был обновлён (файлы вне дерева).
+  const refreshed = services.treeProvider.refreshCacheForFiles([...changedFiles]);
+  if (!refreshed) {
+    services.treeProvider.refresh();
+  }
   services.refreshActionsView();
 }

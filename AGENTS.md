@@ -320,7 +320,7 @@ Python-скрипты из `.codex/skills` и не через прямую пр�
 - `v8vscedit_validate_command_interface` — валидирует CommandInterface.xml подсистемы.
 - `v8vscedit_mxl_info` — сводка табличного документа. `path = Справочники.X.Макет.Y` или `ОбщиеМакеты.X`.
 - `v8vscedit_validate_mxl` — валидирует Template.xml табличного документа.
-- `v8vscedit_compile_mxl` — перезаписывает MXL из JSON DSL. Для нового макета сначала используй `add_metadata_by_path`.
+- `v8vscedit_compile_mxl` — перезаписывает MXL из JSON DSL. Для нового макета сначала используй `v8vscedit_add_template` с `templateType="Табличный документ"`.
 - `v8vscedit_decompile_mxl` — JSON DSL по существующему Template.xml.
 - `v8vscedit_skd_info` — сводка СКД (наборы, поля, параметры, варианты). `path = Отчеты.X.Макет.ОсновнаяСхема`.
 - `v8vscedit_validate_skd` — валидирует СКД Template.xml.

@@ -6,6 +6,7 @@
  */
 import { ConfigXmlReader } from './ConfigXmlReader';
 import { ObjectXmlReader } from './ObjectXmlReader';
+import { parseObjectXmlCache } from './ParseObjectXmlCache';
 import { MetaPathResolver } from '../fs/MetaPathResolver';
 import type { ConfigInfo } from '../../domain/Configuration';
 import type { MetaObject } from '../../domain/MetaObject';
@@ -14,6 +15,7 @@ import type { MetaKind } from '../../domain/MetaTypes';
 export * from './XmlUtils';
 export * from './ConfigXmlReader';
 export * from './ObjectXmlReader';
+export * from './ParseObjectXmlCache';
 export * from './ConfigurationXmlEditor';
 export * from './CommandInterfaceService';
 export * from './DataCompositionSchemaService';
@@ -51,9 +53,15 @@ export function parseConfigXml(configXmlPath: string): ConfigInfo {
   return configReader.read(configXmlPath);
 }
 
-/** Парсит XML объекта метаданных → {@link MetaObject} или `null`, если файл не читается */
+/**
+ * Парсит XML объекта метаданных → {@link MetaObject} или `null`, если файл не читается.
+ *
+ * Результат мемоизируется по `(xmlPath, mtimeMs)` через {@link parseObjectXmlCache},
+ * чтобы повторные парсы того же файла в рамках одной MCP-транзакции возвращали
+ * готовый объект без чтения с диска.
+ */
 export function parseObjectXml(xmlPath: string): MetaObject | null {
-  return objectReader.read(xmlPath);
+  return parseObjectXmlCache.getOrParse(xmlPath, (currentPath) => objectReader.read(currentPath));
 }
 
 /** Обновляет XML-блок `<Type>` для выбранного элемента метаданных */

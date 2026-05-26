@@ -137,10 +137,36 @@ const CHILD_LIKE_KINDS: ReadonlySet<string> = new Set([
 export class RepositoryService {
   private readonly targetCache = new Map<string, CachedTarget>();
   private readonly rootFullNameCache = new Map<string, CachedFileValue<string | null>>();
+  /**
+   * Кэш `findConfigRoot` по нормализованному ключу директории. Каждый
+   * `xmlPath` в `getTreeItem` без кэша требовал бы 1 `statSync` + цепочку
+   * `existsSync` вверх до корня workspace — десятки тысяч syscall на
+   * 10000 видимых узлов. Кэш заполняется на ходу: при подъёме по дереву
+   * каждая промежуточная директория получает свою запись. Инвалидация
+   * выполняется через `invalidateConfigRootCache()` из reloadEntries.
+   */
+  private readonly configRootByDirCache = new Map<string, string | null>();
   private envCache: CachedFileValue<Record<string, unknown>> | undefined;
   private stateCache: CachedFileValue<RepositoryStateFile> | undefined;
 
   constructor(private readonly workspaceRoot: string) {}
+
+  /**
+   * Сбрасывает кэш `findConfigRoot`. Вызывается при изменении набора
+   * корней конфигураций (`reloadEntries`/`updateEntries`).
+   */
+  invalidateConfigRootCache(): void {
+    this.configRootByDirCache.clear();
+  }
+
+  /**
+   * Возвращает количество записей в кэше `findConfigRoot`. Нужно тестам
+   * для проверки того, что мемоизация действительно работает (модуль `fs`
+   * в тест-окружении не подменяется через `Object.defineProperty`).
+   */
+  getConfigRootCacheSize(): number {
+    return this.configRootByDirCache.size;
+  }
 
   getEnvJsonPath(): string {
     return path.join(this.workspaceRoot, 'env.json');
@@ -572,10 +598,30 @@ export class RepositoryService {
     } catch {
       return null;
     }
+
+    // Быстрый путь: ровно эта директория уже резолвилась раньше.
+    const startKey = normalizePathKey(current);
+    if (this.configRootByDirCache.has(startKey)) {
+      return this.configRootByDirCache.get(startKey) ?? null;
+    }
+
     const workspaceRoot = path.resolve(this.workspaceRoot).toLowerCase();
+    // Подъём по дереву с накоплением промежуточных директорий. После того
+    // как корень найден (или подъём завершился), все посещённые директории
+    // получают одно и то же значение — следующие запросы для соседних
+    // файлов того же объекта не делают повторных syscall.
+    const visited: string[] = [];
+    let resolved: string | null = null;
     while (current.toLowerCase().startsWith(workspaceRoot)) {
+      const cached = this.configRootByDirCache.get(normalizePathKey(current));
+      if (cached !== undefined) {
+        resolved = cached;
+        break;
+      }
+      visited.push(current);
       if (fs.existsSync(path.join(current, 'Configuration.xml'))) {
-        return current;
+        resolved = current;
+        break;
       }
       const parent = path.dirname(current);
       if (parent === current) {
@@ -583,7 +629,11 @@ export class RepositoryService {
       }
       current = parent;
     }
-    return null;
+
+    for (const dir of visited) {
+      this.configRootByDirCache.set(normalizePathKey(dir), resolved);
+    }
+    return resolved;
   }
 
   private loadStateFile(): RepositoryStateFile {

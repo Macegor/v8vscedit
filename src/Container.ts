@@ -315,6 +315,9 @@ export class Container {
     const entries = findConfigurations(rootPath);
     this.basedOnXmlService.invalidate();
     this.ensureHashCaches(entries);
+    // Состав корней конфигураций мог измениться (новая cfe / переименование),
+    // поэтому кэш `findConfigRoot` нужно сбросить до перестроения дерева.
+    this.repositoryService.invalidateConfigRootCache();
     this.treeProvider.updateEntries(entries);
     if (this.isProjectInitialized()) {
       this.bslAnalyzerConfigService.ensureExists(getExtensionRootPaths(entries));

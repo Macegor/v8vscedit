@@ -115,11 +115,14 @@ export const RIGHT_ALIASES: Readonly<Record<string, string>> = {
 export const KNOWN_RIGHTS: Readonly<Partial<Record<string, readonly string[]>>> = {
   Configuration: [
     'Administration', 'DataAdministration', 'UpdateDataBaseConfiguration', 'ConfigurationExtensionsAdministration',
-    'ActiveUsers', 'EventLog', 'ExclusiveMode', 'ThinClient', 'ThickClient', 'WebClient', 'MobileClient',
-    'ExternalConnection', 'Automation', 'Output', 'SaveUserData', 'TechnicalSpecialistMode',
-    'InteractiveOpenExtDataProcessors', 'InteractiveOpenExtReports', 'AnalyticsSystemClient',
-    'CollaborationSystemInfoBaseRegistration', 'MainWindowModeNormal', 'MainWindowModeWorkplace',
-    'MainWindowModeEmbeddedWorkplace', 'MainWindowModeFullscreenWorkplace', 'MainWindowModeKiosk',
+    'ActiveUsers', 'EventLog', 'ViewEventLog', 'ExclusiveMode', 'ThinClient', 'ThickClient', 'WebClient', 'MobileClient',
+    'ExternalConnection', 'Automation', 'Output', 'OutputToPrinterFileClipboard', 'SaveUserData',
+    'TechnicalSpecialistMode', 'InteractiveOpenExtDataProcessors', 'InteractiveOpenExtReports',
+    'AllFunctionsMode', 'AnalyticsSystemClient', 'CollaborationSystemInfoBaseRegistration',
+    'MainWindowModeNormal', 'MainWindowModeWorkplace', 'MainWindowModeEmbeddedWorkplace',
+    'MainWindowModeFullscreenWorkplace', 'MainWindowModeKiosk',
+    'StartAutomation', 'StartThickClient', 'StartThinClient', 'StartWebClient',
+    'StartExternalConnection', 'StartMobileClient',
   ],
   Catalog: [
     'Read', 'Insert', 'Update', 'Delete', 'View', 'Edit', 'InputByString', 'InteractiveInsert',
@@ -290,7 +293,14 @@ export function inferRoleFolderName(rightsPath: string): string {
 }
 
 export function translateObjectName(name: string): string {
-  return name.split('.').map((part) => TYPE_ALIASES[part] ?? part).join('.');
+  const translated = name.split('.').map((part) => TYPE_ALIASES[part] ?? part).join('.');
+  // У прав на корень конфигурации в 1С имя — просто "Configuration".
+  // Агенты часто пишут "Configuration.Configuration" по аналогии с другими
+  // объектами, но платформа на загрузке "повисает", не находя такой объект.
+  if (/^Configuration(?:\.[^.]+)?$/.test(translated)) {
+    return 'Configuration';
+  }
+  return translated;
 }
 
 export function translateRightName(name: string): string {
@@ -365,7 +375,7 @@ export interface SerializableRoleRights {
 export function serializeRightsXml(rights: SerializableRoleRights): string {
   const lines: string[] = [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    `<Rights xmlns="${RIGHTS_NS}" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="Rights" version="${escapeXml(rights.formatVersion)}">`,
+    `<Rights xmlns="${RIGHTS_NS}" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="${escapeXml(rights.formatVersion)}">`,
     `\t<setForNewObjects>${String(rights.setForNewObjects)}</setForNewObjects>`,
     `\t<setForAttributesByDefault>${String(rights.setForAttributesByDefault)}</setForAttributesByDefault>`,
     `\t<independentRightsOfChildObjects>${String(rights.independentRightsOfChildObjects)}</independentRightsOfChildObjects>`,

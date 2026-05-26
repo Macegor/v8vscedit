@@ -46,7 +46,13 @@ async function addHelp(node: MetadataNode | undefined, services: CommandServices
     const result = services.externalObjectService.addHelp({ objectPath, lang });
     services.suppressConfigurationReloadForFiles([...result.changedFiles]);
     services.markChangedConfigurationByFiles([...result.changedFiles]);
-    services.treeProvider.refresh();
+    // Справка может относиться к объекту в составе конфигурации — даём
+    // точечный refreshCacheForFiles, и только если он не сработал
+    // (внешняя обработка/отчёт), делаем полный refresh.
+    const refreshed = services.treeProvider.refreshCacheForFiles([...result.changedFiles]);
+    if (!refreshed) {
+      services.treeProvider.refresh();
+    }
     services.refreshActionsView();
     await vscode.window.showInformationMessage(`Справка создана. Изменено файлов: ${String(result.changedFiles.length)}.`);
   } catch (error) {

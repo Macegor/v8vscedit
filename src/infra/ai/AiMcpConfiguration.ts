@@ -126,7 +126,7 @@ export const EXTENSION_MCP_TOOLS: readonly AiMcpToolInfo[] = [
     profile: 'extension',
     name: 'v8vscedit_compile_mxl',
     description: 'Перезапись содержимого существующего MXL Template.xml из JSON DSL.',
-    requirement: 'Канонический путь существующего макета; для нового — сначала v8vscedit_add_metadata_by_path',
+    requirement: 'Канонический путь существующего макета; для нового — сначала v8vscedit_add_template с templateType="Табличный документ"',
   },
   {
     profile: 'extension',
@@ -150,7 +150,7 @@ export const EXTENSION_MCP_TOOLS: readonly AiMcpToolInfo[] = [
     profile: 'extension',
     name: 'v8vscedit_compile_skd',
     description: 'Перезапись содержимого существующей СКД Template.xml из JSON DSL.',
-    requirement: 'Канонический путь существующей СКД; для новой — сначала v8vscedit_add_metadata_by_path',
+    requirement: 'Канонический путь существующей СКД; для новой — сначала v8vscedit_add_template с templateType="Схема компоновки данных"',
   },
   {
     profile: 'extension',

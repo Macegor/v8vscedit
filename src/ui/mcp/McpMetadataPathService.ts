@@ -105,8 +105,25 @@ function suggestRootSegment(kind: MetaKind): string {
 
 export class McpMetadataPathService {
   private readonly configReader = new ConfigXmlReader();
+  /**
+   * Кэш плоского индекса узлов по нормализованному имени конфигурации.
+   * Ключ `__single__` используется, когда конфигурация не указана и в дереве
+   * ровно один корень. Это снимает повторную сборку индекса в рамках одного
+   * MCP-вызова, который часто резолвит несколько путей подряд.
+   */
+  private readonly indexCache = new Map<string, IndexedNode[]>();
 
-  constructor(private readonly treeProvider: MetadataTreeProvider) {}
+  constructor(private readonly treeProvider: MetadataTreeProvider) {
+    // Любое изменение дерева делает плоский индекс невалидным, поэтому
+    // сбрасываем кэш на onDidChangeTreeData — событие приходит и от
+    // refresh(), и от refreshCacheForFiles/refreshNodeFromCache.
+    const event = (treeProvider as { onDidChangeTreeData?: unknown }).onDidChangeTreeData;
+    if (typeof event === 'function') {
+      (event as (listener: () => void) => unknown)(() => {
+        this.indexCache.clear();
+      });
+    }
+  }
 
   // ── Обзор рабочей области ─────────────────────────────────────────────
 
@@ -554,13 +571,31 @@ export class McpMetadataPathService {
   // ── Построение индекса ───────────────────────────────────────────────
 
   private buildIndex(configuration?: string): IndexedNode[] {
+    const cacheKey = this.indexCacheKey(configuration);
+    const cached = this.indexCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
     const roots = this.getConfigRoots(configuration);
     const result: IndexedNode[] = [];
     for (const root of roots) {
       this.collectRoot(root, result);
       this.collectRootChildren(root, result);
     }
+    this.indexCache.set(cacheKey, result);
     return result;
+  }
+
+  /**
+   * Возвращает ключ кэша индекса. Для пустого `configuration` используется
+   * стабильный токен `__single__`, что корректно ровно в случае единственного
+   * корня (иначе `getConfigRoots` всё равно бросит ошибку).
+   */
+  private indexCacheKey(configuration?: string): string {
+    if (configuration === undefined || configuration.trim().length === 0) {
+      return '__single__';
+    }
+    return normalize(configuration);
   }
 
   private getConfigRoots(configuration?: string): MetadataNode[] {
