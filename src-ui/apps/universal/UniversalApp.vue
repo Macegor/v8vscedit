@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, shallowRef, watchEffect, onMounted, onUnmounted } from 'vue';
 import { MessageBus } from '@ui-shared/api/messageBus';
 import type { HostToUiMessage } from '@ui-shared/protocol/hostMessages';
 import type { TreeNodeDto, TreeNodeActionDto } from '@ui-shared/types/tree';
@@ -9,6 +9,8 @@ import UniversalSearchBox from './UniversalSearchBox.vue';
 import UniversalProcessingOverlay from './UniversalProcessingOverlay.vue';
 import UniversalStandaloneActions from './UniversalStandaloneActions.vue';
 import UniversalContextMenu from './UniversalContextMenu.vue';
+
+type IdMap = Readonly<Record<string, true>>;
 
 const props = defineProps<{
   initialState: UniversalPanelState | null;
@@ -20,15 +22,27 @@ const processing = ref(props.initialState?.processing ?? false);
 const processingTitle = ref(props.initialState?.processingTitle ?? '');
 const processingMessage = ref(props.initialState?.processingMessage ?? '');
 const searchQuery = ref(props.initialState?.searchQuery ?? '');
-const openNodeIds = ref<Set<string>>(new Set(props.initialState?.openNodeIds ?? []));
-const loadingNodeIds = ref<Set<string>>(new Set());
+const openNodeIds = ref<IdMap>(toIdMap(props.initialState?.openNodeIds));
+const loadingNodeIds = ref<IdMap>(Object.freeze({}));
 const rootNodes = ref<TreeNodeDto[]>([...(props.initialState?.rootNodes ?? [])]);
 const standaloneStatus = ref<StandaloneServerStatusDto>(
   props.initialState?.standaloneStatus ?? { configured: false, state: 'unconfigured' },
 );
 
 const selectedNodeId = ref<string | null>(props.initialState?.selectedNodeId ?? null);
-let standaloneStatusTimer: ReturnType<typeof setInterval> | undefined;
+
+/** Плоский индекс по id — обновляется watchEffect-ом при изменении rootNodes. shallowRef — Map не нужно делать реактивной. */
+const nodeIndex = shallowRef<Map<string, TreeNodeDto>>(new Map());
+watchEffect(() => {
+  const index = new Map<string, TreeNodeDto>();
+  buildNodeIndex(rootNodes.value, index);
+  nodeIndex.value = index;
+});
+
+const STANDALONE_POLL_INTERVAL_MS = 1_000;
+const STANDALONE_POLL_DURATION_MS = 8_000;
+let standalonePollTimer: ReturnType<typeof setInterval> | undefined;
+let standalonePollStopAt = 0;
 
 const contextMenu = ref<{
   visible: boolean;
@@ -43,12 +57,13 @@ const contextMenu = ref<{
 });
 
 function onToggle(nodeId: string, open: boolean): void {
-  const set = openNodeIds.value;
   if (open) {
-    set.add(nodeId);
+    if (!openNodeIds.value[nodeId]) {
+      openNodeIds.value = { ...openNodeIds.value, [nodeId]: true };
+    }
     const node = findNodeById(nodeId);
-    if (node && !node.loaded && !loadingNodeIds.value.has(nodeId)) {
-      loadingNodeIds.value = new Set([...loadingNodeIds.value, nodeId]);
+    if (node && !node.loaded && !loadingNodeIds.value[nodeId]) {
+      loadingNodeIds.value = { ...loadingNodeIds.value, [nodeId]: true };
       props.messageBus.send({
         type: 'request',
         requestId: `load_${nodeId}`,
@@ -56,10 +71,10 @@ function onToggle(nodeId: string, open: boolean): void {
         payload: { nodeId },
       });
     }
-  } else {
-    set.delete(nodeId);
+  } else if (openNodeIds.value[nodeId]) {
+    const { [nodeId]: _removed, ...rest } = openNodeIds.value;
+    openNodeIds.value = rest;
   }
-  openNodeIds.value = new Set(set);
   props.messageBus.send({
     type: 'command',
     command: 'toggleNode',
@@ -98,7 +113,7 @@ function onNodeDefault(nodeId: string): void {
 function sendCommand(command: string): void {
   props.messageBus.send({ type: 'command', command });
   if (command.startsWith('v8vscedit.standalone.')) {
-    requestStandaloneStatus();
+    startStandalonePollBurst();
   }
 }
 
@@ -108,6 +123,29 @@ function requestStandaloneStatus(): void {
     requestId: 'standaloneStatus',
     name: 'refreshStandaloneStatus',
   });
+}
+
+/** После команды управления автономным сервером кратко поллим статус — пока хост не эмитит push. */
+function startStandalonePollBurst(): void {
+  standalonePollStopAt = Date.now() + STANDALONE_POLL_DURATION_MS;
+  requestStandaloneStatus();
+  if (standalonePollTimer) {
+    return;
+  }
+  standalonePollTimer = setInterval(() => {
+    if (Date.now() >= standalonePollStopAt) {
+      stopStandalonePollBurst();
+      return;
+    }
+    requestStandaloneStatus();
+  }, STANDALONE_POLL_INTERVAL_MS);
+}
+
+function stopStandalonePollBurst(): void {
+  if (standalonePollTimer) {
+    clearInterval(standalonePollTimer);
+    standalonePollTimer = undefined;
+  }
 }
 
 function onSearch(query: string): void {
@@ -150,17 +188,25 @@ function closeContextMenu(): void {
 }
 
 function findNodeById(id: string): TreeNodeDto | undefined {
-  function search(nodes: TreeNodeDto[]): TreeNodeDto | undefined {
-    for (const node of nodes) {
-      if (node.id === id) return node;
-      if (node.children) {
-        const found = search(node.children);
-        if (found) return found;
-      }
+  return nodeIndex.value.get(id);
+}
+
+function buildNodeIndex(nodes: readonly TreeNodeDto[], target: Map<string, TreeNodeDto>): void {
+  for (const node of nodes) {
+    target.set(node.id, node);
+    if (node.children?.length) {
+      buildNodeIndex(node.children, target);
     }
-    return undefined;
   }
-  return search(rootNodes.value);
+}
+
+function toIdMap(ids: readonly string[] | undefined): IdMap {
+  if (!ids?.length) return Object.freeze({});
+  const map: Record<string, true> = {};
+  for (const id of ids) {
+    map[id] = true;
+  }
+  return Object.freeze(map);
 }
 
 function handleHostMessage(msg: HostToUiMessage): void {
@@ -171,14 +217,20 @@ function handleHostMessage(msg: HostToUiMessage): void {
     if (state.processingTitle !== undefined) processingTitle.value = state.processingTitle;
     if (state.processingMessage !== undefined) processingMessage.value = state.processingMessage;
     if (state.searchQuery !== undefined) searchQuery.value = state.searchQuery;
-    if (state.openNodeIds) openNodeIds.value = new Set(state.openNodeIds);
+    if (state.openNodeIds) openNodeIds.value = toIdMap(state.openNodeIds);
     if (state.selectedNodeId !== undefined) selectedNodeId.value = state.selectedNodeId;
     if (state.rootNodes) {
       rootNodes.value = state.rootNodes as TreeNodeDto[];
-      loadingNodeIds.value = new Set([...loadingNodeIds.value].filter((nodeId) => {
-        const node = findNodeById(nodeId);
-        return Boolean(node && !node.loaded);
-      }));
+      // Чистим loadingNodeIds от уже подгруженных узлов.
+      // nodeIndex обновится автоматически через watchEffect.
+      const stillLoading: Record<string, true> = {};
+      const tmpIndex = new Map<string, TreeNodeDto>();
+      buildNodeIndex(rootNodes.value, tmpIndex);
+      for (const id of Object.keys(loadingNodeIds.value)) {
+        const node = tmpIndex.get(id);
+        if (node && !node.loaded) stillLoading[id] = true;
+      }
+      loadingNodeIds.value = Object.freeze(stillLoading);
     }
     if (state.standaloneStatus) standaloneStatus.value = state.standaloneStatus as StandaloneServerStatusDto;
     return;
@@ -195,10 +247,9 @@ function handleHostMessage(msg: HostToUiMessage): void {
     if (updated) {
       rootNodes.value = updated;
     }
-    if (msg.done !== false) {
-      const nextLoading = new Set(loadingNodeIds.value);
-      nextLoading.delete(msg.nodeId);
-      loadingNodeIds.value = nextLoading;
+    if (msg.done !== false && loadingNodeIds.value[msg.nodeId]) {
+      const { [msg.nodeId]: _removed, ...rest } = loadingNodeIds.value;
+      loadingNodeIds.value = rest;
     }
     return;
   }
@@ -243,7 +294,8 @@ onMounted(() => {
   props.messageBus.on('init', handleHostMessage);
   props.messageBus.on('childrenLoaded', handleHostMessage);
   props.messageBus.on('standaloneStatus', handleHostMessage);
-  standaloneStatusTimer = setInterval(requestStandaloneStatus, 2_000);
+  // Однократный pull при монтировании — далее статус приходит push-ом в state
+  // или burst-поллингом после команд автономного сервера.
   requestStandaloneStatus();
 });
 
@@ -252,9 +304,7 @@ onUnmounted(() => {
   props.messageBus.off('init', handleHostMessage);
   props.messageBus.off('childrenLoaded', handleHostMessage);
   props.messageBus.off('standaloneStatus', handleHostMessage);
-  if (standaloneStatusTimer) {
-    clearInterval(standaloneStatusTimer);
-  }
+  stopStandalonePollBurst();
 });
 </script>
 

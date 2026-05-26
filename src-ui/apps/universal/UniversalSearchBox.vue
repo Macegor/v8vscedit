@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, watch, onUnmounted } from 'vue';
 
 const props = defineProps<{
   query: string;
@@ -30,6 +30,13 @@ function clear(): void {
   if (debounceTimer) clearTimeout(debounceTimer);
   emit('clear');
 }
+
+onUnmounted(() => {
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = undefined;
+  }
+});
 </script>
 
 <template>

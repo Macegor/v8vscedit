@@ -2,11 +2,13 @@
 import type { TreeNodeDto } from '@ui-shared/types/tree';
 import UniversalTreeNode from './UniversalTreeNode.vue';
 
-defineProps<{
+type IdMap = Readonly<Record<string, true>>;
+
+const props = defineProps<{
   nodes: readonly TreeNodeDto[];
   selectedId: string | null;
-  openIds: Set<string>;
-  loadingIds: Set<string>;
+  openIds: IdMap;
+  loadingIds: IdMap;
 }>();
 
 const emit = defineEmits<{
@@ -28,7 +30,7 @@ const emit = defineEmits<{
       :selected-id="selectedId"
       :open-ids="openIds"
       :loading-ids="loadingIds"
-      @toggle="emit('toggle', $event, !openIds.has($event))"
+      @toggle="emit('toggle', $event, !props.openIds[$event])"
       @select="emit('select', $event)"
       @default="emit('default', $event)"
       @action="($event) => emit('action', $event.nodeId, $event.actionId)"

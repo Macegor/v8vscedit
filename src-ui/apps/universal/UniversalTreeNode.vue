@@ -3,12 +3,14 @@ import { computed } from 'vue';
 import type { TreeNodeDto } from '@ui-shared/types/tree';
 import UniversalTreeRow from './UniversalTreeRow.vue';
 
+type IdMap = Readonly<Record<string, true>>;
+
 const props = defineProps<{
   node: TreeNodeDto;
   depth: number;
   selectedId: string | null;
-  openIds: Set<string>;
-  loadingIds: Set<string>;
+  openIds: IdMap;
+  loadingIds: IdMap;
 }>();
 
 const emit = defineEmits<{
@@ -19,9 +21,9 @@ const emit = defineEmits<{
   contextMenu: [payload: { nodeId: string; event: MouseEvent }];
 }>();
 
-const isOpen = computed(() => props.openIds.has(props.node.id));
+const isOpen = computed(() => Boolean(props.openIds[props.node.id]));
 const isSelected = computed(() => props.node.id === props.selectedId);
-const isLoading = computed(() => props.loadingIds.has(props.node.id));
+const isLoading = computed(() => Boolean(props.loadingIds[props.node.id]));
 const hasChildren = computed(() => props.node.hasChildren || (props.node.children?.length ?? 0) > 0);
 
 function onToggle(): void {
