@@ -1,14 +1,15 @@
 import { createApp } from 'vue';
+import '@vscode/codicons/dist/codicon.css';
 import '@ui-shared/vscode-elements';
 import { loadInitialState } from '@ui-shared/api/loadInitialState';
 import { MessageBus } from '@ui-shared/api/messageBus';
-import type { PropertiesViewState } from '@ui-shared/types/property';
-import PropertiesApp from './PropertiesApp.vue';
+import type { DynamicPanelState } from '@ui-shared/types/dynamicPanel';
+import DynamicPanelApp from './DynamicPanelApp.vue';
 
-const initialState = loadInitialState<PropertiesViewState | null>('properties');
+const initialState = loadInitialState<DynamicPanelState | null>('dynamic-panel');
 const messageBus = new MessageBus();
 
-const app = createApp(PropertiesApp, { initialState, messageBus });
+const app = createApp(DynamicPanelApp, { initialState, messageBus });
 app.provide('messageBus', messageBus);
 app.mount('#app');
 

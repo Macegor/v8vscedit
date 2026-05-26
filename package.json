@@ -38,6 +38,11 @@
           "id": "v8vsceditUniversal",
           "name": " ",
           "type": "webview"
+        },
+        {
+          "id": "v8vsceditDynamicPanel",
+          "name": "Контекстная панель",
+          "type": "webview"
         }
       ]
     },

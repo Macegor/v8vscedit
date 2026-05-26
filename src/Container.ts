@@ -8,8 +8,9 @@ import { MetadataTreeProvider } from './ui/tree/MetadataTreeProvider';
 import type { MetadataNode } from './ui/tree/TreeNode';
 import { registerCommands } from './ui/commands/CommandRegistry';
 import type { CommandServices } from './ui/commands/_shared';
-import { PropertiesViewProvider } from './ui/views/PropertiesViewProvider';
 import { PropertiesViewController } from './ui/views/properties/PropertiesViewController';
+import { DynamicPanelViewProvider } from './ui/views/dynamic-panel/DynamicPanelViewProvider';
+import { DynamicPanelController } from './ui/views/dynamic-panel/DynamicPanelController';
 import { SubsystemEditorViewProvider } from './ui/views/subsystem/SubsystemEditorViewProvider';
 import { TreeSearchViewProvider } from './ui/views/search/TreeSearchViewProvider';
 import { SupportInfoService } from './infra/support/SupportInfoService';
@@ -43,6 +44,7 @@ import { StandaloneServerService } from './infra/standalone';
 import { SupportDecorationProvider } from './ui/tree/decorations/SupportDecorationProvider';
 import { GitMetadataDecorationProvider } from './ui/tree/decorations/GitMetadataDecorationProvider';
 import { LspManager } from './lsp/LspManager';
+import { BslDocumentSymbolProvider } from './lsp/BslDocumentSymbolProvider';
 import { BslReadonlyGuard } from './ui/readonly/BslReadonlyGuard';
 import { registerSupportIndicatorCommands } from './ui/support/SupportIndicatorCommands';
 import { registerSupportWatcher } from './ui/support/SupportWatcher';
@@ -77,7 +79,6 @@ export class Container {
   readonly supportService: SupportInfoService;
   readonly decorationProvider: SupportDecorationProvider;
   readonly treeProvider: MetadataTreeProvider;
-  readonly propertiesProvider: PropertiesViewProvider;
   readonly subsystemEditorViewProvider: SubsystemEditorViewProvider;
   readonly repositoryService: RepositoryService;
   readonly gitMetadataStatusService: GitMetadataStatusService;
@@ -114,6 +115,8 @@ export class Container {
   readonly roleRightsService: RoleRightsService;
   readonly treeSearchViewProvider: TreeSearchViewProvider;
   readonly universalPanelViewProvider: UniversalPanelViewProvider;
+  readonly dynamicPanelController: DynamicPanelController;
+  readonly dynamicPanelViewProvider: DynamicPanelViewProvider;
   readonly mcpServer: V8McpServer;
   readonly bslAnalyzerMcpService: BslAnalyzerMcpService;
   readonly aiMcpViewProvider: AiMcpViewProvider;
@@ -175,9 +178,9 @@ export class Container {
     this.cfePatchMethodService = new CfePatchMethodService();
     this.roleRightsService = new RoleRightsService();
 
-    // Mutable ref: PropertiesViewProvider зависит от контроллера,
-    // а колбэки контроллера — от провайдера.
-    const providerRef: { current: PropertiesViewProvider | undefined } = { current: undefined };
+    // Mutable ref: DynamicPanelController зависит от контроллера свойств,
+    // а колбэки контроллера свойств — от динамической панели.
+    const dynamicRef: { current: DynamicPanelController | undefined } = { current: undefined };
 
     const propertiesController = new PropertiesViewController(
       this.subsystemXmlService,
@@ -187,10 +190,10 @@ export class Container {
       this.basedOnXmlService,
       {
         refreshActiveView: () => {
-          providerRef.current?.refresh();
+          dynamicRef.current?.refreshProperties();
         },
         replaceActiveNode: (node) => {
-          providerRef.current?.replaceActiveNode(node);
+          dynamicRef.current?.replaceActiveNode(node);
         },
       },
       this.supportService,
@@ -199,11 +202,6 @@ export class Container {
       () => this.treeProvider.refresh()
     );
 
-    this.propertiesProvider = new PropertiesViewProvider(
-      propertiesController,
-      context.extensionUri
-    );
-    providerRef.current = this.propertiesProvider;
     this.subsystemEditorViewProvider = new SubsystemEditorViewProvider(
       this.subsystemXmlService,
       this.supportService,
@@ -239,7 +237,6 @@ export class Container {
     this.externalObjectService = new ExternalObjectService();
     this.formToolsService = new FormToolsService();
     context.subscriptions.push(
-      this.propertiesProvider,
       this.subsystemEditorViewProvider,
       this.projectEnvironmentViewProvider,
       this.standaloneServerViewProvider
@@ -270,6 +267,14 @@ export class Container {
       refreshActionsView: () => this.refreshActionsView(),
     });
     context.subscriptions.push(this.universalPanelViewProvider);
+
+    this.dynamicPanelController = new DynamicPanelController(propertiesController);
+    dynamicRef.current = this.dynamicPanelController;
+    this.dynamicPanelViewProvider = new DynamicPanelViewProvider(
+      context.extensionUri,
+      this.dynamicPanelController
+    );
+    context.subscriptions.push(this.dynamicPanelController, this.dynamicPanelViewProvider);
     this.changeDetector = new ConfigurationChangeDetector(workspaceFolder.uri.fsPath);
 
     this.lspManager = new LspManager(context, this.outputChannel);
@@ -289,6 +294,13 @@ export class Container {
       () => this.mcpServer.stop()
     );
     context.subscriptions.push(this.mcpServer, this.bslAnalyzerMcpService, this.aiMcpViewProvider);
+
+    context.subscriptions.push(
+      vscode.languages.registerDocumentSymbolProvider(
+        [{ scheme: 'file', language: 'bsl' }, { scheme: 'file', language: 'os' }],
+        new BslDocumentSymbolProvider()
+      )
+    );
   }
 
   /** Создаёт контейнер и выполняет регистрацию всех подсистем */
@@ -343,6 +355,11 @@ export class Container {
         UniversalPanelViewProvider.viewType,
         this.universalPanelViewProvider,
         { webviewOptions: { retainContextWhenHidden: true } }
+      ),
+      vscode.window.registerWebviewViewProvider(
+        DynamicPanelViewProvider.viewType,
+        this.dynamicPanelViewProvider,
+        { webviewOptions: { retainContextWhenHidden: true } }
       )
     );
   }
@@ -392,7 +409,7 @@ export class Container {
       cfePatchMethodService: this.cfePatchMethodService,
       roleRightsService: this.roleRightsService,
       reloadEntries: () => this.reloadEntries(),
-      propertiesViewProvider: this.propertiesProvider,
+      dynamicPanelController: this.dynamicPanelController,
       subsystemEditorViewProvider: this.subsystemEditorViewProvider,
       outputChannel: this.outputChannel,
       supportService: this.supportService,
