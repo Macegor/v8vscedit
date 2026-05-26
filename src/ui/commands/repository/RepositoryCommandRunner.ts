@@ -1,10 +1,14 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { decode } from 'iconv-lite';
 import type { RepositoryBinding, RepositoryNodeRef, RepositoryService, RepositoryTarget } from '../../../infra/repository/RepositoryService';
 import {
   decodeProcessOutput,
   normalizeInfoBasePath,
+  pickMostReadableText,
+  resolveV8ExecutablePath,
   resolveV8PathHintFromVersion,
   runProcess,
 } from '../../../infra/process';
@@ -51,26 +55,30 @@ export async function runRepositoryCliCommand(
     throw new Error(`Для "${options.target.displayName}" не настроено подключение к хранилищу в env.json.`);
   }
 
-  const processArgs = [
-    resolveInternalCliPath(services.workspaceFolder.uri.fsPath),
-    options.command,
-    ...buildConnectionCliArgs(connection),
-    ...buildRepositoryCliArgs(binding),
-    ...(options.target.extensionName ? ['-Extension', options.target.extensionName] : []),
-    ...(options.extraArgs ?? []),
-    '-Verbose',
-  ];
+  const v8Path = resolveV8ExecutablePath(connection.v8Path ?? '');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v8repo_'));
+  const outFile = path.join(tempDir, `${options.command}.log`);
 
-  const commandAsText = `node ${processArgs.join(' ')}`;
-  services.outputChannel.appendLine(`[repository] Старт: ${commandAsText}`);
   setOperationStatus(options.progressTitle, options.progressStartMessage, true);
 
   try {
+    const designerArgs: string[] = ['DESIGNER'];
+    appendConnectionDesignerArgs(designerArgs, connection);
+    appendRepositoryDesignerArgs(designerArgs, binding);
+    designerArgs.push(...buildCommandDesignerArgs(options.command, options.extraArgs ?? []));
+    if (options.target.extensionName) {
+      designerArgs.push('-Extension', options.target.extensionName);
+    }
+    designerArgs.push('/Out', outFile, '/DisableStartupDialogs');
+
+    const commandAsText = `${v8Path} ${designerArgs.join(' ')}`;
+    services.outputChannel.appendLine(`[repository] Старт: ${commandAsText}`);
+
     const stdoutChunks: string[] = [];
     const stderrChunks: string[] = [];
     const result = await runProcess({
-      command: process.execPath,
-      args: processArgs,
+      command: v8Path,
+      args: designerArgs,
       cwd: services.workspaceFolder.uri.fsPath,
       shell: false,
       onStdout: (chunk) => {
@@ -93,17 +101,25 @@ export async function runRepositoryCliCommand(
       },
     });
 
+    const logContent = readLogFileContent(outFile);
     if (result.exitCode !== 0) {
+      if (logContent) {
+        services.outputChannel.appendLine(`[repository][log]\n${logContent}`);
+      }
       const details = [
         ...stderrChunks,
         ...stdoutChunks,
         result.lastStderr,
         result.lastStdout,
-      ]
-        .filter(Boolean);
+        logContent,
+      ].filter(Boolean);
       const reason = extractFailureReason(details, result.exitCode);
       const operation = options.failureOperation ?? options.progressTitle.toLowerCase();
       throw new Error(`Ошибка при ${operation}: ${reason}`);
+    }
+
+    if (logContent) {
+      services.outputChannel.appendLine(`[repository][log]\n${logContent}`);
     }
 
     if (options.afterSuccess) {
@@ -122,6 +138,12 @@ export async function runRepositoryCliCommand(
     setOperationStatus(options.progressTitle, 'ошибка', false);
     await vscode.window.showErrorMessage(`${options.errorTitle}\n${message}`);
     return false;
+  } finally {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // временный каталог уже мог быть удалён — игнорируем
+    }
   }
 }
 
@@ -258,48 +280,256 @@ function requireTarget(repositoryService: RepositoryService, node: RepositoryNod
   return target;
 }
 
-function resolveInternalCliPath(workspaceRoot: string): string {
-  const candidates = collectCliCandidates(workspaceRoot);
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      return candidate;
-    }
+function appendConnectionDesignerArgs(args: string[], connection: ConnectionParams): void {
+  if (connection.infoBaseServer && connection.infoBaseRef) {
+    args.push('/S', `${connection.infoBaseServer}/${connection.infoBaseRef}`);
+  } else if (connection.infoBasePath) {
+    args.push('/F', connection.infoBasePath);
+  } else {
+    throw new Error('Недостаточно параметров подключения к базе из env.json');
   }
-
-  throw new Error(
-    `Не найден внутренний CLI раннер. Ожидался один из путей: ${candidates.join(', ')}`
-  );
+  if (connection.userName) {
+    args.push(`/N${connection.userName}`);
+  }
+  if (connection.password) {
+    args.push(`/P${connection.password}`);
+  }
 }
 
-function collectCliCandidates(workspaceRoot: string): string[] {
-  const result: string[] = [];
-  const seen = new Set<string>();
-  addCandidate(result, seen, path.join(__dirname, '..', '..', '..', 'cli', 'onec-tools.js'));
-  addCandidate(result, seen, path.join(__dirname, '..', '..', '..', '..', 'cli', 'onec-tools.js'));
-  addCandidate(result, seen, path.join(workspaceRoot, 'dist', 'cli', 'onec-tools.js'));
-  addCandidate(result, seen, path.join(workspaceRoot, 'out', 'cli', 'onec-tools.js'));
-
-  let current = path.resolve(workspaceRoot);
-  for (let depth = 0; depth < 8; depth += 1) {
-    addCandidate(result, seen, path.join(current, 'dist', 'cli', 'onec-tools.js'));
-    addCandidate(result, seen, path.join(current, 'out', 'cli', 'onec-tools.js'));
-    const parent = path.dirname(current);
-    if (parent === current) {
-      break;
-    }
-    current = parent;
+function appendRepositoryDesignerArgs(args: string[], binding: RepositoryBinding): void {
+  args.push('/ConfigurationRepositoryF', binding.repoPath);
+  args.push('/ConfigurationRepositoryN', binding.repoUser);
+  if (binding.repoPassword) {
+    args.push('/ConfigurationRepositoryP', binding.repoPassword);
   }
-
-  return result;
 }
 
-function addCandidate(target: string[], seen: Set<string>, candidatePath: string): void {
-  const normalized = path.resolve(candidatePath);
-  if (seen.has(normalized)) {
-    return;
+const BOOLEAN_EXTRA_FLAGS = new Set([
+  'AllowConfigurationChanges',
+  'NoBind',
+  'ForceBindAlreadyBindedUser',
+  'ForceReplaceCfg',
+  'Force',
+  'Revised',
+  'KeepLocked',
+  'RestoreDeletedUser',
+  'GroupByObject',
+  'GroupByComment',
+  'DoNotIncludeVersionsWithLabels',
+  'IncludeOnlyVersionsWithLabels',
+  'IncludeCommentLinesWithDoubleSlash',
+  'Verbose',
+]);
+
+interface ParsedExtraArgs {
+  bool(name: string): boolean;
+  value(name: string): string | undefined;
+}
+
+function parseExtraArgs(extraArgs: string[]): ParsedExtraArgs {
+  const values = new Map<string, string>();
+  const flags = new Set<string>();
+  let i = 0;
+  while (i < extraArgs.length) {
+    const arg = extraArgs[i];
+    if (!arg.startsWith('-')) {
+      i += 1;
+      continue;
+    }
+    const name = arg.slice(1);
+    if (BOOLEAN_EXTRA_FLAGS.has(name)) {
+      flags.add(name);
+      i += 1;
+      continue;
+    }
+    if (i + 1 < extraArgs.length && !extraArgs[i + 1].startsWith('-')) {
+      values.set(name, extraArgs[i + 1]);
+      i += 2;
+    } else {
+      flags.add(name);
+      i += 1;
+    }
   }
-  seen.add(normalized);
-  target.push(normalized);
+  return {
+    bool: (name) => flags.has(name),
+    value: (name) => values.get(name),
+  };
+}
+
+function pushIfValue(target: string[], name: string, value: string | undefined): void {
+  if (value !== undefined && value !== '') {
+    target.push(name, value);
+  }
+}
+
+function buildCommandDesignerArgs(command: string, extraArgs: string[]): string[] {
+  const opts = parseExtraArgs(extraArgs);
+  switch (command) {
+    case 'repository-create': {
+      const args = ['/ConfigurationRepositoryCreate'];
+      if (opts.bool('AllowConfigurationChanges')) {
+        args.push('-AllowConfigurationChanges');
+      }
+      pushIfValue(args, '-ChangesAllowedRule', opts.value('ChangesAllowedRule'));
+      pushIfValue(args, '-ChangesNotRecommendedRule', opts.value('ChangesNotRecommendedRule'));
+      if (opts.bool('NoBind')) {
+        args.push('-NoBind');
+      }
+      return args;
+    }
+    case 'repository-bind': {
+      const args = ['/ConfigurationRepositoryBindCfg'];
+      if (opts.bool('ForceBindAlreadyBindedUser')) {
+        args.push('-forceBindAlreadyBindedUser');
+      }
+      if (opts.bool('ForceReplaceCfg')) {
+        args.push('-forceReplaceCfg');
+      }
+      return args;
+    }
+    case 'repository-unbind': {
+      const args = ['/ConfigurationRepositoryUnbindCfg'];
+      if (opts.bool('Force')) {
+        args.push('-force');
+      }
+      return args;
+    }
+    case 'repository-lock': {
+      const args = ['/ConfigurationRepositoryLock'];
+      pushIfValue(args, '-Objects', opts.value('ObjectsFile'));
+      if (opts.bool('Revised')) {
+        args.push('-revised');
+      }
+      return args;
+    }
+    case 'repository-unlock': {
+      const args = ['/ConfigurationRepositoryUnLock'];
+      pushIfValue(args, '-Objects', opts.value('ObjectsFile'));
+      if (opts.bool('Force')) {
+        args.push('-force');
+      }
+      return args;
+    }
+    case 'repository-commit': {
+      const args = ['/ConfigurationRepositoryCommit'];
+      pushIfValue(args, '-Objects', opts.value('ObjectsFile'));
+      pushIfValue(args, '-comment', opts.value('Comment'));
+      if (opts.bool('KeepLocked')) {
+        args.push('-keepLocked');
+      }
+      if (opts.bool('Force')) {
+        args.push('-force');
+      }
+      return args;
+    }
+    case 'repository-update': {
+      const args = ['/ConfigurationRepositoryUpdateCfg'];
+      pushIfValue(args, '-Objects', opts.value('ObjectsFile'));
+      pushIfValue(args, '-v', opts.value('Version'));
+      if (opts.bool('Force')) {
+        args.push('-force');
+      }
+      return args;
+    }
+    case 'repository-add-user': {
+      const args = ['/ConfigurationRepositoryAddUser'];
+      pushIfValue(args, '-User', opts.value('User'));
+      pushIfValue(args, '-Pwd', opts.value('Pwd'));
+      pushIfValue(args, '-Rights', opts.value('Rights'));
+      if (opts.bool('RestoreDeletedUser')) {
+        args.push('-RestoreDeletedUser');
+      }
+      return args;
+    }
+    case 'repository-copy-users': {
+      const args = ['/ConfigurationRepositoryCopyUsers'];
+      pushIfValue(args, '-Path', opts.value('Path'));
+      pushIfValue(args, '-User', opts.value('User'));
+      pushIfValue(args, '-Pwd', opts.value('Pwd'));
+      if (opts.bool('RestoreDeletedUser')) {
+        args.push('-RestoreDeletedUser');
+      }
+      return args;
+    }
+    case 'repository-dump': {
+      const file = opts.value('File');
+      if (!file) {
+        throw new Error('Для выгрузки требуется параметр -File');
+      }
+      const args = ['/ConfigurationRepositoryDumpCfg', file];
+      pushIfValue(args, '-v', opts.value('Version'));
+      return args;
+    }
+    case 'repository-report': {
+      const file = opts.value('File');
+      if (!file) {
+        throw new Error('Для отчёта требуется параметр -File');
+      }
+      const args = ['/ConfigurationRepositoryReport', file];
+      pushIfValue(args, '-NBegin', opts.value('NBegin'));
+      pushIfValue(args, '-NEnd', opts.value('NEnd'));
+      pushIfValue(args, '-DateBegin', opts.value('DateBegin'));
+      pushIfValue(args, '-DateEnd', opts.value('DateEnd'));
+      pushIfValue(args, '-ConfigurationVersion', opts.value('ConfigurationVersion'));
+      pushIfValue(args, '-ReportFormat', opts.value('ReportFormat'));
+      if (opts.bool('GroupByObject')) {
+        args.push('-GroupByObject');
+      }
+      if (opts.bool('GroupByComment')) {
+        args.push('-GroupByComment');
+      }
+      if (opts.bool('DoNotIncludeVersionsWithLabels')) {
+        args.push('-DoNotIncludeVersionsWithLabels');
+      }
+      if (opts.bool('IncludeOnlyVersionsWithLabels')) {
+        args.push('-IncludeOnlyVersionsWithLabels');
+      }
+      if (opts.bool('IncludeCommentLinesWithDoubleSlash')) {
+        args.push('-IncludeCommentLinesWithDoubleSlash');
+      }
+      return args;
+    }
+    case 'repository-set-label': {
+      const args = ['/ConfigurationRepositorySetLabel'];
+      pushIfValue(args, '-name', opts.value('LabelName'));
+      pushIfValue(args, '-v', opts.value('Version'));
+      pushIfValue(args, '-comment', opts.value('Comment'));
+      return args;
+    }
+    default:
+      throw new Error(`Неизвестная команда хранилища: ${command}`);
+  }
+}
+
+function readLogFileContent(outFile: string): string {
+  if (!fs.existsSync(outFile)) {
+    return '';
+  }
+  try {
+    const data = fs.readFileSync(outFile);
+    return decodeLogFile(data).trim();
+  } catch {
+    return '';
+  }
+}
+
+function decodeLogFile(data: Buffer): string {
+  if (data.length >= 2 && data[0] === 0xff && data[1] === 0xfe) {
+    return data.subarray(2).toString('utf16le');
+  }
+  if (data.length >= 2 && data[0] === 0xfe && data[1] === 0xff) {
+    return decode(data.subarray(2), 'utf16-be');
+  }
+  if (data.length >= 3 && data[0] === 0xef && data[1] === 0xbb && data[2] === 0xbf) {
+    return data.subarray(3).toString('utf-8');
+  }
+  const utf8Text = data.toString('utf-8');
+  if (!utf8Text.includes('�')) {
+    return utf8Text;
+  }
+  const cp866Text = decode(data, 'cp866');
+  const cp1251Text = decode(data, 'win1251');
+  return pickMostReadableText([cp866Text, cp1251Text, utf8Text]);
 }
 
 function resolveDatabaseConnection(settingsPath: string): ConnectionParams {
@@ -344,36 +574,6 @@ function parseIbConnection(rawValue: string): ConnectionParams {
   }
 
   throw new Error(`Не удалось разобрать "--ibconnection": ${rawValue}`);
-}
-
-function buildConnectionCliArgs(params: ConnectionParams): string[] {
-  const args: string[] = [];
-  if (params.infoBasePath) {
-    args.push('-InfoBasePath', params.infoBasePath);
-  } else if (params.infoBaseServer && params.infoBaseRef) {
-    args.push('-InfoBaseServer', params.infoBaseServer, '-InfoBaseRef', params.infoBaseRef);
-  } else {
-    throw new Error('Недостаточно параметров подключения к базе из env.json');
-  }
-
-  if (params.userName) {
-    args.push('-UserName', params.userName);
-  }
-  if (params.password) {
-    args.push('-Password', params.password);
-  }
-  if (params.v8Path) {
-    args.push('-V8Path', params.v8Path);
-  }
-  return args;
-}
-
-function buildRepositoryCliArgs(binding: RepositoryBinding): string[] {
-  const args = ['-RepoPath', binding.repoPath, '-RepoUser', binding.repoUser];
-  if (binding.repoPassword) {
-    args.push('-RepoPassword', binding.repoPassword);
-  }
-  return args;
 }
 
 function asString(value: unknown): string | undefined {
