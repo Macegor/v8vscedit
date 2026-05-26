@@ -3,6 +3,7 @@ import type { PropertiesViewState } from '../properties/_types';
 export interface ModuleSymbolDto {
   readonly name: string;
   readonly detail?: string;
+  readonly documentation?: string;
   readonly kind: ModuleSymbolKind;
   readonly range: RangeDto;
   readonly selectionRange: RangeDto;

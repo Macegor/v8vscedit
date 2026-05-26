@@ -147,18 +147,26 @@ function onControlChanged(control: PropertyControl, value: unknown): void {
           </div>
         </section>
 
-        <SubsystemMembershipCard
+        <section
           v-else-if="card.kind === 'subsystems' && state.subsystemSnapshot"
-          :snapshot="state.subsystemSnapshot"
-          :readonly="state.readonly"
-          @add="send('openSubsystemMembershipPicker')"
-          @remove="send('removeSubsystemMembership', { value: $event })"
-        />
+          class="property-section"
+        >
+          <h3 class="section-title">Подсистемы</h3>
+          <SubsystemMembershipCard
+            :snapshot="state.subsystemSnapshot"
+            :readonly="state.readonly"
+            @add="send('openSubsystemMembershipPicker')"
+            @remove="send('removeSubsystemMembership', { value: $event })"
+          />
+        </section>
 
-        <ExchangePlanContentCard
+        <section
           v-else-if="card.kind === 'exchangePlanContent' && state.exchangePlanContentSnapshot"
-          :snapshot="state.exchangePlanContentSnapshot"
-        />
+          class="property-section"
+        >
+          <h3 class="section-title">Обмен данными</h3>
+          <ExchangePlanContentCard :snapshot="state.exchangePlanContentSnapshot" />
+        </section>
       </template>
     </div>
 
@@ -173,16 +181,16 @@ function onControlChanged(control: PropertyControl, value: unknown): void {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
 .properties-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: 6px;
+  padding: 4px 0;
   border-bottom: 1px solid var(--vscode-panel-border);
-  background: var(--vscode-sideBar-background, var(--vscode-sidebar-background));
 }
 
 .properties-title {
@@ -193,21 +201,19 @@ function onControlChanged(control: PropertyControl, value: unknown): void {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--vscode-sideBarTitle-foreground, var(--vscode-foreground));
+  color: var(--vscode-foreground);
 }
 
 .readonly-badge {
   font-size: 11px;
-  padding: 2px 6px;
+  padding: 1px 5px;
   background: var(--vscode-badge-background);
   color: var(--vscode-badge-foreground);
   border-radius: 2px;
 }
 
 .diagnostics-section {
-  padding: 8px 12px;
+  padding: 4px 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -217,7 +223,7 @@ function onControlChanged(control: PropertyControl, value: unknown): void {
   display: flex;
   align-items: flex-start;
   gap: 6px;
-  padding: 4px 8px;
+  padding: 4px 6px;
   border-radius: 2px;
   font-size: 12px;
 }
@@ -247,6 +253,7 @@ function onControlChanged(control: PropertyControl, value: unknown): void {
 
 .sections-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -255,8 +262,8 @@ function onControlChanged(control: PropertyControl, value: unknown): void {
 .property-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px 12px 12px;
+  gap: 6px;
+  padding: 6px 0 8px;
   border-bottom: 1px solid var(--vscode-panel-border);
 }
 
@@ -265,7 +272,7 @@ function onControlChanged(control: PropertyControl, value: unknown): void {
 }
 
 .section-title {
-  margin: 0 0 2px 0;
+  margin: 0;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -276,11 +283,11 @@ function onControlChanged(control: PropertyControl, value: unknown): void {
 .section-controls {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .empty-state {
-  padding: 12px;
+  padding: 6px 0;
   color: var(--vscode-descriptionForeground);
   font-size: 12px;
 }

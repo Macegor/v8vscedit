@@ -7,13 +7,17 @@ export function registerOpenXmlCommand(
   services: CommandServices
 ): void {
   context.subscriptions.push(
-    vscode.commands.registerCommand('v8vscedit.openXmlFile', async (node: { xmlPath?: string }) => {
+    vscode.commands.registerCommand('v8vscedit.openXmlFile', async (
+      node: { xmlPath?: string },
+      options?: { preserveFocus?: boolean }
+    ) => {
       if (!node.xmlPath) {
         return;
       }
 
       const editor = await vscode.window.showTextDocument(vscode.Uri.file(node.xmlPath), {
         preview: false,
+        preserveFocus: options?.preserveFocus ?? false,
       });
       const supportLocked = services.supportService?.isLocked(node.xmlPath) ?? false;
       const repositoryLocked = services.repositoryService.isEditRestricted(node.xmlPath);

@@ -4,6 +4,7 @@ import type { PropertiesViewState } from './property';
 export interface ModuleSymbolDto {
   readonly name: string;
   readonly detail?: string;
+  readonly documentation?: string;
   readonly kind: ModuleSymbolKind;
   readonly range: RangeDto;
   readonly selectionRange: RangeDto;

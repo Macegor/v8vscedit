@@ -25,7 +25,8 @@ export class DynamicPanelViewProvider
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly controller: DynamicPanelController
+    private readonly controller: DynamicPanelController,
+    private readonly outputChannel?: vscode.OutputChannel
   ) {
     this.htmlFactory = new WebviewHtmlFactory(extensionUri);
     this.controller.attachHost(this);
@@ -43,6 +44,7 @@ export class DynamicPanelViewProvider
 
     webviewView.webview.html = this.buildHtml(webviewView.webview);
     webviewView.webview.onDidReceiveMessage((message: WebviewMessage) => {
+      this.outputChannel?.appendLine(`[dynamic-panel/provider] received: ${JSON.stringify(message)}`);
       void this.handleMessage(message);
     });
 

@@ -1,28 +1,34 @@
 import * as vscode from 'vscode';
+import { BslDocumentSymbolProvider, type BslDocumentSymbol } from '../../../../lsp/BslDocumentSymbolProvider';
 import type { ActiveDocumentInfo, ModuleSymbolDto, ModuleSymbolKind, RangeDto } from '../_types';
 
 /** Языки, для которых отображается структура модуля. */
 const BSL_LANGUAGES = new Set(['bsl', 'os']);
 
 /**
- * Собирает иерархию символов активного BSL-документа через
- * стандартную команду VSCode `vscode.executeDocumentSymbolProvider`.
- * Запросы дебаунсятся, чтобы не дёргать LSP на каждое нажатие.
+ * Собирает иерархию символов активного BSL-документа.
+ *
+ * Источник данных:
+ *  1. Сначала пробуем `vscode.executeDocumentSymbolProvider` — он зовёт bsl-analyzer LSP,
+ *     у которого есть полноценный AST и точные диапазоны.
+ *  2. Если LSP молчит (ещё не запустился) — используем собственный regex-парсер.
+ *
+ * После получения символов добавляем поле `documentation` — парсим `//` комментарии
+ * перед каждой Процедурой/Функцией прямо из исходника.
  */
 export class ModuleStructureContextHandler {
   private debounceHandle: NodeJS.Timeout | undefined;
+  private readonly fallbackProvider = new BslDocumentSymbolProvider();
 
   constructor(
     private readonly onSymbols: (info: ActiveDocumentInfo, symbols: ModuleSymbolDto[]) => void,
     private readonly onLoading: (info: ActiveDocumentInfo) => void
   ) {}
 
-  /** Признак: документ относится к языку, для которого мы рисуем структуру модуля. */
   static isSupported(document: vscode.TextDocument | undefined): boolean {
     return Boolean(document && BSL_LANGUAGES.has(document.languageId));
   }
 
-  /** Запросить структуру для документа (с дебаунсом). */
   schedule(document: vscode.TextDocument, immediate = false): void {
     this.cancel();
     const info = this.toInfo(document);
@@ -52,16 +58,108 @@ export class ModuleStructureContextHandler {
   }
 
   private async fetch(document: vscode.TextDocument, info: ActiveDocumentInfo): Promise<void> {
+    const lspSymbols = await this.queryLspSymbols(document);
+    const rawSymbols = lspSymbols.length > 0
+      ? lspSymbols
+      : this.toFallbackSymbols(this.fallbackProvider.provideDocumentSymbols(document));
+
+    const lines = document.getText().split(/\r?\n/);
+    const enriched = this.enrichWithComments(rawSymbols, lines);
+    this.onSymbols(info, this.toDtos(enriched));
+  }
+
+  /** Запрашивает структуру у зарегистрированных LSP-провайдеров. */
+  private async queryLspSymbols(document: vscode.TextDocument): Promise<RawSymbol[]> {
     try {
       const result = await vscode.commands.executeCommand<vscode.DocumentSymbol[] | vscode.SymbolInformation[] | undefined>(
         'vscode.executeDocumentSymbolProvider',
         document.uri
       );
-      const symbols = this.toDtos(result ?? []);
-      this.onSymbols(info, symbols);
+      if (!result || result.length === 0) {
+        return [];
+      }
+      return result.map((item) => this.toRawFromVscode(item));
     } catch {
-      this.onSymbols(info, []);
+      return [];
     }
+  }
+
+  private toRawFromVscode(item: vscode.DocumentSymbol | vscode.SymbolInformation): RawSymbol {
+    if ('range' in item) {
+      return {
+        name: item.name,
+        detail: item.detail || undefined,
+        kind: item.kind,
+        range: item.range,
+        selectionRange: item.selectionRange,
+        children: item.children.map((child) => this.toRawFromVscode(child)),
+      };
+    }
+    return {
+      name: item.name,
+      kind: item.kind,
+      range: item.location.range,
+      selectionRange: item.location.range,
+      children: [],
+    };
+  }
+
+  private toFallbackSymbols(symbols: readonly BslDocumentSymbol[]): RawSymbol[] {
+    return symbols.map((item) => ({
+      name: item.name,
+      detail: item.detail || undefined,
+      documentation: item.documentation,
+      kind: item.kind,
+      range: item.range,
+      selectionRange: item.selectionRange,
+      children: this.toFallbackSymbols(item.children),
+    }));
+  }
+
+  /** Парсит `//` комментарии непосредственно перед методом и кладёт в documentation. */
+  private enrichWithComments(symbols: readonly RawSymbol[], lines: readonly string[]): RawSymbol[] {
+    return symbols.map((symbol) => {
+      const documentation = symbol.documentation
+        ?? (this.isMethodKind(symbol.kind) ? this.collectLeadingComment(lines, symbol.range.start.line) : undefined);
+      return {
+        ...symbol,
+        documentation,
+        children: this.enrichWithComments(symbol.children, lines),
+      };
+    });
+  }
+
+  private isMethodKind(kind: vscode.SymbolKind): boolean {
+    return kind === vscode.SymbolKind.Function
+      || kind === vscode.SymbolKind.Method
+      || kind === vscode.SymbolKind.Constructor;
+  }
+
+  /**
+   * Собирает блок `//`-комментариев непосредственно перед строкой `declarationLine`.
+   * Пропускает строки с директивами компиляции (`&НаКлиенте`, `&НаСервере` и т.п.).
+   */
+  private collectLeadingComment(lines: readonly string[], declarationLine: number): string | undefined {
+    const directiveRe = /^\s*&[A-Za-zА-Яа-яЁё]/;
+    const commentRe = /^\s*\/\/(.*)$/;
+    const comments: string[] = [];
+    let line = declarationLine - 1;
+
+    while (line >= 0 && directiveRe.test(lines[line])) {
+      line -= 1;
+    }
+    while (line >= 0) {
+      const match = commentRe.exec(lines[line]);
+      if (!match) {
+        break;
+      }
+      comments.push(match[1].replace(/^\s/, ''));
+      line -= 1;
+    }
+    if (comments.length === 0) {
+      return undefined;
+    }
+    return comments.reverse().join('\n').trim() || undefined;
   }
 
   private toInfo(document: vscode.TextDocument): ActiveDocumentInfo {
@@ -72,33 +170,21 @@ export class ModuleStructureContextHandler {
     };
   }
 
-  private toDtos(
-    items: readonly (vscode.DocumentSymbol | vscode.SymbolInformation)[]
-  ): ModuleSymbolDto[] {
+  private toDtos(items: readonly RawSymbol[]): ModuleSymbolDto[] {
     return items
       .map((item) => this.toDto(item))
       .sort((left, right) => left.range.start.line - right.range.start.line);
   }
 
-  private toDto(item: vscode.DocumentSymbol | vscode.SymbolInformation): ModuleSymbolDto {
-    if ('range' in item) {
-      // DocumentSymbol
-      return {
-        name: item.name,
-        detail: item.detail,
-        kind: this.toKindDto(item.kind),
-        range: this.toRangeDto(item.range),
-        selectionRange: this.toRangeDto(item.selectionRange),
-        children: this.toDtos(item.children),
-      };
-    }
-    // SymbolInformation
+  private toDto(item: RawSymbol): ModuleSymbolDto {
     return {
       name: item.name,
+      detail: item.detail,
+      documentation: item.documentation,
       kind: this.toKindDto(item.kind),
-      range: this.toRangeDto(item.location.range),
-      selectionRange: this.toRangeDto(item.location.range),
-      children: [],
+      range: this.toRangeDto(item.range),
+      selectionRange: this.toRangeDto(item.selectionRange),
+      children: this.toDtos(item.children),
     };
   }
 
@@ -133,4 +219,14 @@ export class ModuleStructureContextHandler {
       end: { line: range.end.line, character: range.end.character },
     };
   }
+}
+
+interface RawSymbol {
+  readonly name: string;
+  readonly detail?: string;
+  readonly documentation?: string;
+  readonly kind: vscode.SymbolKind;
+  readonly range: vscode.Range;
+  readonly selectionRange: vscode.Range;
+  readonly children: RawSymbol[];
 }

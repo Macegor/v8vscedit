@@ -44,7 +44,6 @@ import { StandaloneServerService } from './infra/standalone';
 import { SupportDecorationProvider } from './ui/tree/decorations/SupportDecorationProvider';
 import { GitMetadataDecorationProvider } from './ui/tree/decorations/GitMetadataDecorationProvider';
 import { LspManager } from './lsp/LspManager';
-import { BslDocumentSymbolProvider } from './lsp/BslDocumentSymbolProvider';
 import { BslReadonlyGuard } from './ui/readonly/BslReadonlyGuard';
 import { registerSupportIndicatorCommands } from './ui/support/SupportIndicatorCommands';
 import { registerSupportWatcher } from './ui/support/SupportWatcher';
@@ -268,11 +267,12 @@ export class Container {
     });
     context.subscriptions.push(this.universalPanelViewProvider);
 
-    this.dynamicPanelController = new DynamicPanelController(propertiesController);
+    this.dynamicPanelController = new DynamicPanelController(propertiesController, this.outputChannel);
     dynamicRef.current = this.dynamicPanelController;
     this.dynamicPanelViewProvider = new DynamicPanelViewProvider(
       context.extensionUri,
-      this.dynamicPanelController
+      this.dynamicPanelController,
+      this.outputChannel
     );
     context.subscriptions.push(this.dynamicPanelController, this.dynamicPanelViewProvider);
     this.changeDetector = new ConfigurationChangeDetector(workspaceFolder.uri.fsPath);
@@ -294,13 +294,6 @@ export class Container {
       () => this.mcpServer.stop()
     );
     context.subscriptions.push(this.mcpServer, this.bslAnalyzerMcpService, this.aiMcpViewProvider);
-
-    context.subscriptions.push(
-      vscode.languages.registerDocumentSymbolProvider(
-        [{ scheme: 'file', language: 'bsl' }, { scheme: 'file', language: 'os' }],
-        new BslDocumentSymbolProvider()
-      )
-    );
   }
 
   /** Создаёт контейнер и выполняет регистрацию всех подсистем */

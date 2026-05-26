@@ -18,7 +18,7 @@ defineProps<{
   align-items: center;
   justify-content: center;
   flex: 1;
-  padding: 16px;
+  padding: 6px 0;
 }
 
 .empty-view__hint {

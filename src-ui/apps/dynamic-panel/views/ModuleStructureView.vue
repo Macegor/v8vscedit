@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import type {
   ActiveDocumentInfo,
   ModuleSymbolDto,
@@ -83,7 +83,23 @@ function toggle(path: string): void {
 }
 
 function reveal(symbol: ModuleSymbolDto): void {
-  emit('reveal', symbol.selectionRange ?? symbol.range);
+  const target = symbol.selectionRange ?? symbol.range;
+  // eslint-disable-next-line no-console
+  console.log('[dynamic-panel/module] reveal', symbol.name, target);
+  emit('reveal', target);
+}
+
+onMounted(() => {
+  // eslint-disable-next-line no-console
+  console.log('[dynamic-panel/module] mounted, symbols:', props.symbols.length);
+});
+
+function rowTooltip(symbol: ModuleSymbolDto): string {
+  const header = symbol.detail ? `${symbol.name} ${symbol.detail}` : symbol.name;
+  if (symbol.documentation) {
+    return `${header}\n\n${symbol.documentation}`;
+  }
+  return header;
 }
 
 function iconClass(kind: ModuleSymbolKind): string {
@@ -131,10 +147,11 @@ function iconClass(kind: ModuleSymbolKind): string {
         v-for="node in flatList"
         :key="node.path"
         class="module-row"
-        :style="{ paddingLeft: 4 + node.depth * 12 + 'px' }"
+        :style="{ paddingLeft: node.depth * 14 + 'px' }"
         role="treeitem"
         :aria-level="node.depth + 1"
         :aria-expanded="node.hasChildren ? !collapsed.has(node.path) : undefined"
+        :title="rowTooltip(node.symbol)"
         tabindex="0"
         @click="reveal(node.symbol)"
         @keydown.enter.prevent="reveal(node.symbol)"
@@ -164,6 +181,7 @@ function iconClass(kind: ModuleSymbolKind): string {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -171,7 +189,7 @@ function iconClass(kind: ModuleSymbolKind): string {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 12px;
+  padding: 4px 0;
   border-bottom: 1px solid var(--vscode-panel-border);
 }
 
@@ -181,9 +199,7 @@ function iconClass(kind: ModuleSymbolKind): string {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--vscode-sideBarTitle-foreground, var(--vscode-foreground));
+  color: var(--vscode-foreground);
 }
 
 .module-loading {
@@ -192,8 +208,7 @@ function iconClass(kind: ModuleSymbolKind): string {
 }
 
 .module-filter {
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--vscode-panel-border);
+  padding: 4px 0;
 }
 
 .module-filter vscode-textfield {
@@ -201,7 +216,7 @@ function iconClass(kind: ModuleSymbolKind): string {
 }
 
 .module-empty {
-  padding: 12px;
+  padding: 6px 0;
   color: var(--vscode-descriptionForeground);
   font-size: 12px;
 }
@@ -209,19 +224,20 @@ function iconClass(kind: ModuleSymbolKind): string {
 .module-list {
   list-style: none;
   margin: 0;
-  padding: 4px 0;
+  padding: 2px 0;
   overflow-y: auto;
   flex: 1;
+  min-height: 0;
 }
 
 .module-row {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 8px 2px 0;
+  padding: 0;
   cursor: pointer;
   font-size: 13px;
-  line-height: 22px;
+  min-height: 22px;
   user-select: none;
   white-space: nowrap;
   overflow: hidden;
