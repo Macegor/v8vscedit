@@ -75,6 +75,7 @@ function gitBadgeLabel(status?: string): string {
 
     <span class="tree-label" :title="node.tooltip ?? node.label">{{ node.label }}</span>
     <span v-if="node.description" class="tree-description" :title="node.description">{{ node.description }}</span>
+    <span class="tree-spacer" aria-hidden="true"></span>
 
     <span v-if="node.inlineActions?.length" class="inline-actions" @click.stop>
       <button
@@ -231,7 +232,7 @@ body.vscode-high-contrast:not(.vscode-high-contrast-light) .tree-icon-asset {
   line-height: 24px;
 }
 .tree-description {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   margin-left: 6px;
   overflow: hidden;
@@ -240,6 +241,10 @@ body.vscode-high-contrast:not(.vscode-high-contrast-light) .tree-icon-asset {
   color: var(--vscode-descriptionForeground);
   font-size: 12px;
   line-height: 24px;
+}
+.tree-spacer {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .tree-row.git-added .tree-label {
   color: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-foreground));

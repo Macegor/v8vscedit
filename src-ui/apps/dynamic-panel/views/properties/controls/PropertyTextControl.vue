@@ -59,18 +59,20 @@ function onKeydown(event: KeyboardEvent): void {
     <label class="control-label" :for="'prop-' + control.id">
       {{ control.label }}
     </label>
-    <vscode-textarea
+    <textarea
       v-if="isMultiline()"
       :id="'prop-' + control.id"
+      class="prop-textarea"
       :value="localValue"
       :disabled="readonly || control.readonly"
-      resize="vertical"
-      @input="(e: Event) => { localValue = (e.target as HTMLInputElement).value; }"
+      @input="(e: Event) => { localValue = (e.target as HTMLTextAreaElement).value; }"
       @blur="submit"
-    />
-    <vscode-textfield
+    ></textarea>
+    <input
       v-else
       :id="'prop-' + control.id"
+      class="prop-field"
+      type="text"
       :value="localValue"
       :disabled="readonly || control.readonly"
       @input="(e: Event) => { localValue = (e.target as HTMLInputElement).value; }"
@@ -95,11 +97,6 @@ function onKeydown(event: KeyboardEvent): void {
   font-size: 13px;
   font-weight: 600;
   color: var(--vscode-foreground);
-}
-
-vscode-textfield,
-vscode-textarea {
-  width: 100%;
 }
 
 .property-note {

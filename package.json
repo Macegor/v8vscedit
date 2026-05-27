@@ -27,8 +27,13 @@
       "activitybar": [
         {
           "id": "v8vscedit",
-          "title": "1С: Редактор",
+          "title": "Редактор конфигураций",
           "icon": "src/icons/activity-bar.svg"
+        },
+        {
+          "id": "v8vsceditDynamicPanelContainer",
+          "title": "Дин. панель",
+          "icon": "src/icons/dynamic-panel.svg"
         }
       ]
     },
@@ -36,12 +41,14 @@
       "v8vscedit": [
         {
           "id": "v8vsceditUniversal",
-          "name": " ",
+          "name": "Редактор конфигураций",
           "type": "webview"
-        },
+        }
+      ],
+      "v8vsceditDynamicPanelContainer": [
         {
           "id": "v8vsceditDynamicPanel",
-          "name": "Контекстная панель",
+          "name": "Дин. панель",
           "type": "webview"
         }
       ]

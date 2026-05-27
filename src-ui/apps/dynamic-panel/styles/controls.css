@@ -1,0 +1,79 @@
+/*
+ * Общие стили полей ввода динамической панели.
+ * Используем нативные input/textarea/select со скруглением как у строки поиска
+ * универсальной панели — у vscode-textfield острые внутренние углы при скруглённой рамке.
+ * Подключается глобально из main.ts, поэтому работает внутри scoped-компонентов.
+ */
+
+.prop-field,
+.prop-textarea,
+.prop-select {
+  width: 100%;
+  box-sizing: border-box;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 5px;
+  font: inherit;
+  outline: none;
+}
+
+.prop-field {
+  height: 26px;
+  padding: 0 10px;
+  line-height: 24px;
+}
+
+.prop-textarea {
+  min-height: 56px;
+  padding: 5px 10px;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.prop-select {
+  height: 26px;
+  padding: 0 6px;
+  line-height: 24px;
+  cursor: pointer;
+}
+
+.prop-field:focus,
+.prop-textarea:focus,
+.prop-select:focus {
+  border-color: var(--vscode-focusBorder);
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.prop-field::placeholder,
+.prop-textarea::placeholder {
+  color: var(--vscode-input-placeholderForeground);
+  opacity: 1;
+}
+
+.prop-field:disabled,
+.prop-textarea:disabled,
+.prop-select:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.prop-multi-select {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 56px;
+  padding: 4px 6px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 5px;
+  font: inherit;
+  outline: none;
+}
+
+.prop-multi-select:focus {
+  border-color: var(--vscode-focusBorder);
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
