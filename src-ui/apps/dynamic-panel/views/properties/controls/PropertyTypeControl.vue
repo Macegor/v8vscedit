@@ -71,23 +71,27 @@ function updateQualifiers(): void {
   <div class="control-row">
     <label class="control-label" :for="'prop-' + control.id">{{ control.label }}</label>
     <div class="type-row">
-      <vscode-textfield
+      <input
         :id="'prop-' + control.id"
+        class="prop-field"
+        type="text"
         :value="presentation"
         readonly
       />
-      <vscode-button
-        appearance="secondary"
+      <button
+        type="button"
+        class="type-pick-button"
         :disabled="readonly || control.readonly"
         @click="openPicker"
       >
         Выбрать
-      </vscode-button>
+      </button>
     </div>
     <div v-if="control.id === 'Type'" class="qualifiers">
       <template v-if="control.stringQualifiers">
         <label>Длина</label>
-        <vscode-textfield
+        <input
+          class="prop-field"
           type="number"
           :value="stringLength"
           :disabled="readonly || control.readonly"
@@ -95,18 +99,20 @@ function updateQualifiers(): void {
           @change="updateQualifiers"
         />
         <label>Допустимая длина</label>
-        <vscode-single-select
+        <select
+          class="prop-select"
           :value="stringAllowedLength"
           :disabled="readonly || control.readonly"
           @change="(e: Event) => { stringAllowedLength = toStringAllowedLength((e.target as HTMLSelectElement).value); updateQualifiers(); }"
         >
-          <vscode-option value="Variable">Переменная</vscode-option>
-          <vscode-option value="Fixed">Фиксированная</vscode-option>
-        </vscode-single-select>
+          <option value="Variable">Переменная</option>
+          <option value="Fixed">Фиксированная</option>
+        </select>
       </template>
       <template v-if="control.numberQualifiers">
         <label>Разрядов</label>
-        <vscode-textfield
+        <input
+          class="prop-field"
           type="number"
           :value="numberDigits"
           :disabled="readonly || control.readonly"
@@ -114,7 +120,8 @@ function updateQualifiers(): void {
           @change="updateQualifiers"
         />
         <label>Дробных</label>
-        <vscode-textfield
+        <input
+          class="prop-field"
           type="number"
           :value="numberFractionDigits"
           :disabled="readonly || control.readonly"
@@ -122,25 +129,27 @@ function updateQualifiers(): void {
           @change="updateQualifiers"
         />
         <label>Знак</label>
-        <vscode-single-select
+        <select
+          class="prop-select"
           :value="numberAllowedSign"
           :disabled="readonly || control.readonly"
           @change="(e: Event) => { numberAllowedSign = toNumberAllowedSign((e.target as HTMLSelectElement).value); updateQualifiers(); }"
         >
-          <vscode-option value="Any">Любой</vscode-option>
-          <vscode-option value="Nonnegative">Неотрицательный</vscode-option>
-        </vscode-single-select>
+          <option value="Any">Любой</option>
+          <option value="Nonnegative">Неотрицательный</option>
+        </select>
       </template>
       <template v-if="control.dateQualifiers">
         <label>Состав даты</label>
-        <vscode-single-select
+        <select
+          class="prop-select"
           :value="dateFractions"
           :disabled="readonly || control.readonly"
           @change="(e: Event) => { dateFractions = (e.target as HTMLSelectElement).value; updateQualifiers(); }"
         >
-          <vscode-option value="Date">Дата</vscode-option>
-          <vscode-option value="DateTime">ДатаВремя</vscode-option>
-        </vscode-single-select>
+          <option value="Date">Дата</option>
+          <option value="DateTime">ДатаВремя</option>
+        </select>
       </template>
     </div>
     <div v-if="control.inherited" class="property-note">
@@ -178,9 +187,25 @@ function updateQualifiers(): void {
   align-items: center;
 }
 
-vscode-textfield,
-vscode-single-select {
-  width: 100%;
+.type-pick-button {
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 5px;
+  color: var(--vscode-button-secondaryForeground);
+  background: var(--vscode-button-secondaryBackground);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.type-pick-button:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.type-pick-button:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .property-note {

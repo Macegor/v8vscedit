@@ -2,7 +2,10 @@ import * as vscode from 'vscode';
 import type { MetadataNode } from '../../tree/TreeNode';
 import type { CommandServices } from '../_shared';
 
-/** Регистрирует команду показа панели свойств. */
+/**
+ * Регистрирует команду показа свойств: переключает динамическую панель в режим «Свойства».
+ * Для подсистем по-прежнему открывается отдельный редактор подсистемы.
+ */
 export function registerShowPropertiesCommand(
   context: vscode.ExtensionContext,
   services: CommandServices
@@ -16,7 +19,7 @@ export function registerShowPropertiesCommand(
         services.subsystemEditorViewProvider.show(node.textLabel, node.xmlPath ?? '');
         return;
       }
-      services.propertiesViewProvider.show(node);
+      services.dynamicPanelController.showProperties(node);
     })
   );
 }

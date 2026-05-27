@@ -535,8 +535,17 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
     await this.services.state.update(UniversalPanelViewProvider.selectedNodeStateKey, nodeKey);
 
     const node = this.nodeById.get(nodeId);
-    if (node?.command) {
-      await this.executeCommand(node.command.command, node);
+    if (!node) {return;}
+    // Сначала показываем свойства — DynamicPanelController ставит окно приоритета,
+    // и последующие программные события активного редактора не перебьют state.
+    if (node.xmlPath && !node.hidePropertiesCommand) {
+      await this.executeCommand('v8vscedit.showProperties', node);
+    }
+    if (node.command) {
+      // Связанный документ (модуль/XML) открываем без перехвата фокуса:
+      // курсор остаётся в боковой панели, свойства видны, а при клике в редактор
+      // пользователем — динамическая панель переключится на структуру модуля.
+      await this.executeCommand(node.command.command, node, { preserveFocus: true });
     }
   }
 
@@ -548,10 +557,14 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
     await this.executeCommand('v8vscedit.showProperties', node);
   }
 
-  private async executeCommand(command: string, node?: MetadataNode): Promise<void> {
+  private async executeCommand(command: string, node?: MetadataNode, options?: Record<string, unknown>): Promise<void> {
     try {
       if (node) {
-        await vscode.commands.executeCommand(command, node);
+        if (options !== undefined) {
+          await vscode.commands.executeCommand(command, node, options);
+        } else {
+          await vscode.commands.executeCommand(command, node);
+        }
       } else {
         await vscode.commands.executeCommand(command);
       }

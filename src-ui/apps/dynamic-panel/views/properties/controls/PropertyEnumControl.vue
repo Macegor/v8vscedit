@@ -41,7 +41,7 @@ function onMultiChange(event: Event): void {
     <select
       v-if="control.kind === 'multiEnum'"
       :id="'prop-' + control.id"
-      class="multi-select"
+      class="prop-multi-select"
       multiple
       :size="Math.min(Math.max(control.options?.length ?? 2, 2), 8)"
       :value="selectedValues"
@@ -56,21 +56,22 @@ function onMultiChange(event: Event): void {
         {{ opt.label }}
       </option>
     </select>
-    <vscode-single-select
+    <select
       v-else
       :id="'prop-' + control.id"
+      class="prop-select"
       :value="localValue"
       :disabled="readonly || control.readonly"
       @change="(e: Event) => { localValue = (e.target as HTMLSelectElement).value; onChange(); }"
     >
-      <vscode-option
+      <option
         v-for="opt in control.options"
         :key="opt.value"
         :value="opt.value"
       >
         {{ opt.label }}
-      </vscode-option>
-    </vscode-single-select>
+      </option>
+    </select>
     <div v-if="control.inherited" class="property-note">
       Значение из основной конфигурации. Переопределение через панель свойств пока недоступно.
     </div>
@@ -89,22 +90,6 @@ function onMultiChange(event: Event): void {
   font-size: 13px;
   font-weight: 600;
   color: var(--vscode-foreground);
-}
-
-vscode-single-select {
-  width: 100%;
-}
-
-.multi-select {
-  width: 100%;
-  box-sizing: border-box;
-  min-height: 34px;
-  background: var(--vscode-input-background);
-  color: var(--vscode-input-foreground);
-  border: 1px solid var(--vscode-input-border, transparent);
-  border-radius: 6px;
-  padding: 7px 10px;
-  font: inherit;
 }
 
 .property-note {

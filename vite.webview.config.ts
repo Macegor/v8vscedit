@@ -12,9 +12,9 @@ const entries = {
   'tree-search': 'src-ui/apps/tree-search/main.ts',
   'repository-connection': 'src-ui/apps/repository-connection/main.ts',
   'repository-commit': 'src-ui/apps/repository-commit/main.ts',
-  properties: 'src-ui/apps/properties/main.ts',
   subsystem: 'src-ui/apps/subsystem/main.ts',
   universal: 'src-ui/apps/universal/main.ts',
+  'dynamic-panel': 'src-ui/apps/dynamic-panel/main.ts',
 };
 
 function webviewManifestPlugin(): Plugin {
