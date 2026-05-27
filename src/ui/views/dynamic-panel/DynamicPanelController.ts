@@ -36,10 +36,7 @@ export class DynamicPanelController implements vscode.Disposable {
   private retryHandles: NodeJS.Timeout[] = [];
   private propertiesPriorityUntil = 0;
 
-  constructor(
-    private readonly propertiesController: PropertiesViewController,
-    private readonly outputChannel?: vscode.OutputChannel
-  ) {
+  constructor(private readonly propertiesController: PropertiesViewController) {
     this.moduleHandler = new ModuleStructureContextHandler(
       (info, symbols) => this.applyModuleSymbols(info, symbols),
       (info) => this.applyModuleLoading(info)
@@ -124,7 +121,6 @@ export class DynamicPanelController implements vscode.Disposable {
   }
 
   async handleWebviewCommand(command: string, payload: unknown): Promise<void> {
-    this.log(`[dynamic-panel] cmd=${command} payload=${JSON.stringify(payload)}`);
     if (command === 'revealSymbol') {
       await this.revealSymbol(payload as { range?: RangeDto } | undefined);
       return;
@@ -259,9 +255,7 @@ export class DynamicPanelController implements vscode.Disposable {
   }
 
   private async revealSymbol(payload: { range?: RangeDto } | undefined): Promise<void> {
-    this.log(`[reveal] start activeUri=${this.activeDocumentUri ?? 'NONE'} range=${JSON.stringify(payload?.range)}`);
     if (!payload?.range || !this.activeDocumentUri) {
-      this.log('[reveal] aborted: no range or no activeDocumentUri');
       return;
     }
     try {
@@ -269,8 +263,6 @@ export class DynamicPanelController implements vscode.Disposable {
       const document = await vscode.workspace.openTextDocument(uri);
       const range = this.clampRange(document, payload.range);
       const selection = new vscode.Selection(range.start, range.start);
-      this.log(`[reveal] clamped=${String(range.start.line)}:${String(range.start.character)}..${String(range.end.line)}:${String(range.end.character)}`);
-      // Atomar: одновременно открыть документ, выставить selection и сразу же reveal.
       const editor = await vscode.window.showTextDocument(document, {
         preserveFocus: false,
         selection,
@@ -278,14 +270,9 @@ export class DynamicPanelController implements vscode.Disposable {
       editor.revealRange(selection, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
       // Гарантированный фокус — иногда showTextDocument не переводит фокус, если редактор уже активен.
       await vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup');
-      this.log('[reveal] done');
-    } catch (error) {
-      this.log(`[reveal] error: ${error instanceof Error ? error.message : String(error)}`);
+    } catch {
+      // Документ закрыт/перемещён — игнор.
     }
-  }
-
-  private log(message: string): void {
-    this.outputChannel?.appendLine(message);
   }
 
   /** Ограничивает координаты диапазона границами документа (защита от багов LSP). */

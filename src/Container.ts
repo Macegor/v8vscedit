@@ -267,12 +267,11 @@ export class Container {
     });
     context.subscriptions.push(this.universalPanelViewProvider);
 
-    this.dynamicPanelController = new DynamicPanelController(propertiesController, this.outputChannel);
+    this.dynamicPanelController = new DynamicPanelController(propertiesController);
     dynamicRef.current = this.dynamicPanelController;
     this.dynamicPanelViewProvider = new DynamicPanelViewProvider(
       context.extensionUri,
-      this.dynamicPanelController,
-      this.outputChannel
+      this.dynamicPanelController
     );
     context.subscriptions.push(this.dynamicPanelController, this.dynamicPanelViewProvider);
     this.changeDetector = new ConfigurationChangeDetector(workspaceFolder.uri.fsPath);

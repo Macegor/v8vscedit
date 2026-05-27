@@ -73,7 +73,8 @@ function gitBadgeLabel(status?: string): string {
     />
     <span v-else class="tree-icon" :class="iconClass(node.icon)" aria-hidden="true" />
 
-    <span class="tree-label" :title="node.label">{{ node.label }}</span>
+    <span class="tree-label" :title="node.tooltip ?? node.label">{{ node.label }}</span>
+    <span v-if="node.description" class="tree-description" :title="node.description">{{ node.description }}</span>
 
     <span v-if="node.inlineActions?.length" class="inline-actions" @click.stop>
       <button
@@ -175,6 +176,35 @@ function gitBadgeLabel(status?: string): string {
   flex-shrink: 0;
   color: var(--vscode-symbolIcon-classForeground);
 }
+.tree-icon.codicon-symbol-function {
+  color: var(--vscode-symbolIcon-functionForeground, #b180d7);
+}
+.tree-icon.codicon-symbol-method,
+.tree-icon.codicon-symbol-constructor {
+  color: var(--vscode-symbolIcon-methodForeground, #b180d7);
+}
+.tree-icon.codicon-symbol-variable {
+  color: var(--vscode-symbolIcon-variableForeground, #75beff);
+}
+.tree-icon.codicon-symbol-namespace,
+.tree-icon.codicon-symbol-module {
+  color: var(--vscode-symbolIcon-namespaceForeground, var(--vscode-icon-foreground));
+}
+.tree-icon.codicon-symbol-constant {
+  color: var(--vscode-symbolIcon-constantForeground, #75beff);
+}
+.tree-icon.codicon-symbol-property {
+  color: var(--vscode-symbolIcon-propertyForeground, #b180d7);
+}
+.tree-icon.codicon-symbol-field {
+  color: var(--vscode-symbolIcon-fieldForeground, #75beff);
+}
+.tree-icon.codicon-symbol-class {
+  color: var(--vscode-symbolIcon-classForeground, #ee9d28);
+}
+.tree-icon.codicon-symbol-interface {
+  color: var(--vscode-symbolIcon-interfaceForeground, #75beff);
+}
 .tree-row.selected .tree-icon {
   color: var(--vscode-list-activeSelectionForeground);
 }
@@ -193,11 +223,22 @@ body.vscode-high-contrast:not(.vscode-high-contrast-light) .tree-icon-asset {
   background-image: var(--icon-dark);
 }
 .tree-label {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 24px;
+}
+.tree-description {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-left: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
   line-height: 24px;
 }
 .tree-row.git-added .tree-label {

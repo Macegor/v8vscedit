@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type {
   ActiveDocumentInfo,
   ModuleSymbolDto,
   ModuleSymbolKind,
   RangeDto,
 } from '@ui-shared/types/dynamicPanel';
+import type { TreeNodeDto } from '@ui-shared/types/tree';
+import type { IconDto } from '@ui-shared/types/icon';
+import UniversalTree from '../../universal/UniversalTree.vue';
 
 const props = defineProps<{
   document: ActiveDocumentInfo;
@@ -18,29 +21,32 @@ const emit = defineEmits<{
 }>();
 
 const filter = ref('');
-
-interface FlatNode {
-  readonly path: string;
-  readonly symbol: ModuleSymbolDto;
-  readonly depth: number;
-  readonly hasChildren: boolean;
-}
-
-const collapsed = ref<Set<string>>(new Set());
+/** Явно свёрнутые узлы (по умолчанию всё дерево раскрыто). */
+const collapsedIds = ref<Record<string, true>>({});
+const selectedId = ref<string | null>(null);
 
 function pathOf(parentPath: string, index: number): string {
-  return parentPath ? `${parentPath}/${index}` : String(index);
+  return parentPath ? `${parentPath}/${String(index)}` : String(index);
 }
 
-function flatten(symbols: ModuleSymbolDto[], depth: number, parentPath: string, output: FlatNode[]): void {
-  for (let i = 0; i < symbols.length; i++) {
-    const symbol = symbols[i];
-    const path = pathOf(parentPath, i);
-    const hasChildren = symbol.children.length > 0;
-    output.push({ path, symbol, depth, hasChildren });
-    if (hasChildren && !collapsed.value.has(path)) {
-      flatten(symbol.children, depth + 1, path, output);
-    }
+function iconForKind(kind: ModuleSymbolKind): IconDto {
+  switch (kind) {
+    case 'function':
+      return { kind: 'codicon', name: 'symbol-function' };
+    case 'method':
+      return { kind: 'codicon', name: 'symbol-method' };
+    case 'variable':
+      return { kind: 'codicon', name: 'symbol-variable' };
+    case 'constant':
+      return { kind: 'codicon', name: 'symbol-constant' };
+    case 'namespace':
+      return { kind: 'codicon', name: 'symbol-namespace' };
+    case 'property':
+      return { kind: 'codicon', name: 'symbol-property' };
+    case 'field':
+      return { kind: 'codicon', name: 'symbol-field' };
+    default:
+      return { kind: 'codicon', name: 'symbol-misc' };
   }
 }
 
@@ -50,22 +56,86 @@ function matchesFilter(symbol: ModuleSymbolDto, q: string): boolean {
   return symbol.children.some((child) => matchesFilter(child, q));
 }
 
-function filterTree(items: ModuleSymbolDto[], q: string): ModuleSymbolDto[] {
-  if (!q) return items;
-  return items
-    .filter((item) => matchesFilter(item, q))
-    .map((item) => ({
-      ...item,
-      children: filterTree(item.children, q),
-    }));
+function buildNode(
+  symbol: ModuleSymbolDto,
+  parentPath: string,
+  index: number,
+  q: string,
+  outIndex: Map<string, ModuleSymbolDto>
+): TreeNodeDto | null {
+  if (q && !matchesFilter(symbol, q)) {
+    return null;
+  }
+  const id = pathOf(parentPath, index);
+  outIndex.set(id, symbol);
+
+  const children: TreeNodeDto[] = [];
+  for (let i = 0; i < symbol.children.length; i++) {
+    const child = buildNode(symbol.children[i], id, i, q, outIndex);
+    if (child) {
+      children.push(child);
+    }
+  }
+
+  const tooltip = symbol.documentation
+    ? `${symbol.name}${symbol.detail ? ` ${symbol.detail}` : ''}\n\n${symbol.documentation}`
+    : undefined;
+
+  return {
+    id,
+    key: id,
+    label: symbol.name,
+    description: symbol.detail,
+    tooltip,
+    icon: iconForKind(symbol.kind),
+    kind: symbol.kind,
+    hasChildren: children.length > 0,
+    loaded: true,
+    children,
+    actions: [],
+  };
 }
 
-const visibleSymbols = computed(() => filterTree(props.symbols, filter.value.trim().toLowerCase()));
+interface TreeData {
+  readonly nodes: TreeNodeDto[];
+  readonly index: Map<string, ModuleSymbolDto>;
+}
 
-const flatList = computed<FlatNode[]>(() => {
-  const output: FlatNode[] = [];
-  flatten(visibleSymbols.value, 0, '', output);
-  return output;
+const treeData = computed<TreeData>(() => {
+  const index = new Map<string, ModuleSymbolDto>();
+  const q = filter.value.trim().toLowerCase();
+  const nodes: TreeNodeDto[] = [];
+  for (let i = 0; i < props.symbols.length; i++) {
+    const node = buildNode(props.symbols[i], '', i, q, index);
+    if (node) {
+      nodes.push(node);
+    }
+  }
+  return { nodes, index };
+});
+
+const treeNodes = computed<TreeNodeDto[]>(() => treeData.value.nodes);
+
+/** Все id с раскрытым состоянием. По умолчанию открыто всё, что НЕ в collapsedIds. */
+const openIds = computed<Record<string, true>>(() => {
+  const ids: Record<string, true> = {};
+  const visit = (nodes: readonly TreeNodeDto[]): void => {
+    for (const node of nodes) {
+      if (node.hasChildren && !collapsedIds.value[node.id]) {
+        ids[node.id] = true;
+      }
+      if (node.children) {
+        visit(node.children);
+      }
+    }
+  };
+  visit(treeNodes.value);
+  return ids;
+});
+
+// При смене документа сбрасываем явные сворачивания — новый модуль показываем полностью раскрытым.
+watch(() => props.document.uri, () => {
+  collapsedIds.value = {};
 });
 
 const baseFileName = computed(() => {
@@ -73,54 +143,30 @@ const baseFileName = computed(() => {
   return parts[parts.length - 1] || props.document.fileName;
 });
 
-function toggle(path: string): void {
-  if (collapsed.value.has(path)) {
-    collapsed.value.delete(path);
+function onToggle(nodeId: string, open: boolean): void {
+  const next = { ...collapsedIds.value };
+  if (open) {
+    delete next[nodeId];
   } else {
-    collapsed.value.add(path);
+    next[nodeId] = true;
   }
-  collapsed.value = new Set(collapsed.value);
+  collapsedIds.value = next;
 }
 
-function reveal(symbol: ModuleSymbolDto): void {
-  const target = symbol.selectionRange ?? symbol.range;
-  // eslint-disable-next-line no-console
-  console.log('[dynamic-panel/module] reveal', symbol.name, target);
-  emit('reveal', target);
+function onSelect(nodeId: string | null): void {
+  selectedId.value = nodeId;
+  if (!nodeId) {
+    return;
+  }
+  const symbol = treeData.value.index.get(nodeId);
+  if (!symbol) {
+    return;
+  }
+  emit('reveal', symbol.selectionRange ?? symbol.range);
 }
 
-onMounted(() => {
-  // eslint-disable-next-line no-console
-  console.log('[dynamic-panel/module] mounted, symbols:', props.symbols.length);
-});
-
-function rowTooltip(symbol: ModuleSymbolDto): string {
-  const header = symbol.detail ? `${symbol.name} ${symbol.detail}` : symbol.name;
-  if (symbol.documentation) {
-    return `${header}\n\n${symbol.documentation}`;
-  }
-  return header;
-}
-
-function iconClass(kind: ModuleSymbolKind): string {
-  switch (kind) {
-    case 'function':
-      return 'codicon codicon-symbol-function';
-    case 'method':
-      return 'codicon codicon-symbol-method';
-    case 'variable':
-      return 'codicon codicon-symbol-variable';
-    case 'constant':
-      return 'codicon codicon-symbol-constant';
-    case 'namespace':
-      return 'codicon codicon-symbol-namespace';
-    case 'property':
-      return 'codicon codicon-symbol-property';
-    case 'field':
-      return 'codicon codicon-symbol-field';
-    default:
-      return 'codicon codicon-symbol-misc';
-  }
+function onDefault(nodeId: string): void {
+  onSelect(nodeId);
 }
 </script>
 
@@ -139,40 +185,19 @@ function iconClass(kind: ModuleSymbolKind): string {
       />
     </div>
 
-    <div v-if="flatList.length === 0" class="module-empty">
+    <div v-if="treeNodes.length === 0" class="module-empty">
       <p>{{ loading ? 'Анализ модуля…' : 'Структура модуля пуста.' }}</p>
     </div>
-    <ul v-else class="module-list" role="tree">
-      <li
-        v-for="node in flatList"
-        :key="node.path"
-        class="module-row"
-        :style="{ paddingLeft: node.depth * 14 + 'px' }"
-        role="treeitem"
-        :aria-level="node.depth + 1"
-        :aria-expanded="node.hasChildren ? !collapsed.has(node.path) : undefined"
-        :title="rowTooltip(node.symbol)"
-        tabindex="0"
-        @click="reveal(node.symbol)"
-        @keydown.enter.prevent="reveal(node.symbol)"
-        @keydown.space.prevent="reveal(node.symbol)"
-      >
-        <button
-          v-if="node.hasChildren"
-          type="button"
-          class="module-chevron"
-          :class="{ 'module-chevron--collapsed': collapsed.has(node.path) }"
-          aria-label="Развернуть/свернуть"
-          @click.stop="toggle(node.path)"
-        >
-          <span class="codicon codicon-chevron-down" aria-hidden="true"></span>
-        </button>
-        <span v-else class="module-chevron module-chevron--placeholder" aria-hidden="true"></span>
-        <span class="module-icon" :class="iconClass(node.symbol.kind)" aria-hidden="true"></span>
-        <span class="module-name">{{ node.symbol.name }}</span>
-        <span v-if="node.symbol.detail" class="module-detail">{{ node.symbol.detail }}</span>
-      </li>
-    </ul>
+    <UniversalTree
+      v-else
+      :nodes="treeNodes"
+      :selected-id="selectedId"
+      :open-ids="openIds"
+      :loading-ids="{}"
+      @toggle="onToggle"
+      @select="onSelect"
+      @default="onDefault"
+    />
   </div>
 </template>
 
@@ -219,100 +244,5 @@ function iconClass(kind: ModuleSymbolKind): string {
   padding: 6px 0;
   color: var(--vscode-descriptionForeground);
   font-size: 12px;
-}
-
-.module-list {
-  list-style: none;
-  margin: 0;
-  padding: 2px 0;
-  overflow-y: auto;
-  flex: 1;
-  min-height: 0;
-}
-
-.module-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0;
-  cursor: pointer;
-  font-size: 13px;
-  min-height: 22px;
-  user-select: none;
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.module-row:hover {
-  background: var(--vscode-list-hoverBackground);
-}
-
-.module-row:focus {
-  outline: 1px solid var(--vscode-focusBorder);
-  outline-offset: -1px;
-  background: var(--vscode-list-focusBackground);
-}
-
-.module-chevron {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border: none;
-  background: transparent;
-  color: var(--vscode-icon-foreground);
-  cursor: pointer;
-  padding: 0;
-  font: inherit;
-}
-
-.module-chevron:hover {
-  color: var(--vscode-foreground);
-}
-
-.module-chevron--collapsed .codicon-chevron-down {
-  transform: rotate(-90deg);
-}
-
-.module-chevron--placeholder {
-  cursor: default;
-}
-
-.module-icon {
-  display: inline-flex;
-  align-items: center;
-  width: 16px;
-  height: 16px;
-  color: var(--vscode-symbolIcon-functionForeground, var(--vscode-icon-foreground));
-}
-
-.module-icon.codicon-symbol-method {
-  color: var(--vscode-symbolIcon-methodForeground, var(--vscode-icon-foreground));
-}
-
-.module-icon.codicon-symbol-variable {
-  color: var(--vscode-symbolIcon-variableForeground, var(--vscode-icon-foreground));
-}
-
-.module-icon.codicon-symbol-namespace {
-  color: var(--vscode-symbolIcon-namespaceForeground, var(--vscode-icon-foreground));
-}
-
-.module-name {
-  flex: 0 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.module-detail {
-  color: var(--vscode-descriptionForeground);
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1 1 auto;
-  min-width: 0;
 }
 </style>

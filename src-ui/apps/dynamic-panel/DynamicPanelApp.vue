@@ -21,7 +21,12 @@ function handleHostMessage(msg: HostToUiMessage): void {
 }
 
 function sendCommand(command: string, payload?: Record<string, unknown>): void {
-  props.messageBus.send({ type: 'command', command, payload });
+  // payload может содержать Vue Proxy (если пришёл из реактивного state);
+  // postMessage через structuredClone не клонирует Proxy → DataCloneError.
+  const safePayload = payload === undefined
+    ? undefined
+    : (JSON.parse(JSON.stringify(payload)) as Record<string, unknown>);
+  props.messageBus.send({ type: 'command', command, payload: safePayload });
 }
 
 function onRevealSymbol(range: RangeDto): void {

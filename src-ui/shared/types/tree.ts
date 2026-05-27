@@ -30,6 +30,7 @@ export interface TreeNodeDto {
   readonly key: string;
   readonly label: string;
   readonly description?: string;
+  readonly tooltip?: string;
   readonly icon?: IconDto;
   readonly kind?: string;
   readonly ownership?: OwnershipKind;
