@@ -73,6 +73,13 @@ interface PropertiesViewControllerHost {
   replaceActiveNode(node: MetadataNode): void;
 }
 
+export interface PropertiesViewStateOptions {
+  readonly includeAuxiliaryBlocks?: boolean;
+}
+
+const DEFAULT_PROPERTY_SECTION_TITLE = 'Основное';
+const DEFAULT_PROPERTY_SECTION_ORDER = Number.MIN_SAFE_INTEGER;
+
 /** Управляет чтением и изменением свойств активного объекта. */
 export class PropertiesViewController {
   private activeNode: MetadataNode | undefined;
@@ -107,7 +114,7 @@ export class PropertiesViewController {
   }
 
   /** Возвращает сериализуемое состояние для Vue-панели свойств. */
-  getViewState(): PropertiesViewState | null {
+  getViewState(options: PropertiesViewStateOptions = {}): PropertiesViewState | null {
     const node = this.activeNode;
     if (!node) {
       return null;
@@ -120,7 +127,7 @@ export class PropertiesViewController {
     }
 
     const properties = handler.getProperties(node);
-    const context = this.buildRenderContext(node, properties);
+    const context = this.buildRenderContext(node, properties, options);
     const visibleProperties = context.properties.filter((property) => property.key !== 'StandardAttributes');
     if (
       visibleProperties.length === 0 &&
@@ -159,12 +166,17 @@ export class PropertiesViewController {
     });
   }
 
-  buildRenderContext(node: MetadataNode, properties: ObjectPropertiesCollection): PropertiesRenderContext {
+  buildRenderContext(
+    node: MetadataNode,
+    properties: ObjectPropertiesCollection,
+    options: PropertiesViewStateOptions = {}
+  ): PropertiesRenderContext {
     const enrichedProperties = this.enrichBasedOnProperties(node, properties);
     this.activeNode = node;
     this.activeProperties = enrichedProperties;
-    const subsystemSnapshot = this.resolveSubsystemMembershipSnapshot(node);
-    const exchangePlanContentSnapshot = this.resolveExchangePlanContentSnapshot(node);
+    const includeAuxiliaryBlocks = options.includeAuxiliaryBlocks ?? true;
+    const subsystemSnapshot = includeAuxiliaryBlocks ? this.resolveSubsystemMembershipSnapshot(node) : null;
+    const exchangePlanContentSnapshot = includeAuxiliaryBlocks ? this.resolveExchangePlanContentSnapshot(node) : null;
     const editLockReason = this.resolveEditLockReason(node);
     const isEditLocked = editLockReason !== undefined;
     return {
@@ -1234,13 +1246,13 @@ export class PropertiesViewController {
 
     for (let i = 0; i < properties.length; i++) {
       const prop = properties[i];
-      const sectionName = prop.section ?? 'Свойства';
+      const sectionName = prop.section ?? DEFAULT_PROPERTY_SECTION_TITLE;
       const existing = sectionMap.get(sectionName);
       if (existing) {
         existing.controls.push(controls[i]);
       } else {
         sectionMap.set(sectionName, {
-          order: prop.sectionOrder ?? Number.MAX_SAFE_INTEGER,
+          order: prop.sectionOrder ?? DEFAULT_PROPERTY_SECTION_ORDER,
           controls: [controls[i]],
         });
       }

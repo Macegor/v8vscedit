@@ -532,7 +532,9 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
 
     this.selectedNodeKey = nodeKey;
     this.openSelectedAncestors(nodeKey);
-    await this.services.state.update(UniversalPanelViewProvider.selectedNodeStateKey, nodeKey);
+    void this.services.state
+      .update(UniversalPanelViewProvider.selectedNodeStateKey, nodeKey)
+      .then(undefined, () => undefined);
 
     const node = this.nodeById.get(nodeId);
     if (!node) {return;}

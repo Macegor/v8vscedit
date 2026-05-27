@@ -1,6 +1,9 @@
 import * as vscode from 'vscode';
 import type { MetadataNode } from '../../tree/TreeNode';
-import type { PropertiesViewController } from '../properties/PropertiesViewController';
+import type {
+  PropertiesViewController,
+  PropertiesViewStateOptions,
+} from '../properties/PropertiesViewController';
 import { ModuleStructureContextHandler } from './contexts/ModuleStructureContextHandler';
 import type { ActiveDocumentInfo, DynamicPanelState, ModuleSymbolDto, RangeDto } from './_types';
 
@@ -35,6 +38,8 @@ export class DynamicPanelController implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
   private retryHandles: NodeJS.Timeout[] = [];
   private propertiesPriorityUntil = 0;
+  private propertiesDetailsHandle: NodeJS.Timeout | undefined;
+  private propertiesGeneration = 0;
 
   constructor(private readonly propertiesController: PropertiesViewController) {
     this.moduleHandler = new ModuleStructureContextHandler(
@@ -76,6 +81,7 @@ export class DynamicPanelController implements vscode.Disposable {
   /** Показать свойства выбранного узла. Перебивает структуру модуля. */
   showProperties(node: MetadataNode): void {
     this.cancelRetries();
+    this.cancelPropertiesDetails();
     this.moduleHandler.cancel();
     // Сбрасываем URI — даже если запрос символов уже отправлен, его поздний результат
     // отвалится по проверке `activeDocumentUri !== info.uri` в applyModuleSymbols.
@@ -83,16 +89,24 @@ export class DynamicPanelController implements vscode.Disposable {
     this.propertiesPriorityUntil = Date.now() + PROPERTIES_PRIORITY_WINDOW_MS;
     this.activeNode = node;
     this.propertiesController.setActiveNode(node);
-    this.refreshProperties();
+    const generation = ++this.propertiesGeneration;
+    this.refreshProperties({ includeAuxiliaryBlocks: false });
+    this.propertiesDetailsHandle = setTimeout(() => {
+      this.propertiesDetailsHandle = undefined;
+      if (this.propertiesGeneration !== generation || this.activeNode !== node) {
+        return;
+      }
+      this.refreshProperties({ includeAuxiliaryBlocks: true });
+    }, 0);
   }
 
   /** Обновить состояние свойств (после редактирования). */
-  refreshProperties(): void {
+  refreshProperties(options?: PropertiesViewStateOptions): void {
     const node = this.activeNode;
     if (!node) {
       return;
     }
-    const view = this.propertiesController.getViewState();
+    const view = this.propertiesController.getViewState(options);
     if (!view) {
       this.setState({ kind: 'empty', message: 'Для выбранного объекта свойства недоступны.' });
       return;
@@ -110,6 +124,7 @@ export class DynamicPanelController implements vscode.Disposable {
 
   /** Сбросить активный объект. */
   clearActive(): void {
+    this.cancelPropertiesDetails();
     this.activeNode = undefined;
     this.activeDocumentUri = undefined;
     this.propertiesController.clearActiveNode();
@@ -139,6 +154,7 @@ export class DynamicPanelController implements vscode.Disposable {
   dispose(): void {
     this.host = undefined;
     this.cancelRetries();
+    this.cancelPropertiesDetails();
     for (const d of this.disposables) {
       d.dispose();
     }
@@ -196,6 +212,7 @@ export class DynamicPanelController implements vscode.Disposable {
 
   private switchToModule(document: vscode.TextDocument, immediate: boolean): void {
     this.cancelRetries();
+    this.cancelPropertiesDetails();
     this.activeDocumentUri = document.uri.toString();
     this.activeNode = undefined;
     this.moduleHandler.schedule(document, immediate);
@@ -252,6 +269,14 @@ export class DynamicPanelController implements vscode.Disposable {
       clearTimeout(handle);
     }
     this.retryHandles = [];
+  }
+
+  private cancelPropertiesDetails(): void {
+    this.propertiesGeneration++;
+    if (this.propertiesDetailsHandle) {
+      clearTimeout(this.propertiesDetailsHandle);
+      this.propertiesDetailsHandle = undefined;
+    }
   }
 
   private async revealSymbol(payload: { range?: RangeDto } | undefined): Promise<void> {

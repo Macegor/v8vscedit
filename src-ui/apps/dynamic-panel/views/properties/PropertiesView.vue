@@ -53,11 +53,11 @@ const cards = computed<PropertyCard[]>(() => {
 
 const hasContent = computed(() => cards.value.length > 0);
 
-const MAIN_SECTION_TITLE = 'Основные';
+const MAIN_SECTION_TITLES = new Set(['Основное', 'Основные']);
 
 const collapsed = ref<Set<string>>(new Set());
 
-/** При смене объекта раскрываем только «Основные» (или первую секцию), остальные сворачиваем. */
+/** При смене объекта раскрываем только основную секцию или первую доступную. */
 function resetCollapsed(): void {
   const list = cards.value;
   if (list.length === 0) {
@@ -65,7 +65,7 @@ function resetCollapsed(): void {
     return;
   }
   const mainCard =
-    list.find((card) => card.kind === 'section' && card.section.title === MAIN_SECTION_TITLE) ?? list[0];
+    list.find((card) => card.kind === 'section' && MAIN_SECTION_TITLES.has(card.section.title)) ?? list[0];
   const next = new Set<string>();
   for (const card of list) {
     if (card.key !== mainCard.key) {
@@ -75,7 +75,31 @@ function resetCollapsed(): void {
   collapsed.value = next;
 }
 
+function syncCollapsedCards(previousKeys: Set<string>): void {
+  const list = cards.value;
+  if (list.length === 0) {
+    collapsed.value = new Set();
+    return;
+  }
+  const keys = new Set(list.map((card) => card.key));
+  const mainCard =
+    list.find((card) => card.kind === 'section' && MAIN_SECTION_TITLES.has(card.section.title)) ?? list[0];
+  const next = new Set([...collapsed.value].filter((key) => keys.has(key)));
+  for (const card of list) {
+    if (card.key !== mainCard.key && !previousKeys.has(card.key)) {
+      next.add(card.key);
+    }
+  }
+  collapsed.value = next;
+}
+
 watch(() => props.state.title, () => resetCollapsed(), { immediate: true });
+watch(
+  () => cards.value.map((card) => card.key).join('\n'),
+  (_current, previous) => {
+    syncCollapsedCards(new Set((previous ?? '').split('\n').filter(Boolean)));
+  }
+);
 
 function isCollapsed(key: string): boolean {
   return collapsed.value.has(key);
