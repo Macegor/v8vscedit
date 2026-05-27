@@ -753,6 +753,11 @@ function getDefaultModulePaths(kind: MetaKind, objectDir: string): string[] {
  *   «ошибка формата документа — читаемое свойство не соответствует ожидаемому».
  */
 function needsChildObjects(kind: MetaKind): boolean {
+  // Подсистеме всегда нужен <ChildObjects/> (вложенные подсистемы): без него
+  // платформа 1С не загружает выгрузку ("ожидаемое ChildObjects").
+  if (kind === 'Subsystem') {
+    return true;
+  }
   const def = getMetaType(kind);
   return Array.isArray(def.childTags) && def.childTags.length > 0;
 }

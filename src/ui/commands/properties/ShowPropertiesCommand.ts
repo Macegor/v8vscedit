@@ -3,8 +3,9 @@ import type { MetadataNode } from '../../tree/TreeNode';
 import type { CommandServices } from '../_shared';
 
 /**
- * Регистрирует команду показа свойств: переключает динамическую панель в режим «Свойства».
- * Для подсистем по-прежнему открывается отдельный редактор подсистемы.
+ * Регистрирует команды панели свойств:
+ *  - `showProperties` — переключает динамическую панель в режим «Свойства» (одиночный клик).
+ *  - `openSubsystemEditor` — открывает полноценный редактор подсистемы (двойной клик).
  */
 export function registerShowPropertiesCommand(
   context: vscode.ExtensionContext,
@@ -15,11 +16,13 @@ export function registerShowPropertiesCommand(
       if (!node) {
         return;
       }
-      if (node.nodeKind === 'Subsystem') {
-        services.subsystemEditorViewProvider.show(node.textLabel, node.xmlPath ?? '');
+      services.dynamicPanelController.showProperties(node);
+    }),
+    vscode.commands.registerCommand('v8vscedit.openSubsystemEditor', (node: MetadataNode | undefined) => {
+      if (node?.nodeKind !== 'Subsystem') {
         return;
       }
-      services.dynamicPanelController.showProperties(node);
+      services.subsystemEditorViewProvider.show(node.textLabel, node.xmlPath ?? '');
     })
   );
 }

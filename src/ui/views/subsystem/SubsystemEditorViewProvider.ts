@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import type {
-  MetadataRefTreeNode,
   SubsystemPropertyKey,
   SubsystemXmlService,
 } from '../../../infra/xml/SubsystemXmlService';
@@ -15,29 +14,29 @@ type SubsystemMessage =
   | { readonly type: 'command'; readonly command: 'openChild'; readonly payload: { readonly id: string } }
   | { readonly type: 'command'; readonly command: 'propertyChanged'; readonly payload: { readonly key: string; readonly value: unknown } };
 
-/** Начальное состояние для Vue-приложения. */
+interface SubsystemContentItemDto {
+  readonly id: string;
+  readonly label: string;
+  readonly included: boolean;
+  readonly kind?: string;
+}
+
+interface SubsystemChildDto {
+  readonly id: string;
+  readonly name: string;
+  readonly label: string;
+}
+
+/** Состояние для Vue-приложения (зеркалит SubsystemState из src-ui/apps/subsystem/main.ts). */
 interface SubsystemInitialState {
+  readonly initialized: boolean;
   readonly subsystemId: string;
   readonly subsystemName: string;
   readonly locked: boolean;
-  readonly properties: {
-    readonly name: string;
-    readonly synonym: string;
-    readonly comment: string;
-    readonly includeHelpInContents: boolean;
-    readonly includeInCommandInterface: boolean;
-    readonly useOneCommand: boolean;
-    readonly explanation: string;
-    readonly pictureRef: string;
-    readonly pictureLoadTransparent: boolean;
-  };
-  readonly content: {
-    readonly refs: readonly string[];
-    readonly availableCount: number;
-    readonly selectedCount: number;
-    readonly tree: readonly MetadataRefTreeNode[];
-  };
-  readonly children: readonly string[];
+  readonly properties: Record<string, unknown>;
+  readonly content: readonly SubsystemContentItemDto[];
+  readonly children: readonly SubsystemChildDto[];
+  readonly activeTab: 'properties' | 'content' | 'children' | 'commandInterface';
 }
 
 /**
@@ -73,7 +72,7 @@ export class SubsystemEditorViewProvider implements vscode.Disposable {
     if (this.panel) {
       this.panel.title = this.buildTitle(nodeLabel);
       this.panel.reveal(vscode.ViewColumn.Active);
-      this.refreshContent();
+      this.renderHtml();
       return;
     }
 
@@ -81,7 +80,11 @@ export class SubsystemEditorViewProvider implements vscode.Disposable {
       SubsystemEditorViewProvider.viewType,
       this.buildTitle(nodeLabel),
       vscode.ViewColumn.Active,
-      { enableScripts: true, retainContextWhenHidden: true }
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'ui')],
+      }
     );
 
     this.panel.webview.onDidReceiveMessage((message: SubsystemMessage) => {
@@ -93,7 +96,7 @@ export class SubsystemEditorViewProvider implements vscode.Disposable {
       this.currentXmlPath = undefined;
     });
 
-    this.refreshContent();
+    this.renderHtml();
   }
 
   dispose(): void {
@@ -109,63 +112,92 @@ export class SubsystemEditorViewProvider implements vscode.Disposable {
     return `${nodeLabel} — Подсистема`;
   }
 
-  private refreshContent(): void {
-    if (!this.panel || !this.currentXmlPath) {
-      return;
+  /** Строит состояние для Vue-приложения в формате SubsystemState. */
+  private buildState(activeTab: SubsystemInitialState['activeTab'] = 'properties'): SubsystemInitialState | { error: string } {
+    const xmlPath = this.currentXmlPath;
+    if (!xmlPath || !fs.existsSync(xmlPath)) {
+      return { error: 'XML-файл подсистемы не найден.' };
     }
 
-    try {
-      const xmlPath = this.currentXmlPath;
-      if (!fs.existsSync(xmlPath)) {
-        this.panel.webview.html = this.htmlFactory.renderVueWebviewHtml({
-          webview: this.panel.webview,
-          title: 'Подсистема',
-          entry: 'subsystem',
-          viewKind: SubsystemEditorViewProvider.viewType,
-          initialState: { error: 'XML-файл подсистемы не найден.' },
-          csp: { allowStyles: true },
+    const snapshot = this.xmlService.readSnapshot(xmlPath);
+    const locked = this.isEditLocked();
+    const subsystemName = this.currentNodeLabel ?? snapshot.subsystem.name;
+    const includedRefs = new Set(snapshot.subsystem.contentRefs);
+
+    const content: SubsystemContentItemDto[] = [];
+    for (const group of snapshot.availableGroups) {
+      for (const item of group.items) {
+        content.push({
+          id: item.ref,
+          label: item.label,
+          included: includedRefs.has(item.ref),
+          kind: group.label,
         });
-        return;
       }
+    }
 
-      const snapshot = this.xmlService.readSnapshot(xmlPath);
-      const locked = this.isEditLocked();
-      const subsystemName = this.currentNodeLabel ?? snapshot.subsystem.name;
+    const children: SubsystemChildDto[] = snapshot.subsystem.childSubsystems.map((name) => ({
+      id: name,
+      name,
+      label: name,
+    }));
 
-      const initialState: SubsystemInitialState = {
-        subsystemId: xmlPath,
-        subsystemName,
-        locked,
-        properties: {
-          name: snapshot.subsystem.name,
-          synonym: snapshot.subsystem.synonym,
-          comment: snapshot.subsystem.comment,
-          includeHelpInContents: snapshot.subsystem.includeHelpInContents,
-          includeInCommandInterface: snapshot.subsystem.includeInCommandInterface,
-          useOneCommand: snapshot.subsystem.useOneCommand,
-          explanation: snapshot.subsystem.explanation,
-          pictureRef: snapshot.subsystem.pictureRef,
-          pictureLoadTransparent: snapshot.subsystem.pictureLoadTransparent,
-        },
-        content: {
-          refs: snapshot.subsystem.contentRefs,
-          availableCount: countTreeLeaves(snapshot.contentTree),
-          selectedCount: snapshot.subsystem.contentRefs.length,
-          tree: snapshot.contentTree,
-        },
-        children: snapshot.subsystem.childSubsystems,
-      };
+    return {
+      initialized: true,
+      subsystemId: xmlPath,
+      subsystemName,
+      locked,
+      properties: {
+        name: snapshot.subsystem.name,
+        synonym: snapshot.subsystem.synonym,
+        comment: snapshot.subsystem.comment,
+        includeHelpInContents: snapshot.subsystem.includeHelpInContents,
+        includeInCommandInterface: snapshot.subsystem.includeInCommandInterface,
+        useOneCommand: snapshot.subsystem.useOneCommand,
+        explanation: snapshot.subsystem.explanation,
+        pictureRef: snapshot.subsystem.pictureRef,
+        pictureLoadTransparent: snapshot.subsystem.pictureLoadTransparent,
+      },
+      content,
+      children,
+      activeTab,
+    };
+  }
 
+  /** Полная перерисовка HTML (при первом показе или смене подсистемы). */
+  private renderHtml(): void {
+    if (!this.panel) {
+      return;
+    }
+    try {
+      const state = this.buildState();
+      const title = 'error' in state ? 'Подсистема' : this.buildTitle(state.subsystemName);
       this.panel.webview.html = this.htmlFactory.renderVueWebviewHtml({
         webview: this.panel.webview,
-        title: this.buildTitle(subsystemName),
+        title,
         entry: 'subsystem',
-        viewKind: SubsystemEditorViewProvider.viewType,
-        initialState,
-        csp: { allowImages: true },
+        viewKind: 'subsystem',
+        initialState: state,
+        csp: { allowStyles: true, allowImages: true },
       });
     } catch (error) {
-      this.outputChannel.appendLine(`[SubsystemEditor] Ошибка в refreshContent: ${String(error)}`);
+      this.outputChannel.appendLine(`[SubsystemEditor] Ошибка в renderHtml: ${String(error)}`);
+    }
+  }
+
+  /** Обновляет состояние без перерисовки HTML — сохраняет активную вкладку. */
+  private postState(): void {
+    if (!this.panel) {
+      return;
+    }
+    try {
+      const state = this.buildState();
+      if ('error' in state) {
+        return;
+      }
+      void this.panel.webview.postMessage({ type: 'state', state });
+    } catch (error) {
+      this.outputChannel.appendLine(`[SubsystemEditor] Ошибка в postState: ${String(error)}`);
     }
   }
 
@@ -189,7 +221,7 @@ export class SubsystemEditorViewProvider implements vscode.Disposable {
               ? this.xmlService.addContentRefs(xmlPath, [id])
               : this.xmlService.removeContentRefs(xmlPath, [id]);
             if (changed) {
-              this.refreshContent();
+              this.postState();
             }
             break;
           }
@@ -201,7 +233,7 @@ export class SubsystemEditorViewProvider implements vscode.Disposable {
             const { key, value } = message.payload;
             const changed = this.xmlService.updateProperty(xmlPath, key as SubsystemPropertyKey, value as string | boolean);
             if (changed) {
-              this.refreshContent();
+              this.postState();
             }
             break;
           }
@@ -228,12 +260,4 @@ export class SubsystemEditorViewProvider implements vscode.Disposable {
     this.updateQueue = run.catch(() => undefined);
     await run;
   }
-}
-
-function countTreeLeaves(nodes: readonly MetadataRefTreeNode[]): number {
-  let count = 0;
-  for (const node of nodes) {
-    count += node.ref ? 1 : countTreeLeaves(node.children);
-  }
-  return count;
 }

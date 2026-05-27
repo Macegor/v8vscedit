@@ -554,6 +554,11 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
     if (!node?.xmlPath) {
       return;
     }
+    // Двойной клик по подсистеме открывает полноценный редактор (состав, дочерние подсистемы).
+    if (node.nodeKind === 'Subsystem') {
+      await this.executeCommand('v8vscedit.openSubsystemEditor', node);
+      return;
+    }
     await this.executeCommand('v8vscedit.showProperties', node);
   }
 
