@@ -615,6 +615,7 @@ const PROPERTY_TITLE_RU: Record<string, string> = {
   SendData: 'Отправка данных',
   ReceiveData: 'Получение данных',
   SequentialDataExchange: 'Последовательный обмен данными',
+  Numerator: 'Нумератор',
   NumberType: 'Тип номера',
   NumberLength: 'Длина номера',
   NumberAllowedLength: 'Допустимая длина номера',
@@ -859,6 +860,135 @@ const CATALOG_PROPERTY_SECTIONS: Readonly<Record<string, { title: string; order:
   ObjectBelonging: { title: 'Служебное', order: 160 },
   ExtendedConfigurationObject: { title: 'Служебное', order: 160 },
 };
+
+/** Поля корня «Документ» по разделам конфигуратора, без реквизитов и табличных частей. */
+const DOCUMENT_ROOT_META_PROPERTY_KEYS: string[] = [
+  'Name',
+  'Synonym',
+  'Comment',
+  'ObjectPresentation',
+  'ExtendedObjectPresentation',
+  'ListPresentation',
+  'ExtendedListPresentation',
+  'Explanation',
+  'ObjectBelonging',
+  'ExtendedConfigurationObject',
+  'Numerator',
+  'NumberType',
+  'NumberLength',
+  'NumberAllowedLength',
+  'NumberPeriodicity',
+  'CheckUnique',
+  'Autonumbering',
+  'DefaultObjectForm',
+  'DefaultListForm',
+  'DefaultChoiceForm',
+  'AuxiliaryObjectForm',
+  'AuxiliaryListForm',
+  'AuxiliaryChoiceForm',
+  'CreateOnInput',
+  'InputByString',
+  'SearchStringModeOnInputByString',
+  'FullTextSearchOnInputByString',
+  'ChoiceDataGetModeOnInputByString',
+  'ChoiceHistoryOnInput',
+  'UseStandardCommands',
+  'BasedOn',
+  'Posting',
+  'RealTimePosting',
+  'RegisterRecordsDeletion',
+  'RegisterRecordsWritingOnPost',
+  'SequenceFilling',
+  'RegisterRecords',
+  'PostInPrivilegedMode',
+  'UnpostInPrivilegedMode',
+  'DataLockFields',
+  'DataLockControlMode',
+  'FullTextSearch',
+  'DataHistory',
+  'UpdateDataHistoryImmediatelyAfterWrite',
+  'ExecuteAfterWriteDataHistoryVersionProcessing',
+  'Characteristics',
+  'IncludeHelpInContents',
+];
+
+const DOCUMENT_HIDDEN_PROPERTIES = new Set([
+  'Characteristics',
+]);
+
+const DOCUMENT_READONLY_COMPLEX_PROPERTIES = new Set<string>();
+
+const DOCUMENT_PROPERTY_SECTIONS: Readonly<Record<string, { title: string; order: number }>> = {
+  _other: { title: 'Прочее', order: 900 },
+  Name: { title: 'Основные', order: 10 },
+  Synonym: { title: 'Основные', order: 10 },
+  Comment: { title: 'Основные', order: 10 },
+  ObjectPresentation: { title: 'Основные', order: 10 },
+  ExtendedObjectPresentation: { title: 'Основные', order: 10 },
+  ListPresentation: { title: 'Основные', order: 10 },
+  ExtendedListPresentation: { title: 'Основные', order: 10 },
+  Explanation: { title: 'Основные', order: 10 },
+  Numerator: { title: 'Нумерация', order: 50 },
+  NumberType: { title: 'Нумерация', order: 50 },
+  NumberLength: { title: 'Нумерация', order: 50 },
+  NumberAllowedLength: { title: 'Нумерация', order: 50 },
+  NumberPeriodicity: { title: 'Нумерация', order: 50 },
+  CheckUnique: { title: 'Нумерация', order: 50 },
+  Autonumbering: { title: 'Нумерация', order: 50 },
+  DefaultObjectForm: { title: 'Формы', order: 80 },
+  DefaultListForm: { title: 'Формы', order: 80 },
+  DefaultChoiceForm: { title: 'Формы', order: 80 },
+  AuxiliaryObjectForm: { title: 'Формы', order: 80 },
+  AuxiliaryListForm: { title: 'Формы', order: 80 },
+  AuxiliaryChoiceForm: { title: 'Формы', order: 80 },
+  CreateOnInput: { title: 'Поле ввода', order: 90 },
+  InputByString: { title: 'Поле ввода', order: 90 },
+  SearchStringModeOnInputByString: { title: 'Поле ввода', order: 90 },
+  FullTextSearchOnInputByString: { title: 'Поле ввода', order: 90 },
+  ChoiceDataGetModeOnInputByString: { title: 'Поле ввода', order: 90 },
+  ChoiceHistoryOnInput: { title: 'Поле ввода', order: 90 },
+  UseStandardCommands: { title: 'Команды', order: 100 },
+  BasedOn: { title: 'Ввод на основании', order: 120 },
+  BasedFor: { title: 'Ввод на основании', order: 120 },
+  Posting: { title: 'Проведение', order: 130 },
+  RealTimePosting: { title: 'Проведение', order: 130 },
+  RegisterRecordsDeletion: { title: 'Проведение', order: 130 },
+  RegisterRecordsWritingOnPost: { title: 'Проведение', order: 130 },
+  SequenceFilling: { title: 'Проведение', order: 130 },
+  RegisterRecords: { title: 'Проведение', order: 130 },
+  PostInPrivilegedMode: { title: 'Проведение', order: 130 },
+  UnpostInPrivilegedMode: { title: 'Проведение', order: 130 },
+  DataLockFields: { title: 'Прочее', order: 900 },
+  DataLockControlMode: { title: 'Служебное', order: 160 },
+  FullTextSearch: { title: 'Прочее', order: 900 },
+  DataHistory: { title: 'Прочее', order: 900 },
+  UpdateDataHistoryImmediatelyAfterWrite: { title: 'Прочее', order: 900 },
+  ExecuteAfterWriteDataHistoryVersionProcessing: { title: 'Прочее', order: 900 },
+  IncludeHelpInContents: { title: 'Прочее', order: 900 },
+  ObjectBelonging: { title: 'Служебное', order: 160 },
+  ExtendedConfigurationObject: { title: 'Служебное', order: 160 },
+};
+
+/** Дополнительные поля объектов с документной нумерацией/проведением. */
+const DOCUMENT_LIKE_ROOT_EXTRA_KEYS: string[] = [
+  'UseStandardCommands',
+  'Numerator',
+  'NumberType',
+  'NumberLength',
+  'NumberAllowedLength',
+  'NumberPeriodicity',
+  'CheckUnique',
+  'Autonumbering',
+  'Posting',
+  'RealTimePosting',
+  'RegisterRecordsDeletion',
+  'RegisterRecordsWritingOnPost',
+  'SequenceFilling',
+  'RegisterRecords',
+  'PostInPrivilegedMode',
+  'UnpostInPrivilegedMode',
+  'IncludeHelpInContents',
+];
 
 /** Поля корня «Перечисление» (без реквизитов/ТЧ/форм объекта метаданных) */
 const ENUM_ROOT_META_PROPERTY_KEYS: string[] = [
@@ -1162,26 +1292,6 @@ const EXCHANGE_PLAN_ROOT_EXTRA_KEYS: string[] = [
   'SequentialDataExchange',
 ];
 
-/** Дополнительные поля корня «Документ» */
-const DOCUMENT_ROOT_EXTRA_KEYS: string[] = [
-  'UseStandardCommands',
-  'NumberType',
-  'NumberLength',
-  'NumberAllowedLength',
-  'NumberPeriodicity',
-  'CheckUnique',
-  'Autonumbering',
-  'Posting',
-  'RealTimePosting',
-  'RegisterRecordsDeletion',
-  'RegisterRecordsWritingOnPost',
-  'SequenceFilling',
-  'RegisterRecords',
-  'PostInPrivilegedMode',
-  'UnpostInPrivilegedMode',
-  'IncludeHelpInContents',
-];
-
 /** Поля типового реквизита / колонки / измерения / ресурса */
 const TYPED_FIELD_PROPERTY_KEYS: string[] = [
   'Name',
@@ -1347,7 +1457,7 @@ export function getRootPropertyKeyOrder(rootMetaKind: NodeKind): string[] {
     return ENUM_ROOT_META_PROPERTY_KEYS;
   }
   if (rootMetaKind === 'Document') {
-    return mergePropertyKeys(COMMON_ROOT_META_PROPERTY_KEYS, DOCUMENT_ROOT_EXTRA_KEYS);
+    return DOCUMENT_ROOT_META_PROPERTY_KEYS;
   }
   if (rootMetaKind === 'Catalog') {
     return CATALOG_ROOT_META_PROPERTY_KEYS;
@@ -1428,10 +1538,10 @@ export function getRootPropertyKeyOrder(rootMetaKind: NodeKind): string[] {
     return ACCOUNTING_REGISTER_ROOT_META_PROPERTY_KEYS;
   }
   if (rootMetaKind === 'BusinessProcess') {
-    return mergePropertyKeys(COMMON_ROOT_META_PROPERTY_KEYS, DOCUMENT_ROOT_EXTRA_KEYS, ['Task', 'CreateTaskInPrivilegedMode']);
+    return mergePropertyKeys(COMMON_ROOT_META_PROPERTY_KEYS, DOCUMENT_LIKE_ROOT_EXTRA_KEYS, ['Task', 'CreateTaskInPrivilegedMode']);
   }
   if (rootMetaKind === 'Task') {
-    return mergePropertyKeys(COMMON_ROOT_META_PROPERTY_KEYS, DOCUMENT_ROOT_EXTRA_KEYS, [
+    return mergePropertyKeys(COMMON_ROOT_META_PROPERTY_KEYS, DOCUMENT_LIKE_ROOT_EXTRA_KEYS, [
       'TaskNumberAutoPrefix',
       'DescriptionLength',
       'Addressing',
@@ -1817,7 +1927,13 @@ export function buildRootMetaObjectProperties(
     includeExtraKeys: true,
     showMissingKeys: hasExplicitRootPropertyContract(rootMetaKind),
   });
-  return rootMetaKind === 'Catalog' ? applyCatalogPropertySections(properties) : properties;
+  if (rootMetaKind === 'Catalog') {
+    return applyCatalogPropertySections(properties);
+  }
+  if (rootMetaKind === 'Document') {
+    return applyDocumentPropertySections(properties);
+  }
+  return properties;
 }
 
 function hasExplicitRootPropertyContract(rootMetaKind: NodeKind): boolean {
@@ -1842,6 +1958,18 @@ function applyCatalogPropertySections(properties: ObjectPropertiesCollection): O
       section: section.title,
       sectionOrder: section.order,
       readonly: property.readonly === true || CATALOG_READONLY_COMPLEX_PROPERTIES.has(property.key),
+    };
+  });
+}
+
+function applyDocumentPropertySections(properties: ObjectPropertiesCollection): ObjectPropertiesCollection {
+  return properties.filter((property) => !DOCUMENT_HIDDEN_PROPERTIES.has(property.key)).map((property) => {
+    const section = DOCUMENT_PROPERTY_SECTIONS[property.key] ?? DOCUMENT_PROPERTY_SECTIONS._other;
+    return {
+      ...property,
+      section: section.title,
+      sectionOrder: section.order,
+      readonly: property.readonly === true || DOCUMENT_READONLY_COMPLEX_PROPERTIES.has(property.key),
     };
   });
 }
