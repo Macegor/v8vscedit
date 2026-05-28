@@ -56,22 +56,24 @@ function onMultiChange(event: Event): void {
         {{ opt.label }}
       </option>
     </select>
-    <select
-      v-else
-      :id="'prop-' + control.id"
-      class="prop-select"
-      :value="localValue"
-      :disabled="readonly || control.readonly"
-      @change="(e: Event) => { localValue = (e.target as HTMLSelectElement).value; onChange(); }"
-    >
-      <option
-        v-for="opt in control.options"
-        :key="opt.value"
-        :value="opt.value"
+    <div v-else class="select-picker">
+      <select
+        :id="'prop-' + control.id"
+        class="prop-select enum-select"
+        :value="localValue"
+        :disabled="readonly || control.readonly"
+        @change="(e: Event) => { localValue = (e.target as HTMLSelectElement).value; onChange(); }"
       >
-        {{ opt.label }}
-      </option>
-    </select>
+        <option
+          v-for="opt in control.options"
+          :key="opt.value"
+          :value="opt.value"
+        >
+          {{ opt.label }}
+        </option>
+      </select>
+      <span class="select-icon codicon codicon-chevron-down" aria-hidden="true"></span>
+    </div>
     <div v-if="control.inherited" class="property-note">
       Значение из основной конфигурации. Переопределение через панель свойств пока недоступно.
     </div>
@@ -90,6 +92,35 @@ function onMultiChange(event: Event): void {
   font-size: 13px;
   font-weight: 600;
   color: var(--vscode-foreground);
+}
+
+.select-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.enum-select {
+  padding-right: 36px;
+  appearance: none;
+}
+
+.select-icon {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+  font-size: 14px;
+  line-height: 1;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.enum-select:disabled + .select-icon {
+  opacity: 0.45;
 }
 
 .property-note {

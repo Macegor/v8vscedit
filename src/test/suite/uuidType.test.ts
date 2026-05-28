@@ -57,11 +57,11 @@ suite('UUID type — round-trip', () => {
     assert.strictEqual(parsed.numberQualifiers, undefined);
   });
 
-  test('ДвоичныеДанные при попытке записи через MCP отбивается', () => {
+  test('ДвоичныеДанные пишется как xs:base64Binary', () => {
     assert.strictEqual(
       canonicalToXmlToken('ДвоичныеДанные', 'metadataAttribute'),
-      undefined,
-      'ДвоичныеДанные должен возвращать undefined'
+      'xs:base64Binary',
+      'ДвоичныеДанные должен возвращать xs:base64Binary'
     );
   });
 });

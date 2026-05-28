@@ -12,7 +12,8 @@ const emit = defineEmits<{
   updateQualifiers: [payload: { key: string; qualifiers: Record<string, string> }];
 }>();
 
-const presentation = computed(() => props.control.typePresentation || String(props.control.value ?? ''));
+const presentation = computed(() => props.control.typePresentation ?? (typeof props.control.value === 'string' ? props.control.value : ''));
+const isLocked = computed(() => props.readonly || props.control.readonly);
 const stringLength = ref(toFieldValue(props.control.stringQualifiers?.length));
 const stringAllowedLength = ref(props.control.stringQualifiers?.allowedLength ?? 'Variable');
 const numberDigits = ref(toFieldValue(props.control.numberQualifiers?.digits));
@@ -53,14 +54,14 @@ function collectQualifiers(): Record<string, string> {
 }
 
 function openPicker(): void {
-  if (props.readonly || props.control.readonly) {
+  if (isLocked.value) {
     return;
   }
   emit('openPicker', { key: props.control.id, qualifiers: collectQualifiers() });
 }
 
 function updateQualifiers(): void {
-  if (props.readonly || props.control.readonly || props.control.id !== 'Type') {
+  if (isLocked.value || props.control.id !== 'Type') {
     return;
   }
   emit('updateQualifiers', { key: props.control.id, qualifiers: collectQualifiers() });
@@ -70,22 +71,25 @@ function updateQualifiers(): void {
 <template>
   <div class="control-row">
     <label class="control-label" :for="'prop-' + control.id">{{ control.label }}</label>
-    <div class="type-row">
+    <div class="type-picker">
       <input
         :id="'prop-' + control.id"
-        class="prop-field"
+        class="prop-field type-input"
         type="text"
         :value="presentation"
         readonly
       />
-      <button
-        type="button"
-        class="type-pick-button"
-        :disabled="readonly || control.readonly"
-        @click="openPicker"
-      >
-        Выбрать
-      </button>
+      <div class="type-actions">
+        <button
+          type="button"
+          class="icon-action"
+          title="Выбрать тип"
+          :disabled="isLocked"
+          @click="openPicker"
+        >
+          <span class="codicon codicon-ellipsis" aria-hidden="true"></span>
+        </button>
+      </div>
     </div>
     <div v-if="control.id === 'Type'" class="qualifiers">
       <template v-if="control.stringQualifiers">
@@ -173,11 +177,23 @@ function updateQualifiers(): void {
   color: var(--vscode-foreground);
 }
 
-.type-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
+.type-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.type-input {
+  padding-right: 36px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.type-actions {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  display: inline-flex;
+  transform: translateY(-50%);
 }
 
 .qualifiers {
@@ -187,24 +203,29 @@ function updateQualifiers(): void {
   align-items: center;
 }
 
-.type-pick-button {
-  height: 26px;
-  padding: 0 12px;
-  border: 1px solid var(--vscode-button-border, transparent);
-  border-radius: 5px;
-  color: var(--vscode-button-secondaryForeground);
-  background: var(--vscode-button-secondaryBackground);
+.icon-action {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+  background: transparent;
   font: inherit;
+  font-size: 14px;
+  line-height: 1;
   cursor: pointer;
-  white-space: nowrap;
 }
 
-.type-pick-button:hover:not(:disabled) {
-  background: var(--vscode-button-secondaryHoverBackground);
+.icon-action:hover:not(:disabled) {
+  background: var(--vscode-list-hoverBackground);
 }
 
-.type-pick-button:disabled {
-  opacity: 0.55;
+.icon-action:disabled {
+  opacity: 0.45;
   cursor: default;
 }
 
@@ -215,7 +236,6 @@ function updateQualifiers(): void {
 }
 
 @media (max-width: 760px) {
-  .type-row,
   .qualifiers {
     grid-template-columns: 1fr;
   }

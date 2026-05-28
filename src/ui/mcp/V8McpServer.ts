@@ -1560,6 +1560,8 @@ export class V8McpServer implements vscode.Disposable {
             });
         if (result.success) {
           this.afterMutation(result.changedFiles);
+          this.services.dynamicPanelController.handleMetadataRemoved(node);
+          this.services.subsystemEditorViewProvider.handleMetadataRemoved();
         }
         return result;
       })

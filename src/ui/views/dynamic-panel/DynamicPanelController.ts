@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
+import { getObjectLocationFromXml } from '../../../infra/fs/ObjectLocation';
 import type { MetadataNode } from '../../tree/TreeNode';
 import type {
   PropertiesViewController,
@@ -133,6 +135,17 @@ export class DynamicPanelController implements vscode.Disposable {
 
   getActiveNode(): MetadataNode | undefined {
     return this.activeNode;
+  }
+
+  /** Сбросить свойства, если сейчас показан удалённый узел или его дочерний элемент. */
+  handleMetadataRemoved(removedNode: MetadataNode): void {
+    const node = this.activeNode;
+    if (!node) {
+      return;
+    }
+    if (isRemovedNode(node, removedNode)) {
+      this.clearActive();
+    }
   }
 
   async handleWebviewCommand(command: string, payload: unknown): Promise<void> {
@@ -319,4 +332,52 @@ export class DynamicPanelController implements vscode.Disposable {
     this.currentState = next;
     this.host?.postState(next);
   }
+}
+
+function isRemovedNode(activeNode: MetadataNode, removedNode: MetadataNode): boolean {
+  if (activeNode === removedNode) {
+    return true;
+  }
+
+  if (isSameTreeNode(activeNode, removedNode)) {
+    return true;
+  }
+
+  if (removedNode.metaContext) {
+    return isSameRemovedChild(activeNode, removedNode);
+  }
+
+  const removedXmlPath = removedNode.xmlPath;
+  if (!removedXmlPath) {
+    return false;
+  }
+
+  const activeXmlPath = activeNode.metaContext?.ownerObjectXmlPath ?? activeNode.xmlPath;
+  if (!activeXmlPath) {
+    return false;
+  }
+
+  const removedObjectDir = getObjectLocationFromXml(removedXmlPath).objectDir;
+  return isInsidePath(activeXmlPath, removedObjectDir);
+}
+
+function isSameTreeNode(left: MetadataNode, right: MetadataNode): boolean {
+  return left.nodeKind === right.nodeKind
+    && left.textLabel === right.textLabel
+    && left.xmlPath === right.xmlPath
+    && left.metaContext?.ownerObjectXmlPath === right.metaContext?.ownerObjectXmlPath
+    && left.metaContext?.tabularSectionName === right.metaContext?.tabularSectionName;
+}
+
+function isSameRemovedChild(activeNode: MetadataNode, removedNode: MetadataNode): boolean {
+  return activeNode.nodeKind === removedNode.nodeKind
+    && activeNode.textLabel === removedNode.textLabel
+    && activeNode.metaContext?.ownerObjectXmlPath === removedNode.metaContext?.ownerObjectXmlPath
+    && activeNode.metaContext?.tabularSectionName === removedNode.metaContext?.tabularSectionName;
+}
+
+function isInsidePath(childPath: string, parentPath: string): boolean {
+  const child = path.resolve(childPath).toLowerCase();
+  const parent = path.resolve(parentPath).toLowerCase();
+  return child === parent || child.startsWith(`${parent}${path.sep}`);
 }

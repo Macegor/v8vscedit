@@ -8,7 +8,7 @@ import UniversalTree from './UniversalTree.vue';
 import UniversalSearchBox from './UniversalSearchBox.vue';
 import UniversalProcessingOverlay from './UniversalProcessingOverlay.vue';
 import UniversalStandaloneActions from './UniversalStandaloneActions.vue';
-import UniversalContextMenu from './UniversalContextMenu.vue';
+import AppContextMenu, { type ContextMenuItem } from '@ui-shared/components/AppContextMenu.vue';
 
 type IdMap = Readonly<Record<string, true>>;
 
@@ -175,7 +175,7 @@ function onContextMenu(nodeId: string, event: MouseEvent): void {
   };
 }
 
-function onContextMenuAction(action: TreeNodeActionDto): void {
+function onContextMenuAction(action: ContextMenuItem): void {
   contextMenu.value.visible = false;
   const nodeId = selectedNodeId.value;
   if (nodeId) {
@@ -380,12 +380,12 @@ onUnmounted(() => {
       <p class="empty-description">Откройте папку с XML-выгрузкой конфигурации 1С</p>
     </div>
 
-    <UniversalContextMenu
+    <AppContextMenu
       :visible="contextMenu.visible"
       :x="contextMenu.x"
       :y="contextMenu.y"
-      :actions="contextMenu.actions"
-      @action="onContextMenuAction"
+      :items="contextMenu.actions"
+      @select="onContextMenuAction"
       @close="closeContextMenu"
     />
   </div>

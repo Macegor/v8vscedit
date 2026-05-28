@@ -227,9 +227,11 @@ function renderSingleType(raw: string, typeBlock: string): string {
     return raw.replace(/^(?:cfg|d\d+p\d+):/, '');
   }
   const v8Map: Record<string, string> = {
+    'v8:ValueStorage': 'ValueStorage',
     'v8:ValueTable': 'ValueTable', 'v8:ValueTree': 'ValueTree',
     'v8:ValueListType': 'ValueList', 'v8:TypeDescription': 'TypeDescription',
-    'v8:Universal': 'Universal', 'v8:FixedArray': 'FixedArray', 'v8:FixedStructure': 'FixedStructure',
+    'v8:Universal': 'Universal', 'v8:Array': 'Array', 'v8:FixedArray': 'FixedArray',
+    'v8:Structure': 'Structure', 'v8:FixedStructure': 'FixedStructure',
     'v8:UUID': 'UUID',
     'v8ui:FormattedString': 'FormattedString', 'v8ui:Picture': 'Picture',
     'v8ui:Color': 'Color', 'v8ui:Font': 'Font',

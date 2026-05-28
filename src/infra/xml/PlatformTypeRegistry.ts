@@ -56,18 +56,20 @@ export interface PlatformTypeGroup {
  * специального префикса (`v8:`/`v8ui:`).
  */
 const NON_PRIMITIVE_XML_TOKEN: Record<string, string> = {
+  ХранилищеЗначения:       'v8:ValueStorage',
   УникальныйИдентификатор: 'v8:UUID',
   Тип:                     'v8:Type',
   ОписаниеТипов:           'v8:TypeDescription',
   СписокЗначений:          'v8:ValueListType',
   ТаблицаЗначений:         'v8:ValueTable',
   ДеревоЗначений:          'v8:ValueTree',
+  Массив:                  'v8:Array',
+  ФиксированныйМассив:     'v8:FixedArray',
+  Структура:               'v8:Structure',
+  ФиксированнаяСтруктура:  'v8:FixedStructure',
   ТабличныйДокумент:       'v8:SpreadsheetDocument',
   Картинка:                'v8ui:Picture',
   ФорматированнаяСтрока:   'v8ui:FormattedString',
-  // `ДвоичныеДанные` намеренно не имеет токена — на уровне MCP это значение
-  // не пишется напрямую (платформа выдаёт `xs:base64Binary` без квалификаторов,
-  // что неотличимо от `ХранилищеЗначения`). Запись через MCP — ошибка.
 };
 
 /** Контексты, в которых разрешён каждый базовый тип. */
@@ -86,13 +88,27 @@ const BASE_TYPE_CONTEXTS: Record<string, readonly TypeContext[]> = {
   СписокЗначений:          ['formAttribute'],
   ТаблицаЗначений:         ['formAttribute'],
   ДеревоЗначений:          ['formAttribute'],
+  Массив:                  ['formAttribute'],
+  ФиксированныйМассив:     ['formAttribute'],
+  Структура:               ['formAttribute'],
+  ФиксированнаяСтруктура:  ['formAttribute'],
   ТабличныйДокумент:       ['formAttribute'],
   ФорматированнаяСтрока:   ['formAttribute'],
 };
 
 /** Группа в реестре для базового типа. */
 function baseTypeGroup(russian: string): PlatformTypeGroupKind {
-  if (russian === 'ТаблицаЗначений' || russian === 'ДеревоЗначений' || russian === 'СписокЗначений' || russian === 'ОписаниеТипов' || russian === 'Тип') {
+  if (
+    russian === 'ТаблицаЗначений' ||
+    russian === 'ДеревоЗначений' ||
+    russian === 'СписокЗначений' ||
+    russian === 'ОписаниеТипов' ||
+    russian === 'Тип' ||
+    russian === 'Массив' ||
+    russian === 'ФиксированныйМассив' ||
+    russian === 'Структура' ||
+    russian === 'ФиксированнаяСтруктура'
+  ) {
     return 'compositeData';
   }
   return 'primitive';
@@ -250,9 +266,6 @@ export function getPlatformTypeRegistry(
 const PRIMITIVE_TOKEN_TO_RUSSIAN = new Map<string, string>();
 for (const base of BASE_TYPES) {
   if (base.xmlPrimitive) {
-    // `ДвоичныеДанные` и `ХранилищеЗначения` оба используют `xs:base64Binary`.
-    // По наличию квалификаторов отличить нельзя, поэтому при чтении возвращаем
-    // более частый случай — `ХранилищеЗначения` (так делал прежний код).
     if (!PRIMITIVE_TOKEN_TO_RUSSIAN.has(base.xmlPrimitive)) {
       PRIMITIVE_TOKEN_TO_RUSSIAN.set(base.xmlPrimitive, base.russian);
     }
@@ -330,16 +343,10 @@ export function tokenToCanonical(token: string): string | undefined {
  * Преобразует каноническую русскую форму в XML-токен для записи в `<v8:Type>`.
  *
  * Возвращает `undefined`, если тип не существует или недопустим в указанном
- * контексте. `ДвоичныеДанные` всегда отбивается (платформа сериализует его
- * как `xs:base64Binary` без квалификаторов — неотличимо от
- * `ХранилищеЗначения`, что делает запись через MCP двусмысленной).
+ * контексте.
  */
 export function canonicalToXmlToken(canonical: string, context: TypeContext): string | undefined {
   if (!canonical) {
-    return undefined;
-  }
-  // Запретный список: запись типа «ДвоичныеДанные» через MCP не поддерживается.
-  if (canonical === 'ДвоичныеДанные') {
     return undefined;
   }
 

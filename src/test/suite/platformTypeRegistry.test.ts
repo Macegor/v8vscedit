@@ -37,17 +37,18 @@ suite('PlatformTypeRegistry — базовая группа без configXmlPath
     ]);
   });
 
-  test('formAttribute содержит 16 базовых типов', () => {
+  test('formAttribute содержит 20 базовых типов', () => {
     const groups = getPlatformTypeRegistry(undefined, 'formAttribute');
     const base = findGroup(groups, 'base');
     assert.ok(base);
-    assert.strictEqual(base.items.length, 16, `получено ${String(base.items.length)} типов`);
+    assert.strictEqual(base.items.length, 20, `получено ${String(base.items.length)} типов`);
     const russian = base.items.map((i) => i.canonical);
     for (const expected of [
       'Строка', 'Число', 'Булево', 'Дата', 'ДатаВремя',
       'ХранилищеЗначения', 'УникальныйИдентификатор', 'ДвоичныеДанные',
       'Тип', 'ОписаниеТипов', 'СписокЗначений', 'ТаблицаЗначений',
-      'ДеревоЗначений', 'ТабличныйДокумент', 'Картинка', 'ФорматированнаяСтрока',
+      'ДеревоЗначений', 'Массив', 'ФиксированныйМассив', 'Структура',
+      'ФиксированнаяСтруктура', 'ТабличныйДокумент', 'Картинка', 'ФорматированнаяСтрока',
     ]) {
       assert.ok(russian.includes(expected), `не найден ${expected}`);
     }
@@ -160,18 +161,21 @@ suite('PlatformTypeRegistry — конверсия токенов', () => {
     assert.strictEqual(canonicalToXmlToken('ТаблицаЗначений', 'formAttribute'), 'v8:ValueTable');
   });
 
+  test('v8-токены платформенных типов читаются и пишутся', () => {
+    assert.strictEqual(tokenToCanonical('v8:ValueStorage'), 'ХранилищеЗначения');
+    assert.strictEqual(canonicalToXmlToken('ХранилищеЗначения', 'metadataAttribute'), 'v8:ValueStorage');
+    assert.strictEqual(tokenToCanonical('v8:FixedStructure'), 'ФиксированнаяСтруктура');
+    assert.strictEqual(canonicalToXmlToken('ФиксированнаяСтруктура', 'formAttribute'), 'v8:FixedStructure');
+    assert.strictEqual(tokenToCanonical('v8:Array'), 'Массив');
+    assert.strictEqual(canonicalToXmlToken('Массив', 'formAttribute'), 'v8:Array');
+  });
+
   test('Все контексты вычисляются без ошибок для всех поддерживаемых типов', () => {
     const contexts: TypeContext[] = ['metadataAttribute', 'formAttribute', 'commandParameter', 'eventSource'];
     for (const ctx of contexts) {
       const groups = getPlatformTypeRegistry(CONFIG_XML, ctx);
       for (const g of groups) {
         for (const item of g.items) {
-          // `ДвоичныеДанные` присутствует в реестре как опция, но платформа
-          // сериализует его одинаково с `ХранилищеЗначения`, поэтому запись
-          // через MCP намеренно отбивается возвратом `undefined`.
-          if (item.canonical === 'ДвоичныеДанные') {
-            continue;
-          }
           const token = canonicalToXmlToken(item.canonical, ctx);
           assert.ok(token, `нет XML-токена для ${item.canonical} в контексте ${ctx}`);
         }

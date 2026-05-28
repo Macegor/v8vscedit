@@ -10,5 +10,3 @@ import '@vscode-elements/elements/dist/vscode-progress-ring/index.js';
 import '@vscode-elements/elements/dist/vscode-divider/index.js';
 import '@vscode-elements/elements/dist/vscode-badge/index.js';
 import '@vscode-elements/elements/dist/vscode-icon/index.js';
-import '@vscode-elements/elements/dist/vscode-context-menu/index.js';
-import '@vscode-elements/elements/dist/vscode-context-menu-item/index.js';

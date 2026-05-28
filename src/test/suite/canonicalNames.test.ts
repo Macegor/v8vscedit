@@ -424,14 +424,15 @@ suite('CanonicalNames — parseCanonicalPath: успешные ветви', () =
 });
 
 suite('CanonicalNames — базовые типы и производные', () => {
-  test('Все 16 базовых типов присутствуют', () => {
-    assert.strictEqual(BASE_TYPES.length, 16);
+  test('Все 20 базовых типов присутствуют', () => {
+    assert.strictEqual(BASE_TYPES.length, 20);
     const russian = new Set(BASE_TYPES.map((t) => t.russian));
     for (const expected of [
       'Строка', 'Число', 'Булево', 'Дата', 'ДатаВремя', 'ХранилищеЗначения',
       'УникальныйИдентификатор', 'ДвоичныеДанные', 'Тип', 'ОписаниеТипов',
-      'СписокЗначений', 'ТаблицаЗначений', 'ДеревоЗначений', 'ТабличныйДокумент',
-      'Картинка', 'ФорматированнаяСтрока',
+      'СписокЗначений', 'ТаблицаЗначений', 'ДеревоЗначений', 'Массив',
+      'ФиксированныйМассив', 'Структура', 'ФиксированнаяСтруктура',
+      'ТабличныйДокумент', 'Картинка', 'ФорматированнаяСтрока',
     ]) {
       assert.ok(russian.has(expected), `Нет базового типа ${expected}`);
     }
@@ -450,13 +451,17 @@ suite('CanonicalNames — базовые типы и производные', ()
     assert.ok(!names.has('СписокЗначений'));
     assert.ok(!names.has('ТаблицаЗначений'));
     assert.ok(!names.has('ДеревоЗначений'));
+    assert.ok(!names.has('Массив'));
+    assert.ok(!names.has('ФиксированныйМассив'));
+    assert.ok(!names.has('Структура'));
+    assert.ok(!names.has('ФиксированнаяСтруктура'));
     assert.ok(!names.has('ТабличныйДокумент'));
     assert.ok(!names.has('ФорматированнаяСтрока'));
   });
 
-  test('getBaseTypesForContext для formAttribute содержит все 16', () => {
+  test('getBaseTypesForContext для formAttribute содержит все 20', () => {
     const forms = getBaseTypesForContext('formAttribute');
-    assert.strictEqual(forms.length, 16);
+    assert.strictEqual(forms.length, 20);
   });
 
   test('REF_KIND_MAP содержит ожидаемые группы', () => {
@@ -492,7 +497,8 @@ suite('CanonicalNames — базовые типы и производные', ()
     assert.strictEqual(map.get('Число')?.xmlPrimitive, 'xs:decimal');
     assert.strictEqual(map.get('Булево')?.xmlPrimitive, 'xs:boolean');
     assert.strictEqual(map.get('Дата')?.xmlPrimitive, 'xs:dateTime');
-    assert.strictEqual(map.get('ХранилищеЗначения')?.xmlPrimitive, 'xs:base64Binary');
+    assert.strictEqual(map.get('ХранилищеЗначения')?.xmlPrimitive, undefined);
+    assert.strictEqual(map.get('ДвоичныеДанные')?.xmlPrimitive, 'xs:base64Binary');
     // УникальныйИдентификатор пока без xmlPrimitive (см. TODO в исходнике).
     assert.strictEqual(map.get('УникальныйИдентификатор')?.xmlPrimitive, undefined);
   });

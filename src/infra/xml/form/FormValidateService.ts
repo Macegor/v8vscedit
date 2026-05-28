@@ -30,8 +30,8 @@ const KNOWN_INVALID_TYPES = new Set([
 const VALID_CLOSED_TYPES = new Set([
   'xs:boolean', 'xs:string', 'xs:decimal', 'xs:dateTime', 'xs:binary',
   'v8:FillChecking', 'v8:Null', 'v8:StandardPeriod', 'v8:StandardBeginningDate', 'v8:Type',
-  'v8:TypeDescription', 'v8:UUID', 'v8:ValueListType', 'v8:ValueTable', 'v8:ValueTree',
-  'v8:Universal', 'v8:FixedArray', 'v8:FixedStructure',
+  'v8:TypeDescription', 'v8:UUID', 'v8:ValueStorage', 'v8:ValueListType', 'v8:ValueTable', 'v8:ValueTree',
+  'v8:Universal', 'v8:Array', 'v8:FixedArray', 'v8:Structure', 'v8:FixedStructure',
   'v8ui:Color', 'v8ui:Font', 'v8ui:FormattedString', 'v8ui:HorizontalAlign',
   'v8ui:Picture', 'v8ui:SizeChangeMode', 'v8ui:VerticalAlign',
   'dcsset:DataCompositionComparisonType', 'dcsset:DataCompositionFieldPlacement',

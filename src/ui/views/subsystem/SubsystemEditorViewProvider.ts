@@ -118,6 +118,18 @@ export class SubsystemEditorViewProvider implements vscode.Disposable {
     this.currentXmlPath = undefined;
   }
 
+  /** Перечитывает деревья состава после внешнего удаления метаданных. */
+  handleMetadataRemoved(): void {
+    if (!this.panel) {
+      return;
+    }
+    if (!this.currentXmlPath || !fs.existsSync(this.currentXmlPath)) {
+      this.dispose();
+      return;
+    }
+    this.postState();
+  }
+
   // --- Внутренние методы ---
 
   private buildTitle(nodeLabel: string): string {

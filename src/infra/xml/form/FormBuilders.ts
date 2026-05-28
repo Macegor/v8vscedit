@@ -144,12 +144,15 @@ const PROP_MAP: Record<string, string> = {
 };
 
 const V8_TYPES: Record<string, string> = {
+  ValueStorage: 'v8:ValueStorage',
   ValueTable: 'v8:ValueTable',
   ValueTree: 'v8:ValueTree',
   ValueList: 'v8:ValueListType',
   TypeDescription: 'v8:TypeDescription',
   Universal: 'v8:Universal',
+  Array: 'v8:Array',
   FixedArray: 'v8:FixedArray',
+  Structure: 'v8:Structure',
   FixedStructure: 'v8:FixedStructure',
   UUID: 'v8:UUID',
 };
