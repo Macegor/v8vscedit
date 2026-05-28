@@ -26,6 +26,10 @@ function formName(value: unknown): string {
   const index = raw.lastIndexOf(marker);
   return index >= 0 ? raw.slice(index + marker.length) : raw;
 }
+
+function isLocked(control: PropertyControl): boolean {
+  return props.readonly || control.readonly;
+}
 </script>
 
 <template>
@@ -59,10 +63,11 @@ function formName(value: unknown): string {
           <label class="control-label" :title="control.id">{{ control.label }}</label>
           <div class="form-picker">
             <input
-              class="form-input"
+              class="prop-field form-input"
+              :class="{ 'has-clear': formName(control.value) }"
               type="text"
               :value="formName(control.value)"
-              placeholder="Используется стандартная форма"
+              placeholder="Генерируется автоматически"
               readonly
             />
             <div class="form-actions">
@@ -70,20 +75,20 @@ function formName(value: unknown): string {
                 class="icon-action"
                 type="button"
                 title="Выбрать форму"
-                :disabled="readonly || control.readonly"
+                :disabled="isLocked(control)"
                 @click="emit('pick', control.id)"
               >
-                ...
+                <span class="codicon codicon-ellipsis" aria-hidden="true"></span>
               </button>
               <button
                 v-if="formName(control.value)"
                 class="icon-action"
                 type="button"
                 title="Очистить форму"
-                :disabled="readonly || control.readonly"
+                :disabled="isLocked(control)"
                 @click="emit('clear', control.id)"
               >
-                ×
+                <span class="codicon codicon-close" aria-hidden="true"></span>
               </button>
             </div>
           </div>
@@ -151,17 +156,13 @@ function formName(value: unknown): string {
 }
 
 .form-input {
-  width: 100%;
-  min-height: 34px;
-  box-sizing: border-box;
-  padding: 7px 74px 7px 10px;
-  border: 1px solid var(--vscode-input-border, transparent);
-  border-radius: 6px;
-  color: var(--vscode-input-foreground);
-  background: var(--vscode-input-background);
-  font: inherit;
+  padding-right: 36px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.form-input.has-clear {
+  padding-right: 64px;
 }
 
 .form-input::placeholder {
@@ -171,23 +172,23 @@ function formName(value: unknown): string {
 .form-actions {
   position: absolute;
   top: 50%;
-  right: 6px;
+  right: 4px;
   display: inline-flex;
   gap: 4px;
   transform: translateY(-50%);
 }
 
 .icon-action {
-  width: 26px;
+  width: 24px;
   height: 24px;
-  min-width: 26px;
+  min-width: 24px;
   padding: 0;
   display: inline-grid;
   place-items: center;
-  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border, transparent));
-  border-radius: 5px;
+  border: 0;
+  border-radius: 4px;
   color: var(--vscode-icon-foreground, var(--vscode-foreground));
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-input-background));
+  background: transparent;
   font: inherit;
   font-size: 14px;
   line-height: 1;

@@ -1190,7 +1190,11 @@ export class PropertiesViewController {
       id: property.key,
       label: property.title,
       kind: property.kind,
-      value: typeof property.value === 'string' || typeof property.value === 'boolean' ? property.value : '',
+      value: typeof property.value === 'string'
+        ? this.toPropertyDisplayValue(property)
+        : typeof property.value === 'boolean'
+        ? property.value
+        : '',
       readonly,
       inherited: property.inherited ?? false,
     };
@@ -1235,6 +1239,17 @@ export class PropertiesViewController {
     }
 
     return base;
+  }
+
+  private toPropertyDisplayValue(property: ObjectPropertyItem): string {
+    const value = property.value;
+    if (typeof value !== 'string') {
+      return '';
+    }
+    if (property.section === 'Формы' && property.key.includes('Form')) {
+      return extractFormNameFromReference(value);
+    }
+    return value;
   }
 
   /** Группирует контролы в секции по section/sectionOrder исходных свойств. */
