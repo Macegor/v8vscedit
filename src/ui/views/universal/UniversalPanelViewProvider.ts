@@ -369,7 +369,7 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
       id,
       key: nodeKey,
       label: node.textLabel,
-      description: typeof node.description === 'string' ? node.description : undefined,
+      description: this.nodeDescription(node),
       icon: this.buildIcon(node),
       kind: node.nodeKind,
       ownership: this.ownership(node),
@@ -382,6 +382,13 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
       stateIcons: this.buildStateIcons(node),
       gitStatus: this.resolveGitStatus(node),
     };
+  }
+
+  private nodeDescription(node: MetadataNode): string | undefined {
+    if (node.ownershipTag) {
+      return undefined;
+    }
+    return typeof node.description === 'string' ? node.description : undefined;
   }
 
   private buildIcon(node: MetadataNode): IconDto {
