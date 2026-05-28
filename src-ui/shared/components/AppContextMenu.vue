@@ -202,33 +202,33 @@ onUnmounted(removeListeners);
 .context-menu {
   position: fixed;
   z-index: 10000;
-  min-width: 220px;
-  max-width: min(420px, calc(100vw - 16px));
-  padding: 5px;
+  min-width: 196px;
+  max-width: min(360px, calc(100vw - 16px));
+  padding: 4px;
   overflow: auto;
   color: var(--vscode-menu-foreground, var(--vscode-foreground));
   background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
   border: 1px solid var(--vscode-menu-border, var(--vscode-widget-border, var(--vscode-panel-border)));
-  border-radius: 6px;
-  box-shadow: 0 8px 24px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
+  border-radius: 8px;
+  box-shadow: 0 4px 14px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
   outline: none;
 }
 
 .context-menu-item {
   width: 100%;
-  min-height: 34px;
+  min-height: 24px;
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
+  grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
-  gap: 9px;
-  padding: 5px 12px 5px 8px;
+  gap: 6px;
+  padding: 3px 10px 3px 6px;
   border: 0;
   border-radius: 4px;
   color: inherit;
   background: transparent;
   font: inherit;
   font-size: 13px;
-  line-height: 1.25;
+  line-height: 18px;
   text-align: left;
   cursor: pointer;
 }
@@ -246,16 +246,17 @@ onUnmounted(removeListeners);
 }
 
 .context-menu-icon {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   display: inline-grid;
   place-items: center;
   color: var(--vscode-menu-foreground, var(--vscode-icon-foreground));
+  font-size: 14px;
 }
 
 .context-menu-asset {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   display: block;
   background-image: var(--icon-light);
   background-size: contain;
