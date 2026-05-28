@@ -206,7 +206,8 @@ export class Container {
       this.supportService,
       this.repositoryService,
       context.extensionUri,
-      this.outputChannel
+      this.outputChannel,
+      (changedFiles) => this.afterSubsystemContentMutation([...changedFiles], dynamicRef)
     );
     this.repositoryConnectionViewProvider = new RepositoryConnectionViewProvider(context.extensionUri);
     this.repositoryCommitViewProvider = new RepositoryCommitViewProvider(context.extensionUri);
@@ -462,6 +463,23 @@ export class Container {
   private refreshActionsView(): void {
     this.treeSearchViewProvider.refresh();
     this.universalPanelViewProvider.refresh();
+  }
+
+  private afterSubsystemContentMutation(
+    changedFiles: string[],
+    dynamicRef: { current: DynamicPanelController | undefined }
+  ): void {
+    if (changedFiles.length === 0) {
+      return;
+    }
+    this.suppressConfigurationReloadForFiles(changedFiles);
+    this.markChangedConfigurationByFiles(changedFiles);
+    const refreshed = this.treeProvider.refreshCacheForFiles(changedFiles);
+    if (!refreshed) {
+      this.treeProvider.refresh();
+    }
+    dynamicRef.current?.refreshProperties();
+    this.refreshActionsView();
   }
 
   private wireConfigurationSourceWatcher(): void {

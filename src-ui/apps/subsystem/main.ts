@@ -2,6 +2,7 @@ import { createApp } from 'vue';
 import '@ui-shared/vscode-elements';
 import { loadInitialState } from '@ui-shared/api/loadInitialState';
 import { MessageBus } from '@ui-shared/api/messageBus';
+import type { TreeNodeDto } from '@ui-shared/types/tree';
 import SubsystemApp from './SubsystemApp.vue';
 
 export interface SubsystemState {
@@ -9,23 +10,13 @@ export interface SubsystemState {
   readonly subsystemId: string;
   readonly subsystemName: string;
   readonly locked: boolean;
-  readonly properties: Record<string, unknown>;
-  readonly content: SubsystemContentItemDto[];
-  readonly children: SubsystemChildDto[];
-  readonly activeTab: 'properties' | 'content' | 'children' | 'commandInterface';
+  readonly availableTree: SubsystemTreeNodeDto[];
+  readonly contentTree: SubsystemTreeNodeDto[];
 }
 
-export interface SubsystemContentItemDto {
-  readonly id: string;
-  readonly label: string;
-  readonly included: boolean;
-  readonly kind?: string;
-}
-
-export interface SubsystemChildDto {
-  readonly id: string;
-  readonly name: string;
-  readonly label: string;
+export interface SubsystemTreeNodeDto extends TreeNodeDto {
+  readonly ref?: string;
+  readonly children?: SubsystemTreeNodeDto[];
 }
 
 const initialState = loadInitialState<SubsystemState | null>('subsystem');

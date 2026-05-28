@@ -1,30 +1,40 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import type {
-  SubsystemPropertyKey,
+  MetadataRefTreeNode,
   SubsystemXmlService,
 } from '../../../infra/xml/SubsystemXmlService';
 import { type SupportInfoService, SupportMode } from '../../../infra/support/SupportInfoService';
 import type { RepositoryService } from '../../../infra/repository/RepositoryService';
 import { WebviewHtmlFactory } from '../webview/WebviewHtmlFactory';
+import type { IconDto } from '../universal/_types';
+import { getIconUris } from '../../tree/presentation/icon';
+import type { NodeKind } from '../../tree/TreeNode';
 
 /** Сообщения от Vue-приложения редактора подсистем. */
 type SubsystemMessage =
-  | { readonly type: 'command'; readonly command: 'toggleContent'; readonly payload: { readonly id: string; readonly included: boolean } }
-  | { readonly type: 'command'; readonly command: 'openChild'; readonly payload: { readonly id: string } }
-  | { readonly type: 'command'; readonly command: 'propertyChanged'; readonly payload: { readonly key: string; readonly value: unknown } };
+  | { readonly type: 'command'; readonly command: 'addContent'; readonly payload: { readonly ref: string } }
+  | { readonly type: 'command'; readonly command: 'removeContent'; readonly payload: { readonly ref: string } };
 
-interface SubsystemContentItemDto {
+interface TreeNodeActionDto {
   readonly id: string;
   readonly label: string;
-  readonly included: boolean;
-  readonly kind?: string;
+  readonly command: string;
 }
 
-interface SubsystemChildDto {
+interface TreeNodeDto {
   readonly id: string;
-  readonly name: string;
+  readonly key: string;
   readonly label: string;
+  readonly description?: string;
+  readonly tooltip?: string;
+  readonly icon?: IconDto;
+  readonly kind?: string;
+  readonly hasChildren: boolean;
+  readonly loaded: boolean;
+  readonly children?: TreeNodeDto[];
+  readonly actions: TreeNodeActionDto[];
+  readonly ref?: string;
 }
 
 /** Состояние для Vue-приложения (зеркалит SubsystemState из src-ui/apps/subsystem/main.ts). */
@@ -33,10 +43,8 @@ interface SubsystemInitialState {
   readonly subsystemId: string;
   readonly subsystemName: string;
   readonly locked: boolean;
-  readonly properties: Record<string, unknown>;
-  readonly content: readonly SubsystemContentItemDto[];
-  readonly children: readonly SubsystemChildDto[];
-  readonly activeTab: 'properties' | 'content' | 'children' | 'commandInterface';
+  readonly availableTree: readonly TreeNodeDto[];
+  readonly contentTree: readonly TreeNodeDto[];
 }
 
 /**
@@ -57,7 +65,8 @@ export class SubsystemEditorViewProvider implements vscode.Disposable {
     private readonly supportInfoService: SupportInfoService,
     private readonly repositoryService: RepositoryService,
     private readonly extensionUri: vscode.Uri,
-    private readonly outputChannel: vscode.OutputChannel
+    private readonly outputChannel: vscode.OutputChannel,
+    private readonly afterMutation: (changedFiles: readonly string[]) => void
   ) {
     this.htmlFactory = new WebviewHtmlFactory(extensionUri);
   }
@@ -83,7 +92,10 @@ export class SubsystemEditorViewProvider implements vscode.Disposable {
       {
         enableScripts: true,
         retainContextWhenHidden: true,
-        localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'ui')],
+        localResourceRoots: [
+          vscode.Uri.joinPath(this.extensionUri, 'dist', 'ui'),
+          vscode.Uri.joinPath(this.extensionUri, 'src', 'icons'),
+        ],
       }
     );
 
@@ -113,7 +125,7 @@ export class SubsystemEditorViewProvider implements vscode.Disposable {
   }
 
   /** Строит состояние для Vue-приложения в формате SubsystemState. */
-  private buildState(activeTab: SubsystemInitialState['activeTab'] = 'properties'): SubsystemInitialState | { error: string } {
+  private buildState(): SubsystemInitialState | { error: string } {
     const xmlPath = this.currentXmlPath;
     if (!xmlPath || !fs.existsSync(xmlPath)) {
       return { error: 'XML-файл подсистемы не найден.' };
@@ -124,44 +136,72 @@ export class SubsystemEditorViewProvider implements vscode.Disposable {
     const subsystemName = this.currentNodeLabel ?? snapshot.subsystem.name;
     const includedRefs = new Set(snapshot.subsystem.contentRefs);
 
-    const content: SubsystemContentItemDto[] = [];
-    for (const group of snapshot.availableGroups) {
-      for (const item of group.items) {
-        content.push({
-          id: item.ref,
-          label: item.label,
-          included: includedRefs.has(item.ref),
-          kind: group.label,
-        });
-      }
-    }
-
-    const children: SubsystemChildDto[] = snapshot.subsystem.childSubsystems.map((name) => ({
-      id: name,
-      name,
-      label: name,
-    }));
-
     return {
       initialized: true,
       subsystemId: xmlPath,
       subsystemName,
       locked,
-      properties: {
-        name: snapshot.subsystem.name,
-        synonym: snapshot.subsystem.synonym,
-        comment: snapshot.subsystem.comment,
-        includeHelpInContents: snapshot.subsystem.includeHelpInContents,
-        includeInCommandInterface: snapshot.subsystem.includeInCommandInterface,
-        useOneCommand: snapshot.subsystem.useOneCommand,
-        explanation: snapshot.subsystem.explanation,
-        pictureRef: snapshot.subsystem.pictureRef,
-        pictureLoadTransparent: snapshot.subsystem.pictureLoadTransparent,
-      },
-      content,
-      children,
-      activeTab,
+      availableTree: this.toTreeDtos(snapshot.contentTree, includedRefs, true),
+      contentTree: this.toTreeDtos(this.filterContentTree(snapshot.contentTree, includedRefs), includedRefs, false),
     };
+  }
+
+  private filterContentTree(nodes: readonly MetadataRefTreeNode[], includedRefs: ReadonlySet<string>): MetadataRefTreeNode[] {
+    const result: MetadataRefTreeNode[] = [];
+    for (const node of nodes) {
+      const children = this.filterContentTree(node.children, includedRefs);
+      if ((node.ref && includedRefs.has(node.ref)) || children.length > 0) {
+        result.push({ ...node, children });
+      }
+    }
+    return result;
+  }
+
+  private toTreeDtos(
+    nodes: readonly MetadataRefTreeNode[],
+    includedRefs: ReadonlySet<string>,
+    markIncluded: boolean
+  ): TreeNodeDto[] {
+    return nodes.map((node) => this.toTreeDto(node, includedRefs, markIncluded));
+  }
+
+  private toTreeDto(
+    node: MetadataRefTreeNode,
+    includedRefs: ReadonlySet<string>,
+    markIncluded: boolean
+  ): TreeNodeDto {
+    const hasChildren = node.children.length > 0;
+    return {
+      id: node.id,
+      key: node.id,
+      label: node.label,
+      description: markIncluded && node.ref && includedRefs.has(node.ref) ? 'в составе' : undefined,
+      tooltip: node.ref,
+      icon: this.buildIcon(node.kind),
+      kind: node.kind,
+      hasChildren,
+      loaded: true,
+      children: hasChildren ? this.toTreeDtos(node.children, includedRefs, markIncluded) : undefined,
+      actions: [],
+      ref: node.ref,
+    };
+  }
+
+  private buildIcon(kind: NodeKind | undefined): IconDto {
+    if (!kind) {
+      return { kind: 'none' };
+    }
+    try {
+      const iconUris = getIconUris(kind, undefined, this.extensionUri);
+      const lightUri = this.panel?.webview.asWebviewUri(iconUris.light).toString();
+      const darkUri = this.panel?.webview.asWebviewUri(iconUris.dark).toString();
+      if (!lightUri || !darkUri) {
+        return { kind: 'none' };
+      }
+      return { kind: 'asset', lightUri, darkUri };
+    } catch {
+      return { kind: 'none' };
+    }
   }
 
   /** Полная перерисовка HTML (при первом показе или смене подсистемы). */
@@ -185,7 +225,7 @@ export class SubsystemEditorViewProvider implements vscode.Disposable {
     }
   }
 
-  /** Обновляет состояние без перерисовки HTML — сохраняет активную вкладку. */
+  /** Обновляет состояние без перерисовки HTML, чтобы не сбрасывать раскрытие деревьев. */
   private postState(): void {
     if (!this.panel) {
       return;
@@ -207,32 +247,26 @@ export class SubsystemEditorViewProvider implements vscode.Disposable {
       return;
     }
 
-    if (this.isEditLocked() && message.command !== 'openChild') {
+    if (this.isEditLocked()) {
       void vscode.window.showWarningMessage('Редактирование подсистемы запрещено текущим состоянием поддержки или хранилища.');
       return;
     }
 
-    await this.enqueueUpdate(async () => {
+    await this.enqueueUpdate(() => {
       try {
         switch (message.command) {
-          case 'toggleContent': {
-            const { id, included } = message.payload;
-            const changed = included
-              ? this.xmlService.addContentRefs(xmlPath, [id])
-              : this.xmlService.removeContentRefs(xmlPath, [id]);
-            if (changed) {
+          case 'addContent': {
+            const result = this.xmlService.editContentRefs(xmlPath, { add: [message.payload.ref] });
+            if (result.changed) {
+              this.afterMutation(result.changedFiles);
               this.postState();
             }
             break;
           }
-          case 'openChild': {
-            await vscode.commands.executeCommand('v8vscedit.openSubsystemEditor', message.payload.id);
-            break;
-          }
-          case 'propertyChanged': {
-            const { key, value } = message.payload;
-            const changed = this.xmlService.updateProperty(xmlPath, key as SubsystemPropertyKey, value as string | boolean);
-            if (changed) {
+          case 'removeContent': {
+            const result = this.xmlService.editContentRefs(xmlPath, { remove: [message.payload.ref] });
+            if (result.changed) {
+              this.afterMutation(result.changedFiles);
               this.postState();
             }
             break;
@@ -255,7 +289,7 @@ export class SubsystemEditorViewProvider implements vscode.Disposable {
     return this.repositoryService.isEditRestricted(xmlPath);
   }
 
-  private async enqueueUpdate(operation: () => Promise<void>): Promise<void> {
+  private async enqueueUpdate(operation: () => void | Promise<void>): Promise<void> {
     const run = this.updateQueue.then(operation);
     this.updateQueue = run.catch(() => undefined);
     await run;

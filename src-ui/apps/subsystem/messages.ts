@@ -1,13 +1,7 @@
-export interface SubsystemToggleContentPayload {
-  readonly id: string;
-  readonly included: boolean;
-}
-
-export interface SubsystemOpenChildPayload {
-  readonly id: string;
+export interface SubsystemContentPayload {
+  readonly ref: string;
 }
 
 export type SubsystemUiMessage =
-  | { readonly type: 'command'; readonly command: 'toggleContent'; readonly payload: SubsystemToggleContentPayload }
-  | { readonly type: 'command'; readonly command: 'openChild'; readonly payload: SubsystemOpenChildPayload }
-  | { readonly type: 'command'; readonly command: 'propertyChanged'; readonly payload: { readonly key: string; readonly value: unknown } };
+  | { readonly type: 'command'; readonly command: 'addContent'; readonly payload: SubsystemContentPayload }
+  | { readonly type: 'command'; readonly command: 'removeContent'; readonly payload: SubsystemContentPayload };
