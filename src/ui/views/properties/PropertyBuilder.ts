@@ -10,6 +10,7 @@ import type {
   ObjectPropertiesCollection,
 } from './_types';
 import {
+  escapeXmlText,
   extractElementInnerXml,
   extractFirstBalancedBlock,
   extractOpeningTagName,
@@ -2180,13 +2181,6 @@ function normalizeStandardAttributeElementXml(elementXml: string): string {
   const normalizedInner = stripXmlTagNamespacePrefixes(inner);
   const displayName = escapeXmlText(getStandardAttributePresentation(name));
   return `<StandardAttribute><Properties><Name>${displayName}</Name>${normalizedInner}</Properties></StandardAttribute>`;
-}
-
-function escapeXmlText(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
 }
 
 function getTypedFieldPropertyKeyOrder(elementFullXml: string): string[] {

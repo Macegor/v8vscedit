@@ -1,7 +1,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { XMLParser } from 'fast-xml-parser';
-import { extractSimpleTag, extractSynonym } from '../xml/XmlUtils';
+import {
+  escapeXmlAttribute,
+  escapeXmlText as escapeXmlTextCanonical,
+  extractSimpleTag,
+  extractSynonym,
+} from '../xml/XmlUtils';
 
 export const RIGHTS_NS = 'http://v8.1c.ru/8.2/roles';
 export const DEFAULT_FORMAT_VERSION = '2.18';
@@ -322,17 +327,10 @@ export function asArray<T>(value: T | readonly T[] | undefined): readonly T[] {
   return Array.isArray(value) ? value as readonly T[] : [value as T];
 }
 
-export function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-export function escapeXmlText(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+// Реэкспорт канонических хелперов с прежними именами модуля:
+// escapeXml экранирует значения атрибутов (&<>"), escapeXmlText — текст (&<>).
+export const escapeXml = escapeXmlAttribute;
+export const escapeXmlText = escapeXmlTextCanonical;
 
 export function escapeTextSearch(value: string): string {
   return escapeXmlText(value);

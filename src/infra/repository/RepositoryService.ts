@@ -2,7 +2,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { MetaKind } from '../../domain/MetaTypes';
-import { parseConfigXml, parseObjectXml } from '../xml';
+import { escapeXmlAttribute as escapeXml, parseConfigXml, parseObjectXml } from '../xml';
 
 export interface RepositoryBinding {
   repoPath: string;
@@ -688,15 +688,6 @@ export class RepositoryService {
     };
   }
 
-  private ensureScopeState(target: RepositoryTarget): void {
-    const state = this.loadStateFile();
-    const scopeKey = this.buildScopeKey(target);
-    if (!Object.prototype.hasOwnProperty.call(state.scopes, scopeKey)) {
-      state.scopes[scopeKey] = { connected: true, lockedFullNames: [] };
-      this.saveStateFile(state);
-    }
-  }
-
   private saveScopeState(target: RepositoryTarget, scope: RepositoryScopeState): void {
     const state = this.loadStateFile();
     state.scopes[this.buildScopeKey(target)] = scope;
@@ -738,14 +729,6 @@ export class RepositoryService {
   private getRootLockName(target: RepositoryTarget): string {
     return target.configKind === 'cfe' ? EXTENSION_ROOT_LOCK_NAME : CONFIGURATION_ROOT_LOCK_NAME;
   }
-}
-
-function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
 }
 
 function getFileMtimeMs(filePath: string): number | undefined {

@@ -6,6 +6,7 @@ import { getMetaFolder, META_TYPES } from '../../domain/MetaTypes';
 import { ConfigurationXmlEditor } from './ConfigurationXmlEditor';
 import { CommandInterfaceService, type CommandInterfaceInfoResult, type CommandInterfaceValidationResult } from './CommandInterfaceService';
 import { SubsystemXmlService, type SubsystemInfo } from './SubsystemXmlService';
+import { escapeXmlText } from './XmlUtils';
 
 const DEFAULT_FORMAT_VERSION = '2.18';
 const IDENTIFIER_RE = /^[A-Za-zА-Яа-яЁё_][A-Za-z0-9А-Яа-яЁё_]*$/;
@@ -530,8 +531,4 @@ function paginate(lines: readonly string[], limit?: number, offset?: number): st
     return [...sliced, '', `[ОБРЕЗАНО] Показано ${String(sliced.length)} из ${String(lines.length)} строк.`];
   }
   return sliced;
-}
-
-function escapeXmlText(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
