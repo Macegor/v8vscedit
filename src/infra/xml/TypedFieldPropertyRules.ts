@@ -1,3 +1,5 @@
+import { findNestingAwareElementRange } from './XmlUtils';
+
 export type TypeAwarePropertyOwnerKind =
   | 'Attribute'
   | 'AddressingAttribute'
@@ -260,9 +262,9 @@ function sortByControlledOrder(keys: string[]): string[] {
 }
 
 function detectFieldTypeCategories(typeInnerXml: string): ReadonlySet<FieldTypeCategory> {
-  const rawTypes = Array.from(typeInnerXml.matchAll(/<v8:Type(?:\s[^>]*)?>([^<]*)<\/v8:Type>/g))
+  const rawTypes = Array.from(typeInnerXml.matchAll(/<(?:[\w-]+:)?Type(?:\s[^>]*)?>([^<]*)<\/(?:[\w-]+:)?Type>/g))
     .map((match) => normalizeRawType(match[1]));
-  const typeSets = Array.from(typeInnerXml.matchAll(/<v8:TypeSet(?:\s[^>]*)?>([^<]*)<\/v8:TypeSet>/g))
+  const typeSets = Array.from(typeInnerXml.matchAll(/<(?:[\w-]+:)?TypeSet(?:\s[^>]*)?>([^<]*)<\/(?:[\w-]+:)?TypeSet>/g))
     .map((match) => normalizeRawType(match[1]));
   const all = [...rawTypes, ...typeSets].filter((item) => item.length > 0);
   const result = new Set<FieldTypeCategory>();
@@ -318,12 +320,11 @@ function buildDefaultPropertyBlock(key: string, indent: string): string {
 }
 
 function findPropertiesInner(xml: string): { inner: string; start: number; end: number } | null {
-  const match = /<Properties>([\s\S]*?)<\/Properties>/.exec(xml);
-  if (match?.index === undefined) {
+  const range = findNestingAwareElementRange(xml, 'Properties');
+  if (!range) {
     return null;
   }
-  const start = match.index + match[0].indexOf('>') + 1;
-  return { inner: match[1], start, end: start + match[1].length };
+  return { inner: xml.slice(range.openEnd, range.closeStart), start: range.openEnd, end: range.closeStart };
 }
 
 function collectPropertyBlocks(propertiesInner: string): {

@@ -1,5 +1,9 @@
 import * as fs from 'fs';
-import { writeTextFilePreservingBomAndEol } from '../XmlUtils';
+import {
+  findDirectElementRanges,
+  findNestingAwareElementRange,
+  writeTextFilePreservingBomAndEol,
+} from '../XmlUtils';
 import {
   buildAttributeXml,
   buildCommandXml,
@@ -42,7 +46,7 @@ export class FormEditService {
       } else if (intoName) {
         next = appendIntoNamedElementChildItems(next, intoName, elementXml);
       } else {
-        next = appendIntoContainer(next, 'ChildItems', elementXml);
+        next = appendIntoRootContainer(next, 'ChildItems', elementXml);
       }
     }
     if (options.definition.formEvents?.length) {
@@ -101,7 +105,7 @@ export function appendIntoContainer(xml: string, containerTag: string, content: 
   }
   const selfClosing = new RegExp(`<${containerTag}\\s*\\/>`);
   if (selfClosing.test(xml)) {
-    return xml.replace(selfClosing, `<${containerTag}>\n${content}\n\t</${containerTag}>`);
+    return xml.replace(selfClosing, () => `<${containerTag}>\n${content}\n\t</${containerTag}>`);
   }
   const re = new RegExp(`(<${containerTag}>)([\\s\\S]*?)(<\\/${containerTag}>)`);
   if (re.test(xml)) {
@@ -114,6 +118,52 @@ export function appendIntoContainer(xml: string, containerTag: string, content: 
   return `${xml.slice(0, before.index)}\t<${containerTag}>\n${content}\n\t</${containerTag}>\n${xml.slice(before.index)}`;
 }
 
+/**
+ * Возвращает абсолютный диапазон КОРНЕВОГО контейнера формы (`<ChildItems>`/`<Events>` —
+ * прямой потомок корневого `<Form>`). Без этого первый текстовый матч `<ChildItems>`
+ * нередко попадает во вложенный `<AutoCommandBar>`, а не в корень формы.
+ */
+function findRootFormContainerRange(xml: string, containerTag: string): { start: number; end: number } | null {
+  const formRange = findNestingAwareElementRange(xml, 'Form');
+  if (!formRange) {
+    return null;
+  }
+  const inner = xml.slice(formRange.openEnd, formRange.closeStart);
+  const direct = findDirectElementRanges(inner, containerTag).at(0);
+  if (!direct) {
+    return null;
+  }
+  return { start: formRange.openEnd + direct.start, end: formRange.openEnd + direct.end };
+}
+
+/**
+ * Вставляет content в КОРНЕВОЙ контейнер формы (прямой потомок `<Form>`), а не в
+ * первый встретившийся по тексту. Если корневой контейнер отсутствует или само-закрыт —
+ * откатывается к универсальному `appendIntoContainer`.
+ */
+export function appendIntoRootContainer(xml: string, containerTag: string, content: string): string {
+  if (!content.trim()) {
+    return xml;
+  }
+  const root = findRootFormContainerRange(xml, containerTag);
+  if (!root) {
+    // Корневой контейнер не материализован — общий путь сам создаст блок перед </Form>.
+    return appendIntoContainer(xml, containerTag, content);
+  }
+  const blockStart = root.start;
+  const blockEnd = root.end;
+  const block = xml.slice(blockStart, blockEnd);
+  // Само-закрытый корневой контейнер: `<ChildItems/>` → раскрыть.
+  if (/\/>\s*$/.test(block)) {
+    const expanded = `<${containerTag}>\n${content}\n\t</${containerTag}>`;
+    return `${xml.slice(0, blockStart)}${expanded}${xml.slice(blockEnd)}`;
+  }
+  const closeTag = `</${containerTag}>`;
+  const closeAt = blockEnd - closeTag.length;
+  const innerContent = xml.slice(blockStart + `<${containerTag}>`.length, closeAt);
+  return `${xml.slice(0, blockStart)}<${containerTag}>${innerContent.trimEnd()}\n${content}\n\t${closeTag}${xml.slice(blockEnd)}`;
+}
+
 export function appendIntoNamedElementChildItems(xml: string, elementName: string, content: string): string {
   const re = new RegExp(`(<[A-Za-z]+\\b[^>]*name="${escapeRegExp(elementName)}"[^>]*>[\\s\\S]*?)(<ChildItems>)([\\s\\S]*?)(<\\/ChildItems>)`);
   if (re.test(xml)) {
@@ -124,12 +174,15 @@ export function appendIntoNamedElementChildItems(xml: string, elementName: strin
 
 /** Вставить content сразу после элемента `afterName`, найденного в корневом `<ChildItems>`. */
 function appendAfterInRootChildItems(xml: string, afterName: string, content: string, warnings: string[]): string {
-  const ciOpen = xml.search(/<ChildItems>/);
-  if (ciOpen < 0) {
+  // Корневой <ChildItems> — прямой потомок <Form>; первый текстовый матч нередко
+  // принадлежит вложенному <AutoCommandBar>, поэтому ищем nesting-aware.
+  const root = findRootFormContainerRange(xml, 'ChildItems');
+  if (!root) {
     warnings.push(`[WARN] <ChildItems> отсутствует, добавление в конец формы.`);
-    return appendIntoContainer(xml, 'ChildItems', content);
+    return appendIntoRootContainer(xml, 'ChildItems', content);
   }
-  return insertAfterNamedInsideContainer(xml, ciOpen, 'ChildItems', afterName, content, warnings);
+  // closeStart известен из nesting-aware диапазона — корректно при вложенных <ChildItems>.
+  return insertAfterNamedInsideContainer(xml, root.start, 'ChildItems', afterName, content, warnings, root.end - '</ChildItems>'.length);
 }
 
 function appendAfterInNamedElementChildItems(xml: string, intoName: string, afterName: string, content: string, warnings: string[]): string {
@@ -147,9 +200,11 @@ function appendAfterInNamedElementChildItems(xml: string, intoName: string, afte
   return insertAfterNamedInsideContainer(xml, ciOpen, 'ChildItems', afterName, content, warnings);
 }
 
-function insertAfterNamedInsideContainer(xml: string, containerOpenAt: number, containerTag: string, afterName: string, content: string, warnings: string[]): string {
+function insertAfterNamedInsideContainer(xml: string, containerOpenAt: number, containerTag: string, afterName: string, content: string, warnings: string[], containerCloseAt?: number): string {
   const closeTag = `</${containerTag}>`;
-  const containerClose = xml.indexOf(closeTag, containerOpenAt);
+  // Если позиция закрывающего тега передана из nesting-aware диапазона — используем её,
+  // иначе fallback на первый текстовый матч (для именованных вложенных контейнеров).
+  const containerClose = containerCloseAt ?? xml.indexOf(closeTag, containerOpenAt);
   if (containerClose < 0) {
     warnings.push(`[WARN] </${containerTag}> не найден, вставка в конец.`);
     return appendIntoContainer(xml, containerTag, content);
@@ -167,7 +222,9 @@ function insertAfterNamedInsideContainer(xml: string, containerOpenAt: number, c
 
 export function appendFormEvents(xml: string, events: readonly FormEventPatch[]): string {
   const content = events.map((event) => `\t\t<Event name="${escapeXml(event.name)}"${event.callType ? ` callType="${escapeXml(event.callType)}"` : ''}>${escapeXml(event.handler)}</Event>`).join('\n');
-  return appendIntoContainer(xml, 'Events', content);
+  // Корневые события формы — прямой потомок <Form>, а не первый <Events> по тексту
+  // (вложенные элементы тоже могут содержать собственные <Events>).
+  return appendIntoRootContainer(xml, 'Events', content);
 }
 
 export function appendElementEvent(xml: string, event: ElementEventPatch): string {
@@ -177,5 +234,5 @@ export function appendElementEvent(xml: string, event: ElementEventPatch): strin
     return xml.replace(re, (_, prefix: string, open: string, inner: string, close: string) => `${prefix}${open}${inner.trimEnd()}\n${block}\n\t\t${close}`);
   }
   const elementOpen = new RegExp(`(<[A-Za-z]+\\b[^>]*name="${escapeRegExp(event.element)}"[^>]*>)`);
-  return xml.replace(elementOpen, `$1\n\t\t<Events>\n${block}\n\t\t</Events>`);
+  return xml.replace(elementOpen, (_m, g1: string) => `${g1}\n\t\t<Events>\n${block}\n\t\t</Events>`);
 }

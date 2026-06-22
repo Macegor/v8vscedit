@@ -2,17 +2,22 @@ import { XMLParser } from 'fast-xml-parser';
 import * as fs from 'fs';
 import { getDefaultStandardAttributeIndexing } from '../../domain/StandardAttribute';
 
-interface XmlTextNode { '#text': string }
-type XmlElementNode = Record<string, XmlNodeList>;
-type XmlNode = XmlTextNode | XmlElementNode;
-type XmlNodeList = XmlNode[];
+export interface XmlTextNode { '#text': string }
+export type XmlElementNode = Record<string, XmlNodeList>;
+export type XmlNode = XmlTextNode | XmlElementNode;
+export type XmlNodeList = XmlNode[];
 
 const parser = new XMLParser({
   preserveOrder: true,
   ignoreAttributes: false,
   trimValues: false,
   parseTagValue: false,
-  processEntities: false,
+  // Декодируем 5 предопределённых XML-сущностей при чтении значений тегов
+  // (extractSimpleTag/extractSynonym и др.): сырые «&amp;» искажают сравнения
+  // имён. Функции, возвращающие XML-блоки, работают срезами исходной строки,
+  // а не сериализацией парсера, поэтому сущности в блоках остаются нетронутыми.
+  // Запись значений выполняется через escapeXmlText — симметрия чтение↔запись цела.
+  processEntities: true,
 });
 
 /**
@@ -23,11 +28,11 @@ function parseXml(xml: string): XmlNodeList {
   return parser.parse(xml) as XmlNodeList;
 }
 
-function isTextNode(node: XmlNode): node is XmlTextNode {
+export function isTextNode(node: XmlNode): node is XmlTextNode {
   return Object.prototype.hasOwnProperty.call(node, '#text');
 }
 
-function getElementName(node: XmlNode): string | null {
+export function getElementName(node: XmlNode): string | null {
   if (isTextNode(node)) {
     return null;
   }
@@ -35,7 +40,7 @@ function getElementName(node: XmlNode): string | null {
   return name;
 }
 
-function getElementChildren(node: XmlNode): XmlNodeList {
+export function getElementChildren(node: XmlNode): XmlNodeList {
   if (isTextNode(node)) {
     return [];
   }
@@ -55,7 +60,7 @@ function collectText(nodes: XmlNodeList): string {
   return result.trim();
 }
 
-function findFirstElement(nodes: XmlNodeList, tagName: string): XmlElementNode | null {
+export function findFirstElement(nodes: XmlNodeList, tagName: string): XmlElementNode | null {
   for (const node of nodes) {
     const name = getElementName(node);
     if (!name) {
@@ -454,12 +459,25 @@ function buildDefaultStandardAttributeXml(rootKind: string, attributeName: strin
   ].filter((line): line is string => Boolean(line)).join('\n');
 }
 
-function escapeXmlAttribute(value: string): string {
+/**
+ * Экранирует текстовое содержимое тегов: `&`, `<`, `>`.
+ * Кавычки не трогает — для значений атрибутов используйте {@link escapeXmlAttribute}.
+ * Канонический хелпер: ранее по проекту были рассыпаны идентичные локальные копии.
+ */
+export function escapeXmlText(value: string): string {
   return value
     .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+/**
+ * Экранирует значения XML-атрибутов: `&`, `<`, `>`, `"`.
+ * Порядок замен не влияет на результат (ни одна сущность не содержит `<`/`>`/`"`),
+ * поэтому вывод побитово совпадает с прежними локальными версиями.
+ */
+export function escapeXmlAttribute(value: string): string {
+  return escapeXmlText(value).replace(/"/g, '&quot;');
 }
 
 function extractRootObjectElementXml(fullXml: string): string | null {

@@ -275,8 +275,8 @@ function isUuid(value: string): boolean {
 }
 
 function extractRootUuid(xml: string, kind: string): string | undefined {
-  const match = new RegExp(`<${escapeRegExp(kind)}\\b[^>]*\\buuid="([^"]+)"`, 'i').exec(xml);
-  return match?.[1];
+  const match = new RegExp(`<${escapeRegExp(kind)}\\b[^>]*\\buuid=(["'])([^"']+)\\1`, 'i').exec(xml);
+  return match?.[2];
 }
 
 function escapeRegExp(value: string): string {

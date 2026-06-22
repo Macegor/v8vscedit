@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { XMLValidator } from 'fast-xml-parser';
-import { writeTextFilePreservingBomAndEol } from './XmlUtils';
+import { escapeXmlText, writeTextFilePreservingBomAndEol } from './XmlUtils';
 
 const SCHEMA_NS = 'http://v8.1c.ru/8.1/data-composition-system/schema';
 
@@ -561,7 +561,11 @@ function applyEdit(xml: string, operation: SkdEditOperation, value: string, opti
         warnings.push('rename-parameter ожидает формат OldName => NewName.');
         return xml;
       }
-      return xml.replace(new RegExp(`>${escapeRegExp(match[1].trim())}<`, 'g'), `>${match[2].trim()}<`).replace(new RegExp(`&amp;${escapeRegExp(match[1].trim())}\\b`, 'g'), `&amp;${match[2].trim()}`);
+      const oldName = match[1].trim();
+      const newName = escapeXmlText(match[2].trim());
+      return xml
+        .replace(new RegExp(`>${escapeRegExp(oldName)}<`, 'g'), () => `>${newName}<`)
+        .replace(new RegExp(`&amp;${escapeRegExp(oldName)}\\b`, 'g'), () => `&amp;${newName}`);
     }
     case 'remove-field':
       return editFirstDataSet(xml, options.dataSet, (block) => removeElementByChildText(block, 'field', 'dataPath', value.trim()));
@@ -652,7 +656,8 @@ function replaceFieldBlock(xml: string, value: string, warnings: string[]): stri
   }
   for (const block of matchBlocks(xml, 'field')) {
     if (readText(block, 'dataPath') === field.dataPath) {
-      return xml.replace(block, buildFieldXml(value, '\t\t'));
+      const fieldXml = buildFieldXml(value, '\t\t');
+      return xml.replace(block, () => fieldXml);
     }
   }
   warnings.push(`Поле не найдено, добавлено новое: ${field.dataPath}.`);
@@ -668,7 +673,7 @@ function replaceParameterBlock(xml: string, value: string, warnings: string[]): 
   const replacement = buildParameterXml(parsed);
   for (const block of matchBlocks(xml, 'parameter')) {
     if (readText(block, 'name') === parsed.name) {
-      return xml.replace(block, replacement);
+      return xml.replace(block, () => replacement);
     }
   }
   warnings.push(`Параметр не найден, добавлен новый: ${parsed.name}.`);
@@ -682,7 +687,7 @@ function modifyFirstItemInSection(xml: string, sectionTag: string, sectionXml: s
     return appendIntoSection(xml, sectionTag, inner);
   }
   const firstItem = matchBlocks(section, 'item')[0];
-  return firstItem ? xml.replace(firstItem, inner) : appendIntoSection(xml, sectionTag, inner);
+  return firstItem ? xml.replace(firstItem, () => inner) : appendIntoSection(xml, sectionTag, inner);
 }
 
 function removeSectionItemByText(xml: string, sectionTag: string, childTag: string, value: string): string {
@@ -696,7 +701,7 @@ function removeSectionItemByText(xml: string, sectionTag: string, childTag: stri
       nextSection = nextSection.replace(block, '');
     }
   }
-  return xml.replace(section, nextSection);
+  return xml.replace(section, () => nextSection);
 }
 
 function reorderParameters(xml: string, value: string, warnings: string[]): string {
@@ -715,7 +720,8 @@ function reorderParameters(xml: string, value: string, warnings: string[]): stri
   for (const block of blocks) {
     next = next.replace(block, '');
   }
-  return next.replace('</DataCompositionSchema>', `${sorted.join('\n')}\n</DataCompositionSchema>`);
+  const sortedXml = sorted.join('\n');
+  return next.replace('</DataCompositionSchema>', () => `${sortedXml}\n</DataCompositionSchema>`);
 }
 
 function parseSchema(xml: string): Omit<SkdInfoResult, 'templatePath' | 'lines'> {
@@ -919,27 +925,29 @@ function editFirstDataSet(xml: string, dataSetName: string | undefined, editor: 
 function editFirstVariantSettings(xml: string, variantName: string | undefined, editor: (block: string) => string): string {
   return replaceFirstMatchingBlock(xml, 'settingsVariant', (block) => !variantName || readText(block, 'name') === variantName, (variantBlock) => {
     const settings = extractBlock(variantBlock, 'settings') ?? '';
-    return variantBlock.replace(settings, editor(settings));
+    const editedSettings = editor(settings);
+    return variantBlock.replace(settings, () => editedSettings);
   });
 }
 
 function replaceFirstMatchingBlock(xml: string, tagName: string, predicate: (block: string) => boolean, editor: (block: string) => string): string {
   for (const block of matchBlocks(xml, tagName)) {
     if (predicate(block)) {
-      return xml.replace(block, editor(block));
+      const editedBlock = editor(block);
+      return xml.replace(block, () => editedBlock);
     }
   }
   return xml;
 }
 
 function insertBeforeClose(xml: string, tagName: string, fragment: string): string {
-  return xml.replace(new RegExp(`\\s*</${tagName}>`), `\n${fragment}\n</${tagName}>`);
+  return xml.replace(new RegExp(`\\s*</${tagName}>`), () => `\n${fragment}\n</${tagName}>`);
 }
 
 function replaceOrInsert(xml: string, tagName: string, inner: string, parentTag: string): string {
   const re = new RegExp(`<${tagName}>[\\s\\S]*?<\\/${tagName}>`);
   if (re.test(xml)) {
-    return xml.replace(re, `<${tagName}>${inner}</${tagName}>`);
+    return xml.replace(re, () => `<${tagName}>${inner}</${tagName}>`);
   }
   return insertBeforeClose(xml, parentTag, `<${tagName}>${inner}</${tagName}>`);
 }
@@ -947,7 +955,7 @@ function replaceOrInsert(xml: string, tagName: string, inner: string, parentTag:
 function appendIntoSection(xml: string, tagName: string, fragment: string): string {
   const re = new RegExp(`<${tagName}>([\\s\\S]*?)<\\/${tagName}>`);
   if (re.test(xml)) {
-    return xml.replace(new RegExp(`</${tagName}>`), `${fragment}</${tagName}>`);
+    return xml.replace(new RegExp(`</${tagName}>`), () => `${fragment}</${tagName}>`);
   }
   return insertBeforeClose(xml, 'settings', `<${tagName}>${fragment}</${tagName}>`);
 }
@@ -1051,10 +1059,6 @@ function limitErrors(issues: readonly SkdValidationIssue[], maxErrors: number): 
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function escapeXmlText(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function unescapeXml(value: string): string {

@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { FormPurpose } from './types';
+import { escapeXmlAttribute } from '../XmlUtils';
 
 export const MD_XMLNS = 'xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:app="http://v8.1c.ru/8.2/managed-application/core" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:cmi="http://v8.1c.ru/8.2/managed-application/cmi" xmlns:ent="http://v8.1c.ru/8.1/data/enterprise" xmlns:lf="http://v8.1c.ru/8.2/managed-application/logform" xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:sys="http://v8.1c.ru/8.1/data/ui/fonts/system" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:web="http://v8.1c.ru/8.1/data/ui/colors/web" xmlns:win="http://v8.1c.ru/8.1/data/ui/colors/windows" xmlns:xen="http://v8.1c.ru/8.3/xcf/enums" xmlns:xpr="http://v8.1c.ru/8.3/xcf/predef" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"';
 export const FORM_XMLNS = 'xmlns="http://v8.1c.ru/8.3/xcf/logform" xmlns:app="http://v8.1c.ru/8.2/managed-application/core" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:dcscor="http://v8.1c.ru/8.1/data-composition-system/core" xmlns:dcsset="http://v8.1c.ru/8.1/data-composition-system/settings" xmlns:ent="http://v8.1c.ru/8.1/data/enterprise" xmlns:lf="http://v8.1c.ru/8.2/managed-application/logform" xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:sys="http://v8.1c.ru/8.1/data/ui/fonts/system" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:web="http://v8.1c.ru/8.1/data/ui/colors/web" xmlns:win="http://v8.1c.ru/8.1/data/ui/colors/windows" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"';
@@ -194,16 +195,17 @@ export function isEmptyTagValue(xml: string, tag: string): boolean {
 
 export function setTagValue(xml: string, tag: string, value: string, createIfMissing = false): string {
   const escaped = escapeXml(value);
+  const nextTag = value ? `<${tag}>${escaped}</${tag}>` : `<${tag}/>`;
   const selfClosing = new RegExp(`<${tag}\\s*\\/>`);
   if (selfClosing.test(xml)) {
-    return xml.replace(selfClosing, value ? `<${tag}>${escaped}</${tag}>` : `<${tag}/>`);
+    return xml.replace(selfClosing, () => nextTag);
   }
   const re = new RegExp(`<${tag}>[\\s\\S]*?<\\/${tag}>`);
   if (re.test(xml)) {
-    return xml.replace(re, value ? `<${tag}>${escaped}</${tag}>` : `<${tag}/>`);
+    return xml.replace(re, () => nextTag);
   }
   if (createIfMissing) {
-    return xml.replace(/<\/Properties>/, `\t\t\t<${tag}>${escaped}</${tag}>\n\t\t</Properties>`);
+    return xml.replace(/<\/Properties>/, () => `\t\t\t<${tag}>${escaped}</${tag}>\n\t\t</Properties>`);
   }
   return xml;
 }
@@ -241,13 +243,9 @@ export function unique(values: readonly string[]): string[] {
   return [...new Set(values)];
 }
 
-export function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+// Реэкспорт канонического хелпера: формы экранируют и текст, и значения
+// атрибутов одной функцией, поэтому семантика совпадает с escapeXmlAttribute.
+export const escapeXml = escapeXmlAttribute;
 
 export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

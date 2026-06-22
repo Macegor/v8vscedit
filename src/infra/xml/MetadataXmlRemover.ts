@@ -4,6 +4,7 @@ import type { ChildTag } from '../../domain/ChildTag';
 import { getMetaFolder, type MetaKind } from '../../domain/MetaTypes';
 import { getObjectLocationFromXml } from '../fs/ObjectLocation';
 import { ConfigurationXmlEditor, type EditResult } from './ConfigurationXmlEditor';
+import { writeTextFilePreservingBomAndEol } from './XmlUtils';
 
 export interface MetadataReference {
   filePath: string;
@@ -152,7 +153,7 @@ export class MetadataXmlRemover {
       return fail(nextXml.error);
     }
 
-    fs.writeFileSync(options.ownerObjectXmlPath, nextXml.xml, 'utf-8');
+    writeTextFilePreservingBomAndEol(options.ownerObjectXmlPath, xml, nextXml.xml);
     const changedFiles = [options.ownerObjectXmlPath];
     if (!options.keepFiles) {
       changedFiles.push(...this.removeAuxiliaryChildFiles(options));
@@ -162,7 +163,7 @@ export class MetadataXmlRemover {
 
   private isRegistered(configXmlPath: string, kind: MetaKind, name: string): boolean {
     const xml = fs.readFileSync(configXmlPath, 'utf-8');
-    return new RegExp(`<${kind}>\\s*${escapeRegExp(name)}\\s*<\\/${kind}>`).test(xml);
+    return new RegExp(`<${escapeRegExp(kind)}>\\s*${escapeRegExp(name)}\\s*<\\/${escapeRegExp(kind)}>`).test(xml);
   }
 
   private findReferences(options: {
@@ -197,29 +198,42 @@ export class MetadataXmlRemover {
       } catch {
         continue;
       }
-      const pattern = patterns.find((item) => content.includes(item));
-      if (pattern) {
-        references.push({ filePath, pattern });
+      const hit = patterns.find((item) => item.test(content));
+      if (hit) {
+        references.push({ filePath, pattern: hit.source });
       }
     }
 
     return references;
   }
 
-  private buildReferencePatterns(kind: MetaKind, name: string, folder: string): string[] {
-    const patterns = [
+  private buildReferencePatterns(kind: MetaKind, name: string, folder: string): RegExp[] {
+    // Сопоставление с границами слова: имя не должно продолжаться буквой/цифрой/
+    // подчёркиванием — иначе `Catalog.Товар` ложно матчит `Catalog.Товар2`. Точка
+    // после имени допустима (легитимная ссылка на дочерний путь — `Catalog.Товар.Реквизит`).
+    const refNames = [
       ...(TYPE_REF_NAMES[kind] ?? []).map((refName) => `${refName}.${name}`),
       `${folder}.${name}`,
       `${kind}.${name}`,
     ];
     const manager = TYPE_RU_MANAGER[kind];
     if (manager) {
-      patterns.push(`${manager}.${name}`);
+      refNames.push(`${manager}.${name}`);
     }
+    const patterns = [...new Set(refNames)].map(
+      (text) => new RegExp(`${escapeRegExp(text)}(?![\\p{L}\\p{N}_])`, 'u')
+    );
     if (kind === 'CommonModule') {
-      patterns.push(`${name}.`, `<Handler>${name}.`, `<MethodName>${name}.`);
+      // Имя общего модуля как префикс вызова метода: `ИмяМодуля.Метод(...)`. Слева —
+      // граница идентификатора (чтобы `МойМодуль.` не матчил `СуперМойМодуль.`), справа — точка.
+      const escaped = escapeRegExp(name);
+      patterns.push(
+        new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}\\.`, 'u'),
+        new RegExp(`<Handler>${escaped}\\.`, 'u'),
+        new RegExp(`<MethodName>${escaped}\\.`, 'u')
+      );
     }
-    return [...new Set(patterns)];
+    return patterns;
   }
 
   private removeFromSubsystems(configRoot: string, objectRef: string): string[] {
@@ -236,7 +250,7 @@ export class MetadataXmlRemover {
       const xml = fs.readFileSync(filePath, 'utf-8');
       const next = removeContentItem(xml, objectRef);
       if (next !== xml) {
-        fs.writeFileSync(filePath, next, 'utf-8');
+        writeTextFilePreservingBomAndEol(filePath, xml, next);
         changed.push(filePath);
       }
     }

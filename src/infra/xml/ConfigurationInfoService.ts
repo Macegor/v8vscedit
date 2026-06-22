@@ -50,7 +50,7 @@ export class ConfigurationInfoService {
       version: extractSimpleTag(xml, 'Version') ?? '',
       vendor: extractSimpleTag(xml, 'Vendor') ?? '',
       compatibilityMode: extractSimpleTag(xml, 'CompatibilityMode') ?? extractSimpleTag(xml, 'ConfigurationExtensionCompatibilityMode') ?? '',
-      formatVersion: /<MetaDataObject\b[^>]*\bversion="([^"]+)"/.exec(xml)?.[1] ?? '',
+      formatVersion: /<MetaDataObject\b[^>]*\bversion=(["'])([^"']+)\1/.exec(xml)?.[2] ?? '',
       totalObjects: total,
       objectCounts: counts,
       defaultRoles: extractDefaultRoles(xml),
