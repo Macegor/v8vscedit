@@ -78,14 +78,26 @@ function handleHostMessage(msg: HostToUiMessage): void {
   }
 }
 
+// Ответ host на запрос выбора папки (browseRepoPath). Корреляция по requestId,
+// который шлёт browseRepoPath; payload содержит выбранный путь.
+function handleReply(msg: HostToUiMessage): void {
+  if (msg.type !== 'reply' || msg.requestId !== 'browse') return;
+  const payload = msg.payload as { repoPath?: string } | undefined;
+  if (payload?.repoPath) {
+    repoPath.value = payload.repoPath;
+  }
+}
+
 onMounted(() => {
   props.messageBus.on('status', handleHostMessage);
   props.messageBus.on('error', handleHostMessage);
+  props.messageBus.on('reply', handleReply);
 });
 
 onUnmounted(() => {
   props.messageBus.off('status', handleHostMessage);
   props.messageBus.off('error', handleHostMessage);
+  props.messageBus.off('reply', handleReply);
 });
 </script>
 

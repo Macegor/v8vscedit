@@ -145,6 +145,7 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
   private readonly nodeKeyById = new Map<string, string>();
   private readonly openNodeKeys = new Set<string>();
   private readonly treeListener: vscode.Disposable;
+  private viewDisposables: vscode.Disposable[] = [];
   private selectedNodeKey: string | undefined;
   private cachedRootNodes: TreeNodeDto[] = [];
   private currentOpenNodeIds = new Set<string>();
@@ -163,6 +164,9 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
   // ── WebviewViewProvider ──
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
+    // View может пересоздаваться (сворачивание/разворачивание контейнера),
+    // поэтому освобождаем подписки прошлого экземпляра, чтобы они не накапливались.
+    this.disposeViewSubscriptions();
     this.view = webviewView;
     webviewView.webview.options = {
       enableScripts: true,
@@ -173,9 +177,22 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
     };
 
     webviewView.webview.html = this.buildHtml(webviewView.webview);
-    webviewView.webview.onDidReceiveMessage((message: WebviewMessage) => {
-      void this.handleMessage(message);
-    });
+    this.viewDisposables.push(
+      webviewView.webview.onDidReceiveMessage((message: WebviewMessage) => {
+        void this.handleMessage(message);
+      }),
+      webviewView.onDidDispose(() => {
+        this.view = undefined;
+        this.disposeViewSubscriptions();
+      })
+    );
+  }
+
+  private disposeViewSubscriptions(): void {
+    for (const disposable of this.viewDisposables) {
+      disposable.dispose();
+    }
+    this.viewDisposables = [];
   }
 
   refresh(): void {
@@ -186,6 +203,7 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
 
   dispose(): void {
     this.treeListener.dispose();
+    this.disposeViewSubscriptions();
   }
 
   // ── HTML (Vue) ──

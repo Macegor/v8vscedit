@@ -36,6 +36,20 @@ function isAssetIcon(icon?: IconDto): icon is IconDto & { kind: 'asset'; lightUr
   return icon?.kind === 'asset' && Boolean(icon.lightUri) && Boolean(icon.darkUri);
 }
 
+// URI иконок приходят от host и подставляются в CSS `url(...)`. Без проверки
+// и экранирования возможна CSS-инъекция (закрывающая скобка/кавычка в значении).
+// Пропускаем только ожидаемые схемы и оборачиваем в кавычки с экранированием.
+const ALLOWED_ICON_SCHEMES = ['vscode-resource:', 'vscode-webview-resource:', 'https:', 'data:'];
+
+function cssIconUrl(uri: string): string {
+  const isAllowed = ALLOWED_ICON_SCHEMES.some((scheme) => uri.startsWith(scheme));
+  if (!isAllowed) {
+    return 'none';
+  }
+  const escaped = uri.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return `url("${escaped}")`;
+}
+
 function close(): void {
   emit('close');
 }
@@ -188,7 +202,7 @@ onUnmounted(removeListeners);
           <span
             v-if="isAssetIcon(item.icon)"
             class="context-menu-asset"
-            :style="{ '--icon-light': `url(${item.icon.lightUri})`, '--icon-dark': `url(${item.icon.darkUri})` }"
+            :style="{ '--icon-light': cssIconUrl(item.icon.lightUri), '--icon-dark': cssIconUrl(item.icon.darkUri) }"
           />
           <span v-else-if="item.icon" :class="iconClass(item.icon)" />
         </span>

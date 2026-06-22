@@ -381,30 +381,6 @@ export function registerExtensionCommands(
       );
     }),
 
-    vscode.commands.registerCommand('v8vscedit.compileExtensionToDb', async (node: NodeArg) => {
-      const target = extractExtensionTarget(node);
-      if (!target) {
-        vscode.window.showWarningMessage('Команда доступна только для корневого узла расширения.');
-        return;
-      }
-
-      await runExclusiveConfigurationOperation(
-        {
-          title: `Загрузка расширения ${target.extensionName}`,
-          startMessage: 'подготовка',
-          cleanRootPath: target.extensionRoot,
-          services,
-        },
-        () =>
-          runCompileExtension(
-            target.extensionName,
-            target.extensionRoot,
-            services.workspaceFolder,
-            services.outputChannel
-          )
-      );
-    }),
-
     vscode.commands.registerCommand('v8vscedit.updateExtensionInDb', async (node: NodeArg) => {
       const target = extractExtensionTarget(node);
       if (!target) {

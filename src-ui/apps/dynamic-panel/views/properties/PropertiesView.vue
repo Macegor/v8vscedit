@@ -29,10 +29,12 @@ type PropertyCard =
 
 const cards = computed<PropertyCard[]>(() => {
   // Сортируем только секции свойств по их order.
+  // Ключ строим по индексу секции, а не по её title: заголовки 1С не
+  // гарантированно уникальны и могут совпадать, что ломает реюз DOM Vue.
   const sectionCards: PropertyCard[] = props.state.sections
-    .map((section) => ({
+    .map((section, index) => ({
       kind: 'section' as const,
-      key: `section:${section.title}`,
+      key: `section:${index}`,
       order: section.order,
       section,
     }))
@@ -152,8 +154,8 @@ function onControlChanged(control: PropertyControl, value: unknown): void {
 
     <div v-if="state.diagnostics?.length" class="diagnostics-section">
       <div
-        v-for="d in state.diagnostics"
-        :key="d.message"
+        v-for="(d, index) in state.diagnostics"
+        :key="index"
         class="diagnostic-item"
         :class="'diagnostic-' + d.kind"
       >
