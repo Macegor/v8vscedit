@@ -85,13 +85,27 @@ function replaceDirectorySnapshot(sourceDir: string, targetDir: string): boolean
     }
     return true;
   } catch (error) {
+    // Если бэкап создан, а второй rename не прошёл, целевой каталог отсутствует —
+    // обязательно восстанавливаем его из бэкапа, иначе target «исчезнет».
     if (targetMoved && !fs.existsSync(targetDir) && fs.existsSync(backupDir)) {
       try {
         fs.renameSync(backupDir, targetDir);
-      } catch {
-        // если откат не удался — это редкий случай Windows-блокировок,
-        // оставим резервную копию и пробросим исходную ошибку
+      } catch (restoreError) {
+        // Откат через rename не удался (редкий случай Windows-блокировок) —
+        // пробуем восстановить target копированием, чтобы не оставить каталог
+        // исчезнувшим, а бэкап осиротевшим. Сам сбой отката не маскируем.
+        try {
+          copyDirectorySnapshot(backupDir, targetDir);
+          fs.rm(backupDir, { recursive: true, force: true }, () => undefined);
+        } catch {
+          // Восстановить не удалось — оставляем бэкап нетронутым как последний
+          // шанс на ручное восстановление и пробрасываем исходную ошибку ниже.
+          void restoreError;
+        }
       }
+    } else if (targetMoved && fs.existsSync(targetDir) && fs.existsSync(backupDir)) {
+      // target на месте, бэкап осиротел — подчищаем, чтобы не копить мусор.
+      fs.rm(backupDir, { recursive: true, force: true }, () => undefined);
     }
 
     if (isRenameFallbackError(error)) {

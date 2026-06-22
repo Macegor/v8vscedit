@@ -229,7 +229,12 @@ function collectPathCandidates(names: string[], platform: NodeJS.Platform): stri
     .filter((candidate): candidate is string => Boolean(candidate));
 }
 
-function findExecutableInPath(commandName: string, platform: NodeJS.Platform): string | null {
+/**
+ * Ищет исполняемый файл по имени в каталогах PATH.
+ * Единая реализация для платформы 1С и автономного сервера (ibsrv):
+ * раньше дублировалась в StandaloneServerService.
+ */
+export function findExecutableInPath(commandName: string, platform: NodeJS.Platform = process.platform): string | null {
   const pathValue = process.env.PATH ?? '';
   const pathParts = pathValue.split(path.delimiter).filter(Boolean);
   const extensions = platform === 'win32'

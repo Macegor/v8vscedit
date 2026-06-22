@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { decodeProcessOutput } from './OutputDecoder';
 
 export interface ProcessRunOptions {
   command: string;
@@ -26,16 +27,18 @@ export async function runProcess(options: ProcessRunOptions): Promise<ProcessRun
       shell: options.shell ?? false,
     });
 
-    let lastStdout = '';
-    let lastStderr = '';
+    // Аккумулируем потоки целиком: чанки могут разрывать многобайтовые
+    // символы и теряться при перезаписи, поэтому декодируем итоговый буфер.
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
 
     child.stdout.on('data', (chunk: Buffer) => {
-      lastStdout = chunk.toString('utf-8').trim();
+      stdoutChunks.push(chunk);
       options.onStdout?.(chunk);
     });
 
     child.stderr.on('data', (chunk: Buffer) => {
-      lastStderr = chunk.toString('utf-8').trim();
+      stderrChunks.push(chunk);
       options.onStderr?.(chunk);
     });
 
@@ -46,8 +49,8 @@ export async function runProcess(options: ProcessRunOptions): Promise<ProcessRun
     child.on('close', (code) => {
       resolve({
         exitCode: code ?? 1,
-        lastStdout,
-        lastStderr,
+        lastStdout: decodeProcessOutput(Buffer.concat(stdoutChunks)).trim(),
+        lastStderr: decodeProcessOutput(Buffer.concat(stderrChunks)).trim(),
       });
     });
   });

@@ -115,13 +115,22 @@ export function getCachedAgentOperationService(workspaceFolder: vscode.Workspace
 }
 
 export async function disposeCachedAgentOperationServices(): Promise<void> {
+  // Статус-бар создаётся лениво в setOperationStatus и не попадает в context.subscriptions,
+  // поэтому освобождаем его здесь — на общем пути остановки расширения.
+  if (clearStatusTimer) {
+    clearTimeout(clearStatusTimer);
+    clearStatusTimer = undefined;
+  }
+  statusBarItem?.dispose();
+  statusBarItem = undefined;
+
   const services = [...agentServices.values()];
   agentServices.clear();
   await Promise.all(services.map(async (entry) => {
     try {
       await entry.sessions.disposeAll();
     } finally {
-      entry.process?.stop();
+      await entry.process?.stop();
     }
   }));
 }
