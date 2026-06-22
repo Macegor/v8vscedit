@@ -7,7 +7,7 @@ export function registerAiMcpCommands(
 ): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('v8vscedit.openAiSettings', () => {
-      services.aiMcpViewProvider?.show();
+      void services.aiMcpViewProvider?.show();
     })
   );
 }
