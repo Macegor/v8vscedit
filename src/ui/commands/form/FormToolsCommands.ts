@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import { SupportMode } from '../../../infra/support/SupportInfoService';
 import type { MetadataNode } from '../../tree/TreeNode';
 import type { CommandServices } from '../_shared';
 
@@ -79,6 +80,28 @@ async function removeForm(node: MetadataNode | undefined, services: CommandServi
   if (!formName) {
     return;
   }
+
+  // objectPath — это XML объекта-владельца формы, по нему проверяем поддержку и захват в хранилище
+  // (тот же путь, что supportXmlPath в RemoveMetadataCommand).
+  if (services.supportService?.getSupportMode(objectPath) === SupportMode.Locked) {
+    await vscode.window.showErrorMessage('Удаление запрещено: объект находится на поддержке с запретом редактирования.');
+    return;
+  }
+  const repositoryTarget = services.repositoryService.resolveTargetByXmlPath(objectPath);
+  if (repositoryTarget && services.repositoryService.isMetadataEditRestricted(repositoryTarget, objectPath)) {
+    await vscode.window.showErrorMessage('Удаление запрещено: объект не захвачен в хранилище.');
+    return;
+  }
+
+  const confirm = await vscode.window.showWarningMessage(
+    `Удалить форму "${formName}"? Изменение затронет XML-выгрузку и связанные файлы формы.`,
+    { modal: true },
+    'Удалить'
+  );
+  if (confirm !== 'Удалить') {
+    return;
+  }
+
   try {
     const result = services.formToolsService.removeForm({ objectPath, formName });
     afterMutation(result.changedFiles, services);

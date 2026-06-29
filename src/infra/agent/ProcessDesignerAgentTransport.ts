@@ -70,8 +70,12 @@ export class ProcessDesignerAgentTransport implements DesignerAgentTransport {
     if (this.connectPromise) {
       return this.connectPromise;
     }
+    // disposed не сбрасываем здесь: после reset()/dispose() сессия считается
+    // выброшенной, и команда из очереди не должна реанимировать её через connect().
+    if (this.disposed) {
+      throw new Error('Сессия агента уже закрыта.');
+    }
 
-    this.disposed = false;
     this.connectPromise = new Promise<void>((resolve, reject) => {
       const client = this.createClient();
       this.client = client;

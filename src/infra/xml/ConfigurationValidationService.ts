@@ -86,7 +86,7 @@ export class ConfigurationValidationService {
       return buildResult(configXmlPath, issues);
     }
 
-    const uuid = /<Configuration\b[^>]*uuid="([^"]+)"/.exec(xml)?.[1] ?? '';
+    const uuid = /<Configuration\b[^>]*uuid=(["'])([^"']+)\1/.exec(xml)?.[2] ?? '';
     if (!uuid || !GUID_PATTERN.test(uuid)) {
       error('UUID конфигурации отсутствует или имеет неверный формат.');
     } else {

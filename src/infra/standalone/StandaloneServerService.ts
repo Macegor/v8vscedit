@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import {
+  findExecutableInPath,
   type InstalledOnecPlatform,
   normalizeInfoBasePath,
   resolveV8ExecutablePath,
@@ -758,35 +759,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function hasPathSeparator(value: string): boolean {
   return value.includes('/') || value.includes('\\');
-}
-
-function findExecutableInPath(commandName: string): string | null {
-  const pathValue = process.env.PATH ?? '';
-  const pathParts = pathValue.split(path.delimiter).filter(Boolean);
-  const extensions = process.platform === 'win32'
-    ? (process.env.PATHEXT ?? '.EXE;.CMD;.BAT').split(';').filter(Boolean)
-    : [''];
-  const names = path.extname(commandName)
-    ? [commandName]
-    : extensions.map((ext) => `${commandName}${ext.toLowerCase()}`);
-
-  for (const dirPath of pathParts) {
-    for (const name of names) {
-      const candidate = path.join(dirPath, name);
-      if (isExistingFile(candidate)) {
-        return candidate;
-      }
-    }
-  }
-  return null;
-}
-
-function isExistingFile(filePath: string): boolean {
-  try {
-    return fs.statSync(filePath).isFile();
-  } catch {
-    return false;
-  }
 }
 
 export type { InstalledOnecPlatform };

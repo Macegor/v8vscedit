@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'child_process';
-import { resolveV8ExecutablePath } from '../process';
+import { resolveV8ExecutablePath, decodeProcessOutput } from '../process';
 
 export interface DesignerAgentInfoBaseConnection {
   readonly infoBasePath: string;
@@ -41,8 +41,10 @@ export class DesignerAgentProcess {
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    // stdout агента — JSON-протокол в UTF-8, оставляем как есть.
     this.child.stdout?.on('data', (chunk: Buffer) => options.onStdout?.(chunk.toString('utf-8').trim()));
-    this.child.stderr?.on('data', (chunk: Buffer) => options.onStderr?.(chunk.toString('utf-8').trim()));
+    // stderr/лог-строки могут быть в OEM-866/Win1251 — нормализуем кодировку.
+    this.child.stderr?.on('data', (chunk: Buffer) => options.onStderr?.(decodeProcessOutput(chunk).trim()));
     this.child.on('exit', (code, signal) => {
       this.exited = true;
       this.exitCode = code;
@@ -52,22 +54,49 @@ export class DesignerAgentProcess {
     this.child.unref();
   }
 
-  stop(): void {
+  async stop(timeoutMs = 5_000): Promise<void> {
     const child = this.child;
     if (!child) {
       return;
     }
 
-    if (process.platform !== 'win32' && child.pid) {
-      try {
-        process.kill(-child.pid, 'SIGTERM');
-      } catch {
-        child.kill('SIGTERM');
-      }
-    } else {
-      child.kill('SIGTERM');
+    if (this.exited) {
+      this.child = undefined;
+      return;
     }
+
+    sendSignal(child, 'SIGTERM');
+
+    // Ждём фактического завершения и не теряем ссылку до exit, иначе зависший
+    // конфигуратор останется без фолбэка SIGKILL.
+    // waitForExit при таймауте возвращает фактический exited-флаг, поэтому
+    // !stopped уже означает «процесс ещё жив» — отдельной проверки exited не нужно.
+    const stopped = await this.waitForExit(timeoutMs);
+    if (!stopped) {
+      sendSignal(child, 'SIGKILL');
+      await this.waitForExit(2_000);
+    }
+
     this.child = undefined;
+  }
+
+  private waitForExit(timeoutMs: number): Promise<boolean> {
+    const child = this.child;
+    if (!child || this.exited) {
+      return Promise.resolve(true);
+    }
+
+    return new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        child.off('exit', onExit);
+        resolve(this.exited);
+      }, timeoutMs);
+      const onExit = () => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+      child.once('exit', onExit);
+    });
   }
 
   hasExited(): boolean {
@@ -79,6 +108,24 @@ export class DesignerAgentProcess {
       return 'процесс ещё работает';
     }
     return `код=${String(this.exitCode ?? '-')}, сигнал=${this.exitSignal ?? '-'}`;
+  }
+}
+
+function sendSignal(child: ChildProcess, signal: NodeJS.Signals): void {
+  // На *nix процесс запущен с detached:true, поэтому сначала пытаемся
+  // погасить всю группу процессов (отрицательный pid), а при неудаче — сам процесс.
+  if (process.platform !== 'win32' && child.pid) {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch {
+      // группа недоступна — гасим сам процесс ниже
+    }
+  }
+  try {
+    child.kill(signal);
+  } catch {
+    // процесс уже завершился — ничего не делаем
   }
 }
 

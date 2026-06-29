@@ -434,9 +434,12 @@ export function getMetaTypesByGroup(group: MetaGroup): MetaTypeDef[] {
     .sort((a, b) => a.groupOrder - b.groupOrder);
 }
 
-/** Возвращает папку выгрузки по типу или `null`, если у типа нет файлов на диске */
+/** Возвращает папку выгрузки по типу или `null`, если у типа нет файлов на диске или тип неизвестен */
 export function getMetaFolder(kind: MetaKind): string | null {
-  return META_TYPES[kind].folder ?? null;
+  // Доступ по индексу может вернуть undefined в рантайме, если извне пришёл невалидный ключ
+  // (например, из as-каста при разборе чужой ChildObjects-секции), хотя тип это и не отражает.
+  const def = META_TYPES[kind] as MetaTypeDef | undefined;
+  return def?.folder ?? null;
 }
 
 /**

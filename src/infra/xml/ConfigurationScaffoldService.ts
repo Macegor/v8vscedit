@@ -1,7 +1,7 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { extractSimpleTag, writeTextFilePreservingBomAndEol } from './XmlUtils';
+import { escapeXmlAttribute as escapeXml, extractSimpleTag, writeTextFilePreservingBomAndEol } from './XmlUtils';
 
 export interface CreateConfigurationOptions {
   readonly name: string;
@@ -334,12 +334,4 @@ function validateName(value: string): void {
 
 function newUuid(): string {
   return crypto.randomUUID();
-}
-
-function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }

@@ -37,7 +37,7 @@ VSCode / Cursor-расширение `v8vscedit` — редактор выгру
 
 - TypeScript ≥ 5.3, target ES2020, strict.
 - VS Code API ≥ 1.85, `vscode-languageclient`.
-- Webpack 5 (сборка в `dist/`). Три entry: `extension`, `server`, `test/runTests`.
+- Vite (сборка в `dist/`). Два конфига: `vite.node.config.ts` (Node-таргет: `extension`, CLI) и `vite.webview.config.ts` (Vue-webview из `src-ui/`). Встроенного `server`-entry нет — LSP внешний (`bsl-analyzer`).
 - `iconv-lite` — декодирование OEM-866/Win1251 вывода vrunner.
 - Тесты — Mocha через `@vscode/test-electron`.
 
@@ -512,7 +512,7 @@ BSL-модули открываются только как реальные `fi
 
 ```bash
 npm install
-npm run watch        # webpack --mode development --watch
+npm run watch        # параллельный vite --watch для node + webview (scripts/vite-watch.mjs)
 ```
 
 В VSCode/Cursor открыть корень проекта, нажать `F5` — откроется Extension Development Host с расширением. `Ctrl+Shift+F5` — перезапуск после изменения кода.
@@ -520,9 +520,9 @@ npm run watch        # webpack --mode development --watch
 ### Сборка
 
 ```bash
-npm run compile      # tsc -p ./  (быстрая проверка типов)
+npm run compile      # = npm run typecheck: tsc (расширение) + vue-tsc (webview)
 npm run lint         # eslint . --max-warnings=0  (конфиг eslint.config.mjs)
-npm run build        # webpack production
+npm run build        # vite production: clean + build:node + build:webview
 ```
 
 Перед любым коммитом: `npm run compile` и **`npm run lint`** должны проходить без ошибок (у линтера — также без предупреждений).
@@ -535,9 +535,10 @@ npm run coverage
 npm run coverage:report
 ```
 
-`npm test` сначала выполняет `npm run compile` и dev-сборку webpack, затем запускает
+`npm test` через `pretest` сначала выполняет `npm run typecheck`, `npm run build` (Vite)
+и `npm run test:compile` (`tsc -p tsconfig.test.json` → `out/`), затем запускает
 `node ./out/test/runTests.js`. Тестовый runner берётся из `out/`, потому что Mocha
-загружает `out/test/suite/*.js`; webpack собирает только extension/CLI entry.
+загружает `out/test/suite/*.js`; Vite собирает только extension/CLI и webview.
 
 `npm run coverage` запускает тот же интеграционный прогон через `c8` и падает, если
 строки, ветки, функции или операторы покрыты меньше чем на 100%. Для диагностики
@@ -614,7 +615,7 @@ npm run coverage:report
 
 1. `npm run compile` — 0 ошибок.
 2. **`npm run lint`** — 0 ошибок и 0 предупреждений (`eslint.config.mjs`, `--max-warnings=0`).
-3. `npm run build` — webpack собирается без ошибок.
+3. `npm run build` — Vite собирается без ошибок.
 4. `rg "typeToFolder\s*:" src` — 0 результатов (карта папок только в `META_TYPES`).
 5. `rg "import .* from 'vscode'" src/domain src/infra` — 0 результатов.
 6. `rg "from ['\"].*cli|from ['\"].*/cli" src/domain src/infra` — 0 результатов.

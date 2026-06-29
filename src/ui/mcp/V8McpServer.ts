@@ -9,6 +9,7 @@ import * as path from 'path';
 import { META_TYPES } from '../../domain/MetaTypes';
 import type { ChildTag } from '../../domain/ChildTag';
 import { getObjectLocationFromXml } from '../../infra/fs/MetaPathResolver';
+import { SupportMode } from '../../infra/support/SupportInfoService';
 import type { ConfigurationXmlEditor } from '../../infra/xml';
 import { getPlatformTypeRegistry, type TypeContext } from '../../infra/xml/PlatformTypeRegistry';
 import { MetadataMutationService } from '../commands/metadata/MetadataMutationService';
@@ -134,6 +135,9 @@ export class V8McpServer implements vscode.Disposable {
   private readonly sessions = new Map<string, McpSession>();
   private httpServer: http.Server | undefined;
   private endpoint: string | undefined;
+  // Набор разрешённых значений Host/Origin для защиты от DNS-rebinding.
+  // Заполняется реальным портом при старте; пустой набор = сервер ещё не слушает.
+  private allowedHosts = new Set<string>();
 
   constructor(
     private readonly services: McpCommandServices,
@@ -158,6 +162,7 @@ export class V8McpServer implements vscode.Disposable {
 
     this.httpServer = httpServer;
     this.endpoint = `http://${formatHostForUrl(options.host)}:${String(port)}/mcp`;
+    this.allowedHosts = buildAllowedHosts(port);
     this.services.outputChannel.appendLine(`[mcp] Сервер запущен: ${this.endpoint}`);
   }
 
@@ -165,6 +170,7 @@ export class V8McpServer implements vscode.Disposable {
     const httpServer = this.httpServer;
     this.httpServer = undefined;
     this.endpoint = undefined;
+    this.allowedHosts = new Set();
     if (httpServer) {
       await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     }
@@ -504,6 +510,7 @@ export class V8McpServer implements vscode.Disposable {
         },
       },
       (args) => this.wrap(() => {
+        this.assertNodeEditable(paths.resolveNode(args.path, args.configuration));
         const outputPath = resolveTemplateXmlByCanonical(paths, args.path, args.configuration);
         // args.definition имеет тип any (z.any()); сервис нормализует данные внутри.
         const result = this.services.mxlTemplateService.compile({ ...args, outputPath });
@@ -594,6 +601,7 @@ export class V8McpServer implements vscode.Disposable {
         },
       },
       (args) => this.wrap(() => {
+        this.assertNodeEditable(paths.resolveNode(args.path, args.configuration));
         const outputPath = resolveTemplateXmlByCanonical(paths, args.path, args.configuration);
         const result = this.services.dataCompositionSchemaService.compile({ ...args, outputPath });
         this.afterMutation([...result.changedFiles]);
@@ -655,6 +663,7 @@ export class V8McpServer implements vscode.Disposable {
         },
       },
       ({ path: canonical, configuration, ...rest }) => this.wrap(() => {
+        this.assertNodeEditable(paths.resolveNode(canonical, configuration));
         const templatePath = resolveTemplateXmlByCanonical(paths, canonical, configuration);
         const result = this.services.dataCompositionSchemaService.edit({ ...rest, templatePath });
         this.afterMutation([...result.changedFiles]);
@@ -682,6 +691,7 @@ export class V8McpServer implements vscode.Disposable {
         },
       },
       ({ path: canonical, configuration, ...rest }) => this.wrap(() => {
+        this.assertNodeEditable(paths.resolveNode(canonical, configuration));
         const objectPath = resolveObjectXmlByCanonical(paths, canonical, configuration);
         const result = this.services.externalObjectService.addHelp({ ...rest, objectPath });
         this.afterMutation([...result.changedFiles]);
@@ -864,6 +874,7 @@ export class V8McpServer implements vscode.Disposable {
         if (!objectPath) {
           throw new Error(`У узла "${parentPath}" нет XML-файла.`);
         }
+        this.assertNodeEditable(owner);
         const result = this.services.formToolsService.addForm({ ...rest, objectPath, formName: name });
         this.afterMutation([...result.changedFiles]);
         return result;
@@ -892,6 +903,7 @@ export class V8McpServer implements vscode.Disposable {
         if (node.nodeKind !== 'Form' || !node.metaContext?.ownerObjectXmlPath) {
           throw new Error(`Путь "${canonical}" должен указывать на форму объекта (Справочники.X.Форма.Y).`);
         }
+        this.assertNodeEditable(node);
         const result = this.services.formToolsService.removeForm({
           objectPath: node.metaContext.ownerObjectXmlPath,
           formName: node.textLabel,
@@ -921,6 +933,7 @@ export class V8McpServer implements vscode.Disposable {
         },
       },
       ({ path: canonical, configuration, ...rest }) => this.wrap(() => {
+        this.assertNodeEditable(paths.resolveNode(canonical, configuration));
         const outputPath = resolveFormXmlByCanonical(paths, canonical, configuration);
         const result = this.services.formToolsService.compile({ ...rest, outputPath });
         this.afterMutation([...result.changedFiles]);
@@ -947,6 +960,7 @@ export class V8McpServer implements vscode.Disposable {
         },
       },
       (args) => this.wrap(() => {
+        this.assertNodeEditable(paths.resolveNode(args.path, args.configuration));
         const formPath = resolveFormXmlByCanonical(paths, args.path, args.configuration);
         const result = this.services.formToolsService.edit({ ...args, formPath });
         this.afterMutation([...result.changedFiles]);
@@ -1025,6 +1039,7 @@ export class V8McpServer implements vscode.Disposable {
         },
       },
       ({ path: canonical, configuration, add, remove }) => this.wrap(() => {
+        this.assertNodeEditable(paths.resolveNode(canonical, configuration));
         const subsystemPath = resolveSubsystemXmlByCanonical(paths, canonical, configuration);
         const result = this.services.subsystemXmlService.editContentRefs(subsystemPath, {
           add: resolveSubsystemContentRefs(paths, add ?? [], configuration),
@@ -1055,6 +1070,7 @@ export class V8McpServer implements vscode.Disposable {
         },
       },
       ({ path: canonical, configuration, ...rest }) => this.wrap(() => {
+        this.assertNodeEditable(paths.resolveNode(canonical, configuration));
         const ciPath = resolveCommandInterfaceXmlByCanonical(paths, canonical, configuration);
         const result = this.services.commandInterfaceService.edit({ ...rest, ciPath });
         this.afterMutation([...result.changedFiles]);
@@ -1183,6 +1199,7 @@ export class V8McpServer implements vscode.Disposable {
         },
       },
       ({ path: canonical, configuration, operations }) => this.wrap(() => {
+        this.assertNodeEditable(paths.resolveNode(canonical, configuration));
         const rightsPath = resolveRoleXmlByCanonical(paths, canonical, configuration);
         const result = this.services.roleRightsService.edit({ rightsPath, operations });
         this.afterMutation([...result.changedFiles]);
@@ -1383,6 +1400,7 @@ export class V8McpServer implements vscode.Disposable {
       },
       ({ path: canonical, configuration, propertyKey, value }) => this.wrap(() => {
         const node = paths.resolveNode(canonical, configuration);
+        this.assertNodeEditable(node);
         const result = properties.setProperty(node, propertyKey, value);
         this.afterMutation(result.changedFiles);
         return result;
@@ -1415,6 +1433,7 @@ export class V8McpServer implements vscode.Disposable {
           throw new Error(`Метаданные по пути "${canonical}" не найдены.`);
         }
         const node = resolved.node;
+        this.assertNodeEditable(node);
         const totalRequested = Object.keys(propertiesInput).length;
         const result = properties.setProperties(node, propertiesInput);
         this.afterMutation(result.changedFiles);
@@ -1479,6 +1498,7 @@ export class V8McpServer implements vscode.Disposable {
       },
       ({ path: canonical, configuration, propertyKey, ...typeInput }) => this.wrap(() => {
         const node = paths.resolveNode(canonical, configuration);
+        this.assertNodeEditable(node);
         const result = properties.setType(node, propertyKey ?? 'Type', normalizeSetTypeToolInput(typeInput));
         this.afterMutation(result.changedFiles);
         return result;
@@ -1505,6 +1525,7 @@ export class V8McpServer implements vscode.Disposable {
       },
       ({ path: canonical, configuration, newName }) => this.wrap(() => {
         const node = paths.resolveNode(canonical, configuration);
+        this.assertNodeEditable(node);
         const result = properties.rename(node, newName);
         this.afterMutation(result.changedFiles);
         return result;
@@ -1544,6 +1565,7 @@ export class V8McpServer implements vscode.Disposable {
         if (!node.xmlPath || !node.canRemoveMetadata) {
           throw new Error(`Узел "${node.textLabel}" не поддерживает удаление метаданных.`);
         }
+        this.assertNodeEditable(node);
         const result = node.metaContext
           ? this.services.metadataXmlRemover.removeChildElement({
               ownerObjectXmlPath: node.metaContext.ownerObjectXmlPath ?? node.xmlPath,
@@ -1664,6 +1686,13 @@ export class V8McpServer implements vscode.Disposable {
         res.writeHead(403).end('MCP server accepts loopback requests only.');
         return;
       }
+      // Защита от DNS-rebinding: даже при loopback-соединении сторонняя
+      // веб-страница в браузере может слать запросы на 127.0.0.1 с произвольным
+      // Host/Origin. Принимаем только обращения к ожидаемому loopback-endpoint.
+      if (!this.isAllowedHostAndOrigin(req)) {
+        res.writeHead(403).end('MCP server rejects request: unexpected Host/Origin.');
+        return;
+      }
       const url = new URL(req.url ?? '/', `http://${req.headers.host ?? '127.0.0.1'}`);
       if (url.pathname !== '/mcp') {
         res.writeHead(404).end('Not found');
@@ -1774,6 +1803,27 @@ export class V8McpServer implements vscode.Disposable {
     return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
   }
 
+  /**
+   * Проверяет заголовки `Host` и `Origin` против ожидаемого loopback-endpoint.
+   * `Host` обязателен и должен входить в `allowedHosts`. `Origin` присутствует
+   * в кросс-сайтовых запросах из браузера — если задан, его хост:порт тоже
+   * обязан совпасть с разрешённым; легитимные MCP-клиенты Origin не шлют.
+   */
+  private isAllowedHostAndOrigin(req: http.IncomingMessage): boolean {
+    const host = getHeaderString(req, 'host');
+    if (!host || !this.allowedHosts.has(host.toLowerCase())) {
+      return false;
+    }
+    const origin = getHeaderString(req, 'origin');
+    if (origin !== undefined) {
+      const originHost = parseOriginHost(origin);
+      if (!originHost || !this.allowedHosts.has(originHost)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   private writeBrowserProbeResponse(res: http.ServerResponse): void {
     res.writeHead(200, {
       'Content-Type': 'text/plain; charset=utf-8',
@@ -1828,6 +1878,36 @@ export class V8McpServer implements vscode.Disposable {
     };
   }
 
+  /**
+   * Перед мутацией существующего объекта повторяет проверки UI: объект на
+   * поддержке без права редактирования (`SupportMode.Locked`) или не захвачен
+   * в подключённом хранилище конфигурации блокируется. Защищает .cf-объекты;
+   * для объектов вне поддержки/хранилища обе проверки возвращают «разрешено».
+   *
+   * `objectXmlPath` — XML-файл объекта-владельца (для дочерних элементов это
+   * `metaContext.ownerObjectXmlPath`), как и в `RemoveMetadataCommand` /
+   * `PropertiesViewController`.
+   */
+  private assertMetadataEditable(objectXmlPath: string | undefined): void {
+    if (!objectXmlPath) {
+      throw new Error('Не удалось определить XML-файл объекта для проверки блокировки изменения.');
+    }
+    if (this.services.supportService?.getSupportMode(objectXmlPath) === SupportMode.Locked) {
+      throw new Error('Объект защищён от изменения: находится на поддержке с запретом редактирования.');
+    }
+    if (this.services.repositoryService.isEditRestricted(objectXmlPath)) {
+      throw new Error('Объект защищён от изменения: не захвачен в хранилище конфигурации.');
+    }
+  }
+
+  /**
+   * Резолвит путь объекта-владельца у узла дерева так же, как UI
+   * (`metaContext.ownerObjectXmlPath ?? xmlPath`) и проверяет блокировку.
+   */
+  private assertNodeEditable(node: MetadataNode): void {
+    this.assertMetadataEditable(node.metaContext?.ownerObjectXmlPath ?? node.xmlPath);
+  }
+
   private afterMutation(filePaths: readonly string[]): void {
     if (filePaths.length === 0) {
       return;
@@ -1849,6 +1929,33 @@ export class V8McpServer implements vscode.Disposable {
 
 function formatHostForUrl(host: string): string {
   return host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
+}
+
+/**
+ * Набор допустимых значений `Host`/`Origin`-host для реального порта сервера.
+ * Сервер всегда слушает loopback, поэтому ожидаем именно loopback-имена:
+ * `127.0.0.1:<port>`, `[::1]:<port>`, `localhost:<port>`. Значения в нижнем
+ * регистре — сравнение в `isAllowedHostAndOrigin` тоже регистронезависимое.
+ */
+function buildAllowedHosts(port: number): Set<string> {
+  const suffix = `:${String(port)}`;
+  return new Set([
+    `127.0.0.1${suffix}`,
+    `[::1]${suffix}`,
+    `localhost${suffix}`,
+  ]);
+}
+
+/**
+ * Извлекает `host:port` из значения заголовка `Origin` в нижнем регистре.
+ * Возвращает undefined для `null`/невалидного Origin (такой запрос отклоняется).
+ */
+function parseOriginHost(origin: string): string | undefined {
+  try {
+    return new URL(origin).host.toLowerCase();
+  } catch {
+    return undefined;
+  }
 }
 
 /**

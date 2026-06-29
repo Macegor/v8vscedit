@@ -18,6 +18,43 @@ export interface AiMcpSettings {
   readonly bslAnalyzerOnecPassword: string;
 }
 
+/**
+ * Снимок настроек для webview без сырых секретов. Реальные значения
+ * ключей/токена/пароля остаются только на стороне расширения, наружу
+ * уходит лишь признак «задано/не задано», чтобы UI мог показать маску.
+ * Любая XSS/инъекция в webview не должна получить доступ к секретам.
+ */
+export interface AiMcpRedactedSettings {
+  readonly extensionAutoStart: boolean;
+  readonly extensionHost: string;
+  readonly extensionPort: number;
+  readonly bslAnalyzerAutoStart: boolean;
+  readonly bslAnalyzerReferenceEnabled: boolean;
+  readonly bslAnalyzerWorkspaceEnabled: boolean;
+  readonly bslAnalyzerWorkspaceSourceDir: string;
+  readonly bslAnalyzerEmbeddingUrl: string;
+  readonly bslAnalyzerEmbeddingApiKeySet: boolean;
+  readonly bslAnalyzerEmbeddingModel: string;
+  readonly bslAnalyzerNaparnikTokenSet: boolean;
+  readonly bslAnalyzerOnecUrl: string;
+  readonly bslAnalyzerOnecUser: string;
+  readonly bslAnalyzerOnecPasswordSet: boolean;
+}
+
+/**
+ * Полезная нагрузка сохранения из webview: несекретные поля приходят всегда,
+ * секреты — только если пользователь реально ввёл новое значение. Пустой/
+ * отсутствующий секрет означает «не менять» и не затирает сохранённое.
+ */
+export type AiMcpSaveSettings = Omit<
+  AiMcpSettings,
+  'bslAnalyzerEmbeddingApiKey' | 'bslAnalyzerNaparnikToken' | 'bslAnalyzerOnecPassword'
+> & {
+  readonly bslAnalyzerEmbeddingApiKey?: string;
+  readonly bslAnalyzerNaparnikToken?: string;
+  readonly bslAnalyzerOnecPassword?: string;
+};
+
 export interface AiMcpToolInfo {
   readonly profile: AiMcpProfile | 'extension';
   readonly name: string;
@@ -599,6 +636,74 @@ export function normalizeAiMcpSettings(
     bslAnalyzerOnecUser: value.bslAnalyzerOnecUser?.trim() ?? defaults.bslAnalyzerOnecUser,
     bslAnalyzerOnecPassword: value.bslAnalyzerOnecPassword ?? defaults.bslAnalyzerOnecPassword,
   };
+}
+
+/** Готовит снимок настроек для webview, заменяя секреты признаком «задано». */
+export function redactAiMcpSettings(settings: AiMcpSettings): AiMcpRedactedSettings {
+  return {
+    extensionAutoStart: settings.extensionAutoStart,
+    extensionHost: settings.extensionHost,
+    extensionPort: settings.extensionPort,
+    bslAnalyzerAutoStart: settings.bslAnalyzerAutoStart,
+    bslAnalyzerReferenceEnabled: settings.bslAnalyzerReferenceEnabled,
+    bslAnalyzerWorkspaceEnabled: settings.bslAnalyzerWorkspaceEnabled,
+    bslAnalyzerWorkspaceSourceDir: settings.bslAnalyzerWorkspaceSourceDir,
+    bslAnalyzerEmbeddingUrl: settings.bslAnalyzerEmbeddingUrl,
+    bslAnalyzerEmbeddingApiKeySet: settings.bslAnalyzerEmbeddingApiKey.trim().length > 0,
+    bslAnalyzerEmbeddingModel: settings.bslAnalyzerEmbeddingModel,
+    bslAnalyzerNaparnikTokenSet: settings.bslAnalyzerNaparnikToken.trim().length > 0,
+    bslAnalyzerOnecUrl: settings.bslAnalyzerOnecUrl,
+    bslAnalyzerOnecUser: settings.bslAnalyzerOnecUser,
+    bslAnalyzerOnecPasswordSet: settings.bslAnalyzerOnecPassword.trim().length > 0,
+  };
+}
+
+/**
+ * Заменяет в настройках сырые секреты на маску для путей, ведущих в webview
+ * (например commandLine со статусом). Несекретные значения не меняются.
+ */
+export function maskAiMcpSecrets(settings: AiMcpSettings, mask: string): AiMcpSettings {
+  return {
+    ...settings,
+    bslAnalyzerEmbeddingApiKey: settings.bslAnalyzerEmbeddingApiKey.trim() ? mask : '',
+    bslAnalyzerNaparnikToken: settings.bslAnalyzerNaparnikToken.trim() ? mask : '',
+    bslAnalyzerOnecPassword: settings.bslAnalyzerOnecPassword.trim() ? mask : '',
+  };
+}
+
+/**
+ * Сливает полезную нагрузку сохранения с уже сохранёнными настройками:
+ * секрет берётся из payload только при непустом значении, иначе остаётся
+ * прежний. Так пустой ввод не затирает сохранённый секрет.
+ */
+export function mergeAiMcpSaveSettings(
+  current: AiMcpSettings,
+  incoming: AiMcpSaveSettings
+): AiMcpSettings {
+  return {
+    extensionAutoStart: incoming.extensionAutoStart,
+    extensionHost: incoming.extensionHost,
+    extensionPort: incoming.extensionPort,
+    bslAnalyzerAutoStart: incoming.bslAnalyzerAutoStart,
+    bslAnalyzerReferenceEnabled: incoming.bslAnalyzerReferenceEnabled,
+    bslAnalyzerWorkspaceEnabled: incoming.bslAnalyzerWorkspaceEnabled,
+    bslAnalyzerWorkspaceSourceDir: incoming.bslAnalyzerWorkspaceSourceDir,
+    bslAnalyzerEmbeddingUrl: incoming.bslAnalyzerEmbeddingUrl,
+    bslAnalyzerEmbeddingApiKey: pickSecret(incoming.bslAnalyzerEmbeddingApiKey, current.bslAnalyzerEmbeddingApiKey),
+    bslAnalyzerEmbeddingModel: incoming.bslAnalyzerEmbeddingModel,
+    bslAnalyzerNaparnikToken: pickSecret(incoming.bslAnalyzerNaparnikToken, current.bslAnalyzerNaparnikToken),
+    bslAnalyzerOnecUrl: incoming.bslAnalyzerOnecUrl,
+    bslAnalyzerOnecUser: incoming.bslAnalyzerOnecUser,
+    bslAnalyzerOnecPassword: pickSecret(incoming.bslAnalyzerOnecPassword, current.bslAnalyzerOnecPassword),
+  };
+}
+
+function pickSecret(incoming: string | undefined, current: string): string {
+  const trimmed = incoming?.trim();
+  if (trimmed) {
+    return trimmed;
+  }
+  return current;
 }
 
 export function getEnabledBslAnalyzerProfiles(settings: AiMcpSettings): AiMcpProfile[] {

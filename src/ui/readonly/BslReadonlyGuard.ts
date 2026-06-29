@@ -16,7 +16,7 @@ export class BslReadonlyGuard {
 
   /** Подписывается на открытия BSL-файлов и помечает редактор readonly в текущей сессии. */
   register(): vscode.Disposable {
-    return vscode.workspace.onDidOpenTextDocument((doc) => {
+    return vscode.workspace.onDidOpenTextDocument(async (doc) => {
       if (doc.uri.scheme !== 'file') {
         return;
       }
@@ -32,6 +32,17 @@ export class BslReadonlyGuard {
 
       this.log.appendLine(`[readonly] Блокировка file:// BSL: ${path.basename(doc.fileName)}`);
 
+      // Типичный случай: к моменту открытия редактор уже видим. Ставим readonly
+      // синхронно, не дожидаясь события смены видимых редакторов.
+      const visibleEditor = vscode.window.visibleTextEditors.find(
+        (item) => item.document.uri.toString() === doc.uri.toString()
+      );
+      if (visibleEditor) {
+        await this.applyReadonly(visibleEditor);
+        return;
+      }
+
+      // Запасной путь: редактор может стать видимым позже (например, открытие в фоне).
       const watcher = vscode.window.onDidChangeVisibleTextEditors(async (editors) => {
         const editor = editors.find((item) => item.document.uri.toString() === doc.uri.toString());
         if (!editor) {
@@ -39,16 +50,21 @@ export class BslReadonlyGuard {
         }
 
         watcher.dispose();
-        await vscode.window.showTextDocument(editor.document, {
-          viewColumn: editor.viewColumn,
-          preserveFocus: false,
-        });
-        await vscode.commands.executeCommand('workbench.action.files.setActiveEditorReadonlyInSession');
+        await this.applyReadonly(editor);
       });
 
       setTimeout(() => {
         watcher.dispose();
       }, 5_000);
     });
+  }
+
+  /** Делает указанный видимый редактор readonly в текущей сессии. */
+  private async applyReadonly(editor: vscode.TextEditor): Promise<void> {
+    await vscode.window.showTextDocument(editor.document, {
+      viewColumn: editor.viewColumn,
+      preserveFocus: false,
+    });
+    await vscode.commands.executeCommand('workbench.action.files.setActiveEditorReadonlyInSession');
   }
 }

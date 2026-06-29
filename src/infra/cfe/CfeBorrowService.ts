@@ -4,6 +4,7 @@ import * as path from 'path';
 import { META_TYPES, type MetaKind, getMetaFolder } from '../../domain/MetaTypes';
 import { ConfigurationXmlEditor } from '../xml/ConfigurationXmlEditor';
 import {
+  escapeXmlText,
   extractChildMetaElementXml,
   extractNestingAwareBlock,
   findChildElementsFullXmlInBlock,
@@ -613,7 +614,7 @@ export class CfeBorrowService {
   }
 
   private buildInternalInfo(typeName: string, objectName: string): string {
-    const types = GENERATED_TYPES[typeName];
+    const types = GENERATED_TYPES[typeName] ?? [];
     if (types.length === 0) {
       return '\t\t<InternalInfo/>';
     }
@@ -779,17 +780,6 @@ export class CfeBorrowService {
   private newGuid(): string {
     return crypto.randomUUID();
   }
-}
-
-function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
-function escapeXmlText(value: string): string {
-  return escapeXml(value);
 }
 
 function escapeRegExp(value: string): string {

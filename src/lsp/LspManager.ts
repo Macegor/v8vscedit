@@ -21,6 +21,14 @@ const BSL_DOCUMENT_SELECTOR: { scheme: string; language: string }[] = [
  */
 export class LspManager implements vscode.Disposable {
   private client: LanguageClient | undefined;
+  /**
+   * «Поколение» активного клиента. Инкрементируется при каждом stop/start.
+   * errorHandler конкретного клиента запоминает своё поколение и сравнивает
+   * с этим полем: события от устаревшего клиента (например, авто-рестарт
+   * vscode-languageclient после ручного restart) игнорируются — так
+   * предотвращается запуск второго параллельного процесса bsl-analyzer.
+   */
+  private clientGeneration = 0;
   private readonly analyzerService: BslAnalyzerService;
   private readonly statusBar: BslAnalyzerStatusBar;
   private readonly traceChannel: vscode.OutputChannel;
@@ -79,6 +87,8 @@ export class LspManager implements vscode.Disposable {
   private async stopClient(): Promise<void> {
     const client = this.client;
     this.client = undefined;
+    // Любой авто-рестарт уже не должен относиться к актуальному состоянию.
+    this.clientGeneration++;
     if (client?.needsStop()) {
       try {
         await client.stop();
@@ -267,6 +277,14 @@ export class LspManager implements vscode.Disposable {
     let crashCount = 0;
     const MAX_CRASHES = 3;
 
+    // Поколение этого клиента фиксируется на момент создания. Если к моменту
+    // срабатывания errorHandler поколение сменилось (был stop/restart),
+    // значит клиент устарел — его авто-рестарт нужно подавить, чтобы не
+    // плодить параллельные процессы. Перезапуск идёт только через
+    // lifecycleQueue (метод restart()).
+    const generation = ++this.clientGeneration;
+    const isCurrent = (): boolean => this.clientGeneration === generation;
+
     const clientOptions: LanguageClientOptions = {
       documentSelector: BSL_DOCUMENT_SELECTOR,
       synchronize: {
@@ -277,6 +295,10 @@ export class LspManager implements vscode.Disposable {
       errorHandler: {
         error: () => ({ action: ErrorAction.Continue }),
         closed: () => {
+          if (!isCurrent()) {
+            // Событие от устаревшего клиента — не рестартуем и не трогаем статус-бар.
+            return { action: CloseAction.DoNotRestart };
+          }
           crashCount++;
           this.outputChannel.appendLine(`[lsp] Сервер упал (${String(crashCount)}/${String(MAX_CRASHES)})`);
           if (crashCount >= MAX_CRASHES) {
@@ -303,6 +325,9 @@ export class LspManager implements vscode.Disposable {
       this.outputChannel.appendLine(`[lsp] bsl-analyzer запущен (${version ?? 'custom'})`);
     } catch (err) {
       this.client = undefined;
+      // Старт не удался — снимаем «актуальность» этого клиента, чтобы его
+      // запоздавший closed-обработчик не инициировал авто-рестарт битого процесса.
+      this.clientGeneration++;
       const msg = err instanceof Error ? err.message : String(err);
       this.statusBar.setState('error', msg);
       this.outputChannel.appendLine(`[lsp] Ошибка запуска bsl-analyzer: ${msg}`);

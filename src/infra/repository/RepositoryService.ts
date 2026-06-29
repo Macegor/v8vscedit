@@ -2,7 +2,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { MetaKind } from '../../domain/MetaTypes';
-import { parseConfigXml, parseObjectXml } from '../xml';
+import { escapeXmlAttribute as escapeXml, parseConfigXml, parseObjectXml } from '../xml';
 
 export interface RepositoryBinding {
   repoPath: string;
@@ -544,9 +544,28 @@ export class RepositoryService {
     }
 
     const raw = fs.readFileSync(envPath, 'utf-8');
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    this.envCache = { mtimeMs, value: parsed };
-    return parsed;
+    // Пустой env.json — легитимное состояние (создан инициализацией, но ещё не
+    // заполнен / очищен). Не должен ронять навигатор через JSON.parse('').
+    if (raw.trim().length === 0) {
+      const empty = { default: {} };
+      this.envCache = { mtimeMs, value: empty };
+      return empty;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(`env.json повреждён (${envPath}): ${reason}`, { cause: error });
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new Error(`env.json повреждён (${envPath}): ожидался объект`);
+    }
+
+    const value = parsed as Record<string, unknown>;
+    this.envCache = { mtimeMs, value };
+    return value;
   }
 
   private writeEnvFile(env: Record<string, unknown>): void {
@@ -688,15 +707,6 @@ export class RepositoryService {
     };
   }
 
-  private ensureScopeState(target: RepositoryTarget): void {
-    const state = this.loadStateFile();
-    const scopeKey = this.buildScopeKey(target);
-    if (!Object.prototype.hasOwnProperty.call(state.scopes, scopeKey)) {
-      state.scopes[scopeKey] = { connected: true, lockedFullNames: [] };
-      this.saveStateFile(state);
-    }
-  }
-
   private saveScopeState(target: RepositoryTarget, scope: RepositoryScopeState): void {
     const state = this.loadStateFile();
     state.scopes[this.buildScopeKey(target)] = scope;
@@ -738,14 +748,6 @@ export class RepositoryService {
   private getRootLockName(target: RepositoryTarget): string {
     return target.configKind === 'cfe' ? EXTENSION_ROOT_LOCK_NAME : CONFIGURATION_ROOT_LOCK_NAME;
   }
-}
-
-function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
 }
 
 function getFileMtimeMs(filePath: string): number | undefined {

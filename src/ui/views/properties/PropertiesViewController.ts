@@ -1034,10 +1034,6 @@ export class PropertiesViewController {
     return node.nodeKind === 'Catalog' || node.nodeKind === 'Document' ? node.nodeKind : null;
   }
 
-  private getRenderTypeValue(property: ObjectPropertyItem): MetadataTypeValue {
-    return this.normalizeTypeValueForProperty(property.key, property.value as MetadataTypeValue);
-  }
-
   private normalizeTypeValueForProperty(key: string, value: MetadataTypeValue): MetadataTypeValue {
     return key === 'Type' ? ensureDefaultQualifiers(value) : value;
   }

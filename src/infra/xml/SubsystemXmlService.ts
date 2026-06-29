@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { ConfigXmlReader } from './ConfigXmlReader';
-import { extractSimpleTag } from './XmlUtils';
+import { escapeXmlText, extractSimpleTag, writeTextFilePreservingBomAndEol } from './XmlUtils';
 import { getMetaFolder, getMetaLabel, META_TYPES, type MetaKind } from '../../domain/MetaTypes';
 
 export type SubsystemPropertyKey =
@@ -168,7 +168,7 @@ export class SubsystemXmlService {
     if (updated === xml) {
       return false;
     }
-    fs.writeFileSync(xmlPath, updated, 'utf-8');
+    writeTextFilePreservingBomAndEol(xmlPath, xml, updated);
     return true;
   }
 
@@ -266,7 +266,7 @@ export class SubsystemXmlService {
       return false;
     }
     const updated = replacePropertyBlock(xml, 'Content', buildContentBlock(next));
-    fs.writeFileSync(xmlPath, updated, 'utf-8');
+    writeTextFilePreservingBomAndEol(xmlPath, xml, updated);
     return true;
   }
 
@@ -278,7 +278,7 @@ export class SubsystemXmlService {
       return false;
     }
     const updated = replaceRootBlock(xml, 'ChildObjects', buildChildObjectsBlock(next));
-    fs.writeFileSync(xmlPath, updated, 'utf-8');
+    writeTextFilePreservingBomAndEol(xmlPath, xml, updated);
     return true;
   }
 
@@ -553,14 +553,14 @@ function replacePropertyBlock(xml: string, propertyName: string, nextBlock: stri
   }
   const propertyRe = new RegExp(`<${propertyName}>[\\s\\S]*?<\\/${propertyName}>|<${propertyName}\\s*\\/>`);
   const nextProperties = propertyRe.test(properties)
-    ? properties.replace(propertyRe, nextBlock)
+    ? properties.replace(propertyRe, () => nextBlock)
     : insertBeforeClosingProperty(properties, nextBlock);
-  return xml.replace(properties, nextProperties);
+  return xml.replace(properties, () => nextProperties);
 }
 
 function replaceRootBlock(xml: string, tagName: string, nextBlock: string): string {
   const blockRe = new RegExp(`<${tagName}>[\\s\\S]*?<\\/${tagName}>|<${tagName}\\s*\\/>`);
-  return blockRe.test(xml) ? xml.replace(blockRe, nextBlock) : xml;
+  return blockRe.test(xml) ? xml.replace(blockRe, () => nextBlock) : xml;
 }
 
 function insertBeforeClosingProperty(properties: string, block: string): string {
@@ -637,10 +637,6 @@ function uniqueStrings(values: string[]): string[] {
 
 function normalizeContentRefs(values: readonly string[]): string[] {
   return uniqueStrings(values.map((value) => value.trim()).filter(Boolean));
-}
-
-function escapeXmlText(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function unescapeXmlText(value: string): string {

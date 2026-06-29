@@ -1,6 +1,11 @@
 export type AiMcpProfile = 'reference' | 'workspace' | 'extension';
 
-export interface AiMcpSettings {
+/**
+ * Снимок настроек, приходящий из расширения в webview. Секреты заменены
+ * признаком «задано/не задано»: сырые значения ключей/токена/пароля наружу
+ * не уходят, чтобы их не мог прочитать внедрённый в webview код.
+ */
+export interface AiMcpRedactedSettings {
   readonly extensionAutoStart: boolean;
   readonly extensionHost: string;
   readonly extensionPort: number;
@@ -9,12 +14,34 @@ export interface AiMcpSettings {
   readonly bslAnalyzerWorkspaceEnabled: boolean;
   readonly bslAnalyzerWorkspaceSourceDir: string;
   readonly bslAnalyzerEmbeddingUrl: string;
-  readonly bslAnalyzerEmbeddingApiKey: string;
+  readonly bslAnalyzerEmbeddingApiKeySet: boolean;
   readonly bslAnalyzerEmbeddingModel: string;
-  readonly bslAnalyzerNaparnikToken: string;
+  readonly bslAnalyzerNaparnikTokenSet: boolean;
   readonly bslAnalyzerOnecUrl: string;
   readonly bslAnalyzerOnecUser: string;
-  readonly bslAnalyzerOnecPassword: string;
+  readonly bslAnalyzerOnecPasswordSet: boolean;
+}
+
+/**
+ * Полезная нагрузка сохранения из webview в расширение. Секреты — опциональны
+ * и отправляются только если пользователь реально ввёл новое значение; пустой
+ * секрет = «не менять» и не затирает сохранённое значение.
+ */
+export interface AiMcpSaveSettings {
+  readonly extensionAutoStart: boolean;
+  readonly extensionHost: string;
+  readonly extensionPort: number;
+  readonly bslAnalyzerAutoStart: boolean;
+  readonly bslAnalyzerReferenceEnabled: boolean;
+  readonly bslAnalyzerWorkspaceEnabled: boolean;
+  readonly bslAnalyzerWorkspaceSourceDir: string;
+  readonly bslAnalyzerEmbeddingUrl: string;
+  readonly bslAnalyzerEmbeddingApiKey?: string;
+  readonly bslAnalyzerEmbeddingModel: string;
+  readonly bslAnalyzerNaparnikToken?: string;
+  readonly bslAnalyzerOnecUrl: string;
+  readonly bslAnalyzerOnecUser: string;
+  readonly bslAnalyzerOnecPassword?: string;
 }
 
 export interface AiMcpToolInfo {
@@ -43,7 +70,7 @@ export interface BslAnalyzerMcpStatus {
 }
 
 export interface AiMcpSnapshot {
-  readonly settings: AiMcpSettings;
+  readonly settings: AiMcpRedactedSettings;
   readonly extensionStatus: ExtensionMcpStatus;
   readonly bslAnalyzerStatus: BslAnalyzerMcpStatus;
   readonly extensionTools: readonly AiMcpToolInfo[];
@@ -56,7 +83,7 @@ export interface AiMcpSnapshot {
 
 export type AiMcpUiMessage =
   | { readonly type: 'refresh' }
-  | { readonly type: 'save'; readonly settings: AiMcpSettings }
+  | { readonly type: 'save'; readonly settings: AiMcpSaveSettings }
   | { readonly type: 'startExtensionMcp' }
   | { readonly type: 'stopExtensionMcp' }
   | { readonly type: 'startBslAnalyzerMcp' }

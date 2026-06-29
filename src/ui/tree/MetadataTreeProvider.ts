@@ -20,7 +20,7 @@ import { getIconUris } from './presentation/icon';
 import { MetadataNode } from './TreeNode';
 import { GitMetadataDecorationProvider } from './decorations/GitMetadataDecorationProvider';
 
-export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNode> {
+export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNode>, vscode.Disposable {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<MetadataNode | undefined | null>();
   readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
 
@@ -37,6 +37,10 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
     private readonly repositoryService?: RepositoryService
   ) {
     this.buildRoots();
+  }
+
+  dispose(): void {
+    this.onDidChangeTreeDataEmitter.dispose();
   }
 
   /** Перестраивает корневые узлы дерева только из JSON-кэша метаданных. */

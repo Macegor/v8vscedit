@@ -12,4 +12,5 @@ export type HostToUiMessage<TState = unknown> =
       readonly done?: boolean;
     }
   | { readonly type: 'status'; readonly kind: HostStatusKind; readonly message: string }
+  | { readonly type: 'reply'; readonly requestId: string; readonly payload: unknown }
   | { readonly type: 'error'; readonly requestId?: string; readonly message: string };

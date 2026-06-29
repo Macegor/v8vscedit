@@ -89,11 +89,23 @@
             </div>
             <label>
               EMBEDDING_API_KEY
-              <input v-model="draft.bslAnalyzerEmbeddingApiKey" type="password" autocomplete="off" spellcheck="false">
+              <input
+                v-model="secretInputs.embeddingApiKey"
+                type="password"
+                autocomplete="off"
+                spellcheck="false"
+                :placeholder="secretPlaceholder(draft.bslAnalyzerEmbeddingApiKeySet)"
+              >
             </label>
             <label>
               NAPARNIK_TOKEN
-              <input v-model="draft.bslAnalyzerNaparnikToken" type="password" autocomplete="off" spellcheck="false">
+              <input
+                v-model="secretInputs.naparnikToken"
+                type="password"
+                autocomplete="off"
+                spellcheck="false"
+                :placeholder="secretPlaceholder(draft.bslAnalyzerNaparnikTokenSet)"
+              >
             </label>
           </div>
           <div class="settings-block">
@@ -109,13 +121,19 @@
               </label>
               <label>
                 Пароль
-                <input v-model="draft.bslAnalyzerOnecPassword" type="password" autocomplete="off" spellcheck="false">
+                <input
+                  v-model="secretInputs.onecPassword"
+                  type="password"
+                  autocomplete="off"
+                  spellcheck="false"
+                  :placeholder="secretPlaceholder(draft.bslAnalyzerOnecPasswordSet)"
+                >
               </label>
             </div>
           </div>
           <div class="docs">
-            <a :href="state.docs.readmeUrl">Профили MCP</a>
-            <a :href="state.docs.toolsUrl">Инструменты и расширение 1С</a>
+            <a :href="safeUrl(state.docs.readmeUrl)">Профили MCP</a>
+            <a :href="safeUrl(state.docs.toolsUrl)">Инструменты и расширение 1С</a>
           </div>
         </section>
       </div>
@@ -154,7 +172,13 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { MessageBus } from '@ui-shared/api/messageBus';
 import type { HostToUiMessage } from '@ui-shared/protocol/hostMessages';
-import type { AiMcpProfile, AiMcpSettings, AiMcpSnapshot, AiMcpUiMessage } from '@ui-shared/types/ai';
+import type {
+  AiMcpProfile,
+  AiMcpRedactedSettings,
+  AiMcpSaveSettings,
+  AiMcpSnapshot,
+  AiMcpUiMessage,
+} from '@ui-shared/types/ai';
 
 const props = defineProps<{
   initialState: AiMcpSnapshot | null;
@@ -166,8 +190,18 @@ if (!props.initialState) {
 }
 
 const state = ref<AiMcpSnapshot>(props.initialState);
-type MutableSettings = { -readonly [K in keyof AiMcpSettings]: AiMcpSettings[K] };
+// Несекретные настройки редактируются напрямую; секреты в draft не попадают —
+// их реальные значения остаются на стороне расширения.
+type MutableSettings = { -readonly [K in keyof AiMcpRedactedSettings]: AiMcpRedactedSettings[K] };
 const draft = reactive<MutableSettings>({ ...props.initialState.settings });
+
+// Ввод секретов: пустая строка = «не менять». Реальное значение отправляется
+// только если пользователь его ввёл.
+const secretInputs = reactive({
+  embeddingApiKey: '',
+  naparnikToken: '',
+  onecPassword: '',
+});
 const saving = ref(false);
 const statusKind = ref<'idle' | 'success' | 'error'>('idle');
 const statusMessage = ref('');
@@ -178,7 +212,20 @@ const allTools = computed(() => [...state.value.extensionTools, ...state.value.b
 function save(): void {
   saving.value = true;
   setStatus('idle', 'Сохраняю настройки...');
-  props.messageBus.send({ type: 'save', settings: { ...draft } });
+  const {
+    bslAnalyzerEmbeddingApiKeySet: _apiKeySet,
+    bslAnalyzerNaparnikTokenSet: _tokenSet,
+    bslAnalyzerOnecPasswordSet: _passwordSet,
+    ...rest
+  } = draft;
+  const settings: AiMcpSaveSettings = {
+    ...rest,
+    // Секрет уходит только при непустом вводе; пусто = «не менять».
+    ...(secretInputs.embeddingApiKey ? { bslAnalyzerEmbeddingApiKey: secretInputs.embeddingApiKey } : {}),
+    ...(secretInputs.naparnikToken ? { bslAnalyzerNaparnikToken: secretInputs.naparnikToken } : {}),
+    ...(secretInputs.onecPassword ? { bslAnalyzerOnecPassword: secretInputs.onecPassword } : {}),
+  };
+  props.messageBus.send({ type: 'save', settings });
 }
 
 function refresh(): void {
@@ -189,6 +236,11 @@ function send(type: Exclude<AiMcpUiMessage['type'], 'save' | 'refresh'>): void {
   props.messageBus.send({ type });
 }
 
+function secretPlaceholder(isSet: boolean): string {
+  // Маска показывает, что секрет сохранён, не раскрывая его значения.
+  return isSet ? '•••••••• (сохранено, введите для замены)' : 'не задано';
+}
+
 function profileLabel(profile: AiMcpProfile): string {
   if (profile === 'extension') {
     return 'v8vscedit';
@@ -196,9 +248,20 @@ function profileLabel(profile: AiMcpProfile): string {
   return profile;
 }
 
+// Ссылки в docs приходят как строки от host; пропускаем только http/https,
+// чтобы клик по javascript:-URI не исполнил код (защита от XSS).
+function safeUrl(url: string): string {
+  return /^https?:\/\//i.test(url) ? url : '#';
+}
+
 function applyState(nextState: AiMcpSnapshot): void {
   state.value = nextState;
   Object.assign(draft, nextState.settings);
+  // После применения состояния очищаем поля ввода секретов: маска/placeholder
+  // снова отражает признак «задано» из снапшота, а не введённое значение.
+  secretInputs.embeddingApiKey = '';
+  secretInputs.naparnikToken = '';
+  secretInputs.onecPassword = '';
 }
 
 function setStatus(kind: 'idle' | 'success' | 'error', message: string): void {

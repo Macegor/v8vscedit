@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { XMLValidator } from 'fast-xml-parser';
-import { writeTextFilePreservingBomAndEol } from './XmlUtils';
+import { escapeXmlAttribute, escapeXmlText, writeTextFilePreservingBomAndEol } from './XmlUtils';
 
 const SPREADSHEET_NS = 'http://v8.1c.ru/8.2/data/spreadsheet';
 
@@ -792,14 +792,6 @@ function limitErrors(issues: readonly MxlValidationIssue[], maxErrors: number): 
 
 function getTemplateDisplayName(templatePath: string): string {
   return path.basename(path.dirname(path.dirname(templatePath))) || path.basename(templatePath);
-}
-
-function escapeXmlText(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-function escapeXmlAttribute(value: string): string {
-  return escapeXmlText(value).replace(/"/g, '&quot;');
 }
 
 function unescapeXml(value: string): string {

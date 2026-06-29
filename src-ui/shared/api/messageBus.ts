@@ -19,6 +19,12 @@ export class MessageBus {
     if (this.listener) return;
     this.listener = (event: MessageEvent<HostToUiMessage>) => {
       const msg = event.data;
+      // Отбрасываем сообщения без корректного discriminant `type`: в окно
+      // webview может прийти посторонний postMessage, а dispatch по нему
+      // обращался бы к undefined-типу и нарушал контракт шины.
+      if (!msg || typeof msg.type !== 'string') {
+        return;
+      }
       this.dispatch(msg.type, msg);
     };
     window.addEventListener('message', this.listener);

@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { XMLValidator } from 'fast-xml-parser';
-import { writeTextFilePreservingBomAndEol } from './XmlUtils';
+import { escapeXmlAttribute, escapeXmlText, writeTextFilePreservingBomAndEol } from './XmlUtils';
 
 const CI_NS = 'http://v8.1c.ru/8.3/xcf/extrnprops';
 const XR_NS = 'http://v8.1c.ru/8.3/xcf/readable';
@@ -365,7 +365,7 @@ function extractSectionInner(xml: string, section: CommandInterfaceSection): str
 function replaceSection(xml: string, section: CommandInterfaceSection, sectionXml: string): string {
   const re = new RegExp(`<${section}>[\\s\\S]*?<\\/${section}>`);
   if (re.test(xml)) {
-    return xml.replace(re, sectionXml);
+    return xml.replace(re, () => sectionXml);
   }
   const myIndex = SECTION_ORDER.indexOf(section);
   for (const nextSection of SECTION_ORDER.slice(myIndex + 1)) {
@@ -605,14 +605,6 @@ function paginate(lines: readonly string[], limit?: number, offset?: number): st
     return [...sliced, '', `[ОБРЕЗАНО] Показано ${String(sliced.length)} из ${String(lines.length)} строк.`];
   }
   return sliced;
-}
-
-function escapeXmlText(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-function escapeXmlAttribute(value: string): string {
-  return escapeXmlText(value).replace(/"/g, '&quot;');
 }
 
 function unescapeXml(value: string): string {

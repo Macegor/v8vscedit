@@ -21,14 +21,52 @@ const numberFractionDigits = ref(toFieldValue(props.control.numberQualifiers?.fr
 const numberAllowedSign = ref(props.control.numberQualifiers?.allowedSign ?? 'Any');
 const dateFractions = ref(props.control.dateQualifiers?.dateFractions === 'Date' ? 'Date' : 'DateTime');
 
-watch(() => props.control, () => {
-  stringLength.value = toFieldValue(props.control.stringQualifiers?.length);
-  stringAllowedLength.value = props.control.stringQualifiers?.allowedLength ?? 'Variable';
-  numberDigits.value = toFieldValue(props.control.numberQualifiers?.digits);
-  numberFractionDigits.value = toFieldValue(props.control.numberQualifiers?.fractionDigits);
-  numberAllowedSign.value = props.control.numberQualifiers?.allowedSign ?? 'Any';
-  dateFractions.value = props.control.dateQualifiers?.dateFractions === 'Date' ? 'Date' : 'DateTime';
+// Объект `control` приходит заново на каждый state-push, поэтому следим
+// за конкретными значениями квалификаторов, а не за ссылкой на объект —
+// иначе watch срабатывал бы постоянно и затирал бы текущий ввод пользователя.
+// Поле под фокусом не перезаписываем, чтобы не сбрасывать незавершённый ввод.
+watch(() => props.control.stringQualifiers?.length, (value) => {
+  if (!isFocused('stringLength')) {
+    stringLength.value = toFieldValue(value);
+  }
 });
+watch(() => props.control.stringQualifiers?.allowedLength, (value) => {
+  stringAllowedLength.value = value ?? 'Variable';
+});
+watch(() => props.control.numberQualifiers?.digits, (value) => {
+  if (!isFocused('numberDigits')) {
+    numberDigits.value = toFieldValue(value);
+  }
+});
+watch(() => props.control.numberQualifiers?.fractionDigits, (value) => {
+  if (!isFocused('numberFractionDigits')) {
+    numberFractionDigits.value = toFieldValue(value);
+  }
+});
+watch(() => props.control.numberQualifiers?.allowedSign, (value) => {
+  numberAllowedSign.value = value ?? 'Any';
+});
+watch(() => props.control.dateQualifiers?.dateFractions, (value) => {
+  dateFractions.value = value === 'Date' ? 'Date' : 'DateTime';
+});
+
+// Имя поля, которое сейчас редактируется: пока оно в фокусе, входящий
+// state-push не должен перетирать локальный ref значением с сервера.
+const focusedField = ref<string | null>(null);
+
+function isFocused(field: string): boolean {
+  return focusedField.value === field;
+}
+
+function onFieldFocus(field: string): void {
+  focusedField.value = field;
+}
+
+function onFieldBlur(field: string): void {
+  if (focusedField.value === field) {
+    focusedField.value = null;
+  }
+}
 
 function toFieldValue(value: number | undefined): string {
   return value === undefined ? '' : String(value);
@@ -99,6 +137,8 @@ function updateQualifiers(): void {
           type="number"
           :value="stringLength"
           :disabled="readonly || control.readonly"
+          @focus="onFieldFocus('stringLength')"
+          @blur="onFieldBlur('stringLength')"
           @input="(e: Event) => { stringLength = (e.target as HTMLInputElement).value; }"
           @change="updateQualifiers"
         />
@@ -120,6 +160,8 @@ function updateQualifiers(): void {
           type="number"
           :value="numberDigits"
           :disabled="readonly || control.readonly"
+          @focus="onFieldFocus('numberDigits')"
+          @blur="onFieldBlur('numberDigits')"
           @input="(e: Event) => { numberDigits = (e.target as HTMLInputElement).value; }"
           @change="updateQualifiers"
         />
@@ -129,6 +171,8 @@ function updateQualifiers(): void {
           type="number"
           :value="numberFractionDigits"
           :disabled="readonly || control.readonly"
+          @focus="onFieldFocus('numberFractionDigits')"
+          @blur="onFieldBlur('numberFractionDigits')"
           @input="(e: Event) => { numberFractionDigits = (e.target as HTMLInputElement).value; }"
           @change="updateQualifiers"
         />

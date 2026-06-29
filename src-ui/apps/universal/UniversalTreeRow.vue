@@ -35,6 +35,20 @@ function isAssetIcon(icon?: { kind: string; lightUri?: string; darkUri?: string 
   return icon?.kind === 'asset' && Boolean(icon.lightUri) && Boolean(icon.darkUri);
 }
 
+// URI иконок приходят от host и подставляются в CSS `url(...)`. Без проверки
+// и экранирования возможна CSS-инъекция (закрывающая скобка/кавычка в значении).
+// Пропускаем только ожидаемые схемы и оборачиваем в кавычки с экранированием.
+const ALLOWED_ICON_SCHEMES = ['vscode-resource:', 'vscode-webview-resource:', 'https:', 'data:'];
+
+function cssIconUrl(uri: string): string {
+  const isAllowed = ALLOWED_ICON_SCHEMES.some((scheme) => uri.startsWith(scheme));
+  if (!isAllowed) {
+    return 'none';
+  }
+  const escaped = uri.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return `url("${escaped}")`;
+}
+
 function gitBadgeLabel(status?: string): string {
   if (status === 'added') return 'A';
   if (status === 'modified') return 'M';
@@ -68,7 +82,7 @@ function gitBadgeLabel(status?: string): string {
     <span
       v-if="isAssetIcon(node.icon)"
       class="tree-icon-asset"
-      :style="{ '--icon-light': `url(${node.icon.lightUri})`, '--icon-dark': `url(${node.icon.darkUri})` }"
+      :style="{ '--icon-light': cssIconUrl(node.icon.lightUri), '--icon-dark': cssIconUrl(node.icon.darkUri) }"
       aria-hidden="true"
     />
     <span v-else class="tree-icon" :class="iconClass(node.icon)" aria-hidden="true" />
@@ -96,7 +110,7 @@ function gitBadgeLabel(status?: string): string {
         <span
           v-if="isAssetIcon(stateIcon.icon)"
           class="state-icon-asset"
-          :style="{ '--icon-light': `url(${stateIcon.icon.lightUri})`, '--icon-dark': `url(${stateIcon.icon.darkUri})` }"
+          :style="{ '--icon-light': cssIconUrl(stateIcon.icon.lightUri), '--icon-dark': cssIconUrl(stateIcon.icon.darkUri) }"
           aria-hidden="true"
         />
         <span v-else-if="stateIcon.icon.kind === 'codicon'" class="codicon" :class="'codicon-' + stateIcon.icon.name" aria-hidden="true" />

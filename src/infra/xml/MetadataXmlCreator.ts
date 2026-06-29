@@ -7,9 +7,11 @@ import { ConfigurationXmlEditor, type EditResult } from './ConfigurationXmlEdito
 import { getObjectLocationFromXml } from '../fs/MetaPathResolver';
 import { buildTypedFieldPropertyBlocks } from './TypedFieldPropertyRules';
 import {
+  escapeXmlAttribute as escapeXml,
   findDirectElementRanges,
   findNestingAwareElementRange,
   hasDirectChildElementNameInBlock,
+  writeTextFilePreservingBomAndEol,
 } from './XmlUtils';
 
 const DEFAULT_FORMAT_VERSION = '2.18';
@@ -259,7 +261,7 @@ export class MetadataXmlCreator {
       return fail(nextXml.error);
     }
 
-    fs.writeFileSync(options.ownerObjectXmlPath, nextXml.xml, 'utf-8');
+    writeTextFilePreservingBomAndEol(options.ownerObjectXmlPath, xml, nextXml.xml);
     const formatVersion = resolveObjectFormatVersion(options.ownerObjectXmlPath);
     const changedFiles = [options.ownerObjectXmlPath];
     changedFiles.push(...ensureAuxiliaryChildFiles(options, formatVersion));
@@ -1013,10 +1015,6 @@ function ok(changedFiles: string[]): EditResult {
 
 function fail(message: string): EditResult {
   return { success: false, changed: false, changedFiles: [], warnings: [], errors: [message] };
-}
-
-function escapeXml(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function escapeRegExp(value: string): string {

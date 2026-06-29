@@ -6,6 +6,7 @@ import {
   getStandardAttributePresentation,
 } from '../../domain/StandardAttribute';
 import {
+  escapeXmlText,
   extractChildMetaElementXml,
   extractColumnXmlFromTabularSection,
   extractSimpleTag,
@@ -278,7 +279,7 @@ export class ObjectXmlReader {
       return false;
     }
 
-    const updatedXml = xml.replace(targetXml, updatedTarget);
+    const updatedXml = xml.replace(targetXml, () => updatedTarget);
     if (updatedXml === xml) {
       return false;
     }
@@ -330,7 +331,7 @@ export class ObjectXmlReader {
 
     const updatedXml = options.targetKind === 'Self'
       ? updatedTarget
-      : xml.replace(targetXml, updatedTarget);
+      : xml.replace(targetXml, () => updatedTarget);
     if (updatedXml === xml) {
       return false;
     }
@@ -466,12 +467,12 @@ function updateTypeInElement(
   const typeBlock = `<${propertyName}>\n${typeInnerXml}\n</${propertyName}>`;
   const propertyRe = new RegExp(`<${propertyName}>[\\s\\S]*?<\\/${propertyName}>`);
   if (propertyRe.test(elementXml)) {
-    const updated = elementXml.replace(propertyRe, typeBlock);
+    const updated = elementXml.replace(propertyRe, () => typeBlock);
     return propertyName === 'Type' ? normalizeTypedFieldProperties(updated, typeInnerXml) : updated;
   }
   const selfClosingRe = new RegExp(`<${propertyName}(?:\\s[^>]*)?\\/>`);
   if (selfClosingRe.test(elementXml)) {
-    const updated = elementXml.replace(selfClosingRe, typeBlock);
+    const updated = elementXml.replace(selfClosingRe, () => typeBlock);
     return propertyName === 'Type' ? normalizeTypedFieldProperties(updated, typeInnerXml) : updated;
   }
   const propertiesMatch = /<Properties>([\s\S]*?)<\/Properties>/.exec(elementXml);
@@ -480,11 +481,11 @@ function updateTypeInElement(
   }
   const propsInner = propertiesMatch[1];
   const nextPropsInner = /<Comment[\s\S]*?<\/Comment>/.test(propsInner)
-    ? propsInner.replace(/(<Comment[\s\S]*?<\/Comment>)/, `$1\n${typeBlock}`)
+    ? propsInner.replace(/(<Comment[\s\S]*?<\/Comment>)/, (_m, g1: string) => `${g1}\n${typeBlock}`)
     : /<Name[\s\S]*?<\/Name>/.test(propsInner)
-    ? propsInner.replace(/(<Name[\s\S]*?<\/Name>)/, `$1\n${typeBlock}`)
+    ? propsInner.replace(/(<Name[\s\S]*?<\/Name>)/, (_m, g1: string) => `${g1}\n${typeBlock}`)
     : `${propsInner}\n${typeBlock}`;
-  const updated = elementXml.replace(propsInner, nextPropsInner);
+  const updated = elementXml.replace(propsInner, () => nextPropsInner);
   return propertyName === 'Type' ? normalizeTypedFieldProperties(updated, typeInnerXml) : updated;
 }
 
@@ -550,15 +551,15 @@ function updatePropertyInElement(
   // <Comment>, из-за чего ServerCall у CommonModule оказывался перед Synonym и
   // 1С не принимал такой порядок (xs:sequence в схеме).
   const nextPropsInner = propertyMatch
-    ? propsInner.replace(propertyMatch[0], nextValueBlock)
+    ? propsInner.replace(propertyMatch[0], () => nextValueBlock)
     : selfClosingRe.test(propsInner)
-    ? propsInner.replace(selfClosingRe, nextValueBlock)
+    ? propsInner.replace(selfClosingRe, () => nextValueBlock)
     : appendPropertyAtEnd(propsInner, nextValueBlock);
 
   if (nextPropsInner === propsInner) {
     return elementXml;
   }
-  return elementXml.replace(propsInner, nextPropsInner);
+  return elementXml.replace(propsInner, () => nextPropsInner);
 }
 
 function buildPropertyValueBlock(
@@ -609,16 +610,9 @@ function updateLocalizedPropertyContent(propertyBlock: string, value: string | b
   const content = escapeXmlText(typeof value === 'string' ? value : String(value));
   const contentRe = /(<v8:content>)[\s\S]*?(<\/v8:content>)/;
   if (!contentRe.test(propertyBlock)) {
-    return propertyBlock.replace(/<v8:content\s*\/>/, `<v8:content>${content}</v8:content>`);
+    return propertyBlock.replace(/<v8:content\s*\/>/, () => `<v8:content>${content}</v8:content>`);
   }
-  return propertyBlock.replace(contentRe, `$1${content}$2`);
-}
-
-function escapeXmlText(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  return propertyBlock.replace(contentRe, (_m, open: string, close: string) => `${open}${content}${close}`);
 }
 
 function appendPropertyAtEnd(propsInner: string, valueBlock: string): string {

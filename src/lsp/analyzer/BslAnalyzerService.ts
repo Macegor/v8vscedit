@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as https from 'https';
 import * as http from 'http';
+import * as crypto from 'crypto';
 
 const GITHUB_REPO = 'itrous/bsl-analyzer';
 const GITHUB_API_BASE = `https://api.github.com/repos/${GITHUB_REPO}`;
@@ -20,6 +21,8 @@ function platformAssetName(): string {
 interface ReleaseInfo {
   tag: string;
   downloadUrl: string;
+  /** URL ассета с контрольной суммой SHA256, если он опубликован рядом с бинарником */
+  sha256Url?: string;
 }
 
 export class BslAnalyzerService implements vscode.Disposable {
@@ -137,6 +140,11 @@ export class BslAnalyzerService implements vscode.Disposable {
           fs.mkdirSync(this.storageDir, { recursive: true });
           await this.download(release.downloadUrl, tmpPath, ct);
 
+          if (release.sha256Url) {
+            progress.report({ message: 'Проверка контрольной суммы...' });
+            await this.verifyChecksum(tmpPath, release.sha256Url, ct);
+          }
+
           progress.report({ message: 'Замена бинарника...' });
 
           if (this.onBeforeSwap) {
@@ -179,15 +187,19 @@ export class BslAnalyzerService implements vscode.Disposable {
     try {
       const data = await this.httpGetJson(`${GITHUB_API_BASE}/releases/latest`);
       const tag = data.tag_name as string;
-      const asset = (data.assets as { name: string; browser_download_url: string }[])
-        .find((a) => a.name === platformAssetName());
+      const assetName = platformAssetName();
+      const assets = data.assets as { name: string; browser_download_url: string }[];
+      const asset = assets.find((a) => a.name === assetName);
 
       if (!asset) {
         this.outputChannel.appendLine(`[bsl-analyzer] Бинарник для ${process.platform} не найден в релизе ${tag}`);
         return undefined;
       }
 
-      return { tag, downloadUrl: asset.browser_download_url };
+      // Контрольная сумма публикуется не всегда — её отсутствие не считаем ошибкой.
+      const sha256Asset = assets.find((a) => a.name === `${assetName}.sha256`);
+
+      return { tag, downloadUrl: asset.browser_download_url, sha256Url: sha256Asset?.browser_download_url };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.outputChannel.appendLine(`[bsl-analyzer] Ошибка запроса GitHub API: ${msg}`);
@@ -196,6 +208,8 @@ export class BslAnalyzerService implements vscode.Disposable {
   }
 
   private static readonly DOWNLOAD_TIMEOUT_MS = 120_000;
+  /** Лимит редиректов: защита от бесконечной цепочки location → location */
+  private static readonly MAX_REDIRECTS = 5;
 
   /** Скачать файл по URL с поддержкой редиректов и таймаутом */
   private download(url: string, dest: string, token?: vscode.CancellationToken): Promise<void> {
@@ -211,11 +225,24 @@ export class BslAnalyzerService implements vscode.Disposable {
       const file = fs.createWriteStream(dest);
       file.on('error', (err) => { clearTimeout(timer); fail(err); });
 
-      const request = (targetUrl: string) => {
-        const mod = targetUrl.startsWith('https') ? https : http;
+      // redirects — число уже пройденных редиректов; secure — был ли исходный URL https
+      const request = (targetUrl: string, redirects: number, secure: boolean) => {
+        const isHttps = targetUrl.startsWith('https');
+        // Запрещаем downgrade https→http: после защищённого старта переход на http недопустим.
+        if (secure && !isHttps) {
+          clearTimeout(timer);
+          fail(new Error('Небезопасный редирект: переход с https на http запрещён'));
+          return;
+        }
+        const mod = isHttps ? https : http;
         const req = mod.get(targetUrl, { headers: { 'User-Agent': 'v8vscedit' } }, (res) => {
           if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-            request(res.headers.location);
+            if (redirects >= BslAnalyzerService.MAX_REDIRECTS) {
+              clearTimeout(timer);
+              fail(new Error(`Превышен лимит редиректов (${String(BslAnalyzerService.MAX_REDIRECTS)})`));
+              return;
+            }
+            request(res.headers.location, redirects + 1, secure || isHttps);
             return;
           }
           if (res.statusCode !== 200) {
@@ -235,29 +262,114 @@ export class BslAnalyzerService implements vscode.Disposable {
           });
         }
       };
-      request(url);
+      request(url, 0, url.startsWith('https'));
     });
+  }
+
+  /** Скачать текстовый ресурс (например, файл контрольной суммы) в строку */
+  private downloadToString(url: string, token?: vscode.CancellationToken): Promise<string> {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const fail = (err: Error) => { if (!settled) { settled = true; reject(err); } };
+      const succeed = (value: string) => { if (!settled) { settled = true; resolve(value); } };
+
+      const timer = setTimeout(() => {
+        fail(new Error('Таймаут загрузки контрольной суммы (120 сек)'));
+      }, BslAnalyzerService.DOWNLOAD_TIMEOUT_MS);
+
+      const request = (targetUrl: string, redirects: number, secure: boolean) => {
+        const isHttps = targetUrl.startsWith('https');
+        if (secure && !isHttps) {
+          clearTimeout(timer);
+          fail(new Error('Небезопасный редирект: переход с https на http запрещён'));
+          return;
+        }
+        const mod = isHttps ? https : http;
+        const req = mod.get(targetUrl, { headers: { 'User-Agent': 'v8vscedit' } }, (res) => {
+          if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            if (redirects >= BslAnalyzerService.MAX_REDIRECTS) {
+              clearTimeout(timer);
+              fail(new Error(`Превышен лимит редиректов (${String(BslAnalyzerService.MAX_REDIRECTS)})`));
+              return;
+            }
+            request(res.headers.location, redirects + 1, secure || isHttps);
+            return;
+          }
+          if (res.statusCode !== 200) {
+            clearTimeout(timer);
+            fail(new Error(`HTTP ${String(res.statusCode)}`));
+            return;
+          }
+          let body = '';
+          res.on('data', (c: Buffer) => { body += c.toString(); });
+          res.on('end', () => { clearTimeout(timer); succeed(body); });
+        });
+        req.on('error', (err) => { clearTimeout(timer); fail(err); });
+        if (token) {
+          token.onCancellationRequested(() => {
+            req.destroy();
+            clearTimeout(timer);
+            fail(new Error('Отменено'));
+          });
+        }
+      };
+      request(url, 0, url.startsWith('https'));
+    });
+  }
+
+  /**
+   * Сверить SHA256 скачанного файла с опубликованной контрольной суммой.
+   * Бросает ошибку при несовпадении — установка прерывается.
+   */
+  private async verifyChecksum(filePath: string, sha256Url: string, token?: vscode.CancellationToken): Promise<void> {
+    const checksumBody = await this.downloadToString(sha256Url, token);
+    // Формат файла .sha256 обычно «<hex>  <имя_файла>»; берём первый шестнадцатеричный токен.
+    const expected = (checksumBody.trim().split(/\s+/)[0] ?? '').toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(expected)) {
+      throw new Error('Некорректный формат файла контрольной суммы');
+    }
+
+    const actual = await new Promise<string>((resolve, reject) => {
+      const hash = crypto.createHash('sha256');
+      const stream = fs.createReadStream(filePath);
+      stream.on('error', reject);
+      stream.on('data', (chunk) => hash.update(chunk));
+      stream.on('end', () => resolve(hash.digest('hex')));
+    });
+
+    if (actual.toLowerCase() !== expected) {
+      throw new Error('Контрольная сумма не совпадает: возможно, файл повреждён или подменён');
+    }
+    this.outputChannel.appendLine('[bsl-analyzer] Контрольная сумма SHA256 подтверждена');
   }
 
   /** HTTP GET JSON */
   private httpGetJson(url: string): Promise<Record<string, unknown>> {
     return new Promise((resolve, reject) => {
-      https.get(url, { headers: { 'User-Agent': 'v8vscedit', Accept: 'application/json' } }, (res) => {
+      let settled = false;
+      const fail = (err: Error) => { if (!settled) { settled = true; reject(err); } };
+      const succeed = (value: Record<string, unknown>) => { if (!settled) { settled = true; resolve(value); } };
+
+      const req = https.get(url, { headers: { 'User-Agent': 'v8vscedit', Accept: 'application/json' } }, (res) => {
         let body = '';
         res.on('data', (c: Buffer) => { body += c.toString(); });
         res.on('end', () => {
           try {
             const parsed: unknown = JSON.parse(body);
             if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-              resolve(parsed as Record<string, unknown>);
+              succeed(parsed as Record<string, unknown>);
               return;
             }
-            reject(new Error('GitHub API вернул JSON не в формате объекта'));
+            fail(new Error('GitHub API вернул JSON не в формате объекта'));
           } catch (e) {
-            reject(e instanceof Error ? e : new Error(String(e)));
+            fail(e instanceof Error ? e : new Error(String(e)));
           }
         });
-      }).on('error', reject);
+      });
+      req.on('error', fail);
+      req.setTimeout(BslAnalyzerService.DOWNLOAD_TIMEOUT_MS, () => {
+        req.destroy(new Error('Таймаут запроса к GitHub API (120 сек)'));
+      });
     });
   }
 }

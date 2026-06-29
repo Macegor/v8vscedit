@@ -5,7 +5,6 @@ import type { ConfigEntry } from './domain/Configuration';
 import { findConfigurations } from './infra/fs/ConfigLocator';
 import { type ChangedConfiguration, ConfigurationChangeDetector } from './infra/fs/ConfigurationChangeDetector';
 import { MetadataTreeProvider } from './ui/tree/MetadataTreeProvider';
-import type { MetadataNode } from './ui/tree/TreeNode';
 import { registerCommands } from './ui/commands/CommandRegistry';
 import type { CommandServices } from './ui/commands/_shared';
 import { PropertiesViewController } from './ui/views/properties/PropertiesViewController';
@@ -38,6 +37,7 @@ import { CfePatchMethodService } from './infra/cfe/CfePatchMethodService';
 import { RoleRightsService } from './infra/role';
 import { SubsystemXmlService } from './infra/xml/SubsystemXmlService';
 import { RepositoryService } from './infra/repository/RepositoryService';
+import { ensureEnvJson } from './infra/repository/envJsonTemplate';
 import { GitMetadataStatusService } from './infra/git/GitMetadataStatusService';
 import { AiSkillsInstaller } from './infra/skills/AiSkillsInstaller';
 import { StandaloneServerService } from './infra/standalone';
@@ -61,6 +61,7 @@ import {
 import { V8McpServer } from './ui/mcp/V8McpServer';
 import { BslAnalyzerMcpService } from './ui/mcp/BslAnalyzerMcpService';
 import { AiMcpViewProvider } from './ui/views/ai/AiMcpViewProvider';
+import { AiSecretStorage } from './infra/ai/AiSecretStorage';
 import { disposeCachedAgentOperationServices } from './ui/commands/ext/ExtensionCommandRunner';
 
 /**
@@ -122,7 +123,6 @@ export class Container {
   readonly lspManager: LspManager;
   readonly changeDetector: ConfigurationChangeDetector;
 
-  private treeView: vscode.TreeView<MetadataNode> | undefined;
   private changeStateTimer: NodeJS.Timeout | undefined;
   private treeCacheTimer: NodeJS.Timeout | undefined;
   private decorationRefreshTimer: NodeJS.Timeout | undefined;
@@ -159,14 +159,12 @@ export class Container {
       [],
       context.extensionUri,
       workspaceFolder.uri.fsPath,
-      (message) => {
-        if (this.treeView) {
-          this.treeView.message = message;
-        }
-      },
+      // Нативный TreeView демонтирован: статус-сообщения дерева больше некуда выводить.
+      () => undefined,
       this.supportService,
       this.repositoryService
     );
+    context.subscriptions.push(this.treeProvider);
     this.subsystemXmlService = new SubsystemXmlService();
     this.exchangePlanContentService = new ExchangePlanContentService();
     this.typeRegistryService = new TypeRegistryService();
@@ -243,28 +241,23 @@ export class Container {
     );
     this.treeSearchViewProvider = new TreeSearchViewProvider(context.extensionUri, {
       treeProvider: this.treeProvider,
-      setTreeMessage: (message) => {
-        if (this.treeView) {
-          this.treeView.message = message;
-        }
-      },
+      // Нативный TreeView демонтирован: статус поиска отображает сам webview.
+      setTreeMessage: () => undefined,
       isProjectInitialized: () => this.isProjectInitialized(),
       getStandaloneServerStatus: () => this.standaloneServerService.getStatus(),
     });
     this.universalPanelViewProvider = new UniversalPanelViewProvider(context.extensionUri, {
       state: context.workspaceState,
       treeProvider: this.treeProvider,
-      setTreeMessage: (message) => {
-        if (this.treeView) {
-          this.treeView.message = message;
-        }
-      },
+      // Нативный TreeView демонтирован: статус поиска отображает сам webview.
+      setTreeMessage: () => undefined,
       isProjectInitialized: () => this.isProjectInitialized(),
       getStandaloneServerStatus: () => this.standaloneServerService.getStatus(),
       refreshStandaloneServerStatus: () => this.standaloneServerService.refreshHealth(),
       getProcessingState: () => this.treeProcessingState,
       gitMetadataStatusService: this.gitMetadataStatusService,
       refreshActionsView: () => this.refreshActionsView(),
+      log: (message) => this.outputChannel.appendLine(message),
     });
     context.subscriptions.push(this.universalPanelViewProvider);
 
@@ -290,6 +283,7 @@ export class Container {
       this.outputChannel,
       this.mcpServer,
       this.bslAnalyzerMcpService,
+      new AiSecretStorage(context.secrets),
       () => this.startMcpServer(true),
       () => this.mcpServer.stop()
     );
@@ -318,7 +312,18 @@ export class Container {
   reloadEntries(): void {
     const rootPath = this.workspaceFolder.uri.fsPath;
     const entries = findConfigurations(rootPath);
+    // Пустой/отсутствующий env.json ломает чтение настроек хранилища и весь
+    // навигатор. В реальном проекте (есть выгрузки) доинициализируем его тем же
+    // шаблоном, что и при создании проекта.
+    if (entries.length > 0 && ensureEnvJson(rootPath)) {
+      this.outputChannel.appendLine('[init] env.json отсутствовал или был пуст — создан из шаблона');
+    }
     this.basedOnXmlService.invalidate();
+    // P2-замечание: ensureHashCaches при первом запуске может пересчитывать хеш-кэш
+    // целиком на потоке активации. Отложить его в microtask нельзя без регрессии —
+    // последующий refreshChangedConfigurationState() читает эти кэши через
+    // changeDetector.detect(), а reloadEntries вызывается не только при bootstrap
+    // (см. вызов из watcher'а), поэтому синхронная готовность здесь наблюдаема.
     this.ensureHashCaches(entries);
     // Состав корней конфигураций мог измениться (новая cfe / переименование),
     // поэтому кэш `findConfigRoot` нужно сбросить до перестроения дерева.
@@ -419,12 +424,9 @@ export class Container {
       getChangedConfigurations: () => this.getChangedConfigurations(),
       markConfigurationsClean: (rootPaths) => this.markConfigurationsClean(rootPaths),
       suppressConfigurationReloadForFiles: (filePaths) => this.suppressConfigurationReloadForFiles(filePaths),
-      revealTreeNode: (predicate, rootPath) => this.revealTreeNode(predicate, rootPath),
-      setTreeMessage: (message) => {
-        if (this.treeView) {
-          this.treeView.message = message;
-        }
-      },
+      revealTreeNode: () => this.revealTreeNode(),
+      // Нативный TreeView демонтирован: статус-сообщения дерева больше некуда выводить.
+      setTreeMessage: () => undefined,
       setTreeProcessingState: (state) => this.setTreeProcessingState(state),
       refreshActionsView: () => this.refreshActionsView(),
     };
@@ -551,23 +553,11 @@ export class Container {
   }
 
   private ensureHashCaches(entries: ConfigEntry[]): void {
-    if (entries.length > 0 && this.treeView) {
-      this.treeView.message = 'Проверка кэша метаданных...';
-    }
-    try {
-      const created = this.changeDetector.ensureCaches(entries, (message) => {
-        if (this.treeView) {
-          this.treeView.message = message;
-        }
-        this.outputChannel.appendLine(`[init] ${message}`);
-      });
-      if (created > 0) {
-        this.outputChannel.appendLine(`[hash-cache] Создано первичных кэшей: ${String(created)}`);
-      }
-    } finally {
-      if (this.treeView) {
-        this.treeView.message = undefined;
-      }
+    const created = this.changeDetector.ensureCaches(entries, (message) => {
+      this.outputChannel.appendLine(`[init] ${message}`);
+    });
+    if (created > 0) {
+      this.outputChannel.appendLine(`[hash-cache] Создано первичных кэшей: ${String(created)}`);
     }
   }
 
@@ -738,29 +728,14 @@ export class Container {
     return true;
   }
 
-  private async revealTreeNode(predicate: (node: MetadataNode) => boolean, rootPath?: string): Promise<boolean> {
-    if (!this.treeView) {
-      return false;
-    }
-
-    this.treeProvider.clearSearchQuery();
-    const node = this.treeProvider.findNode(predicate, rootPath);
-    if (!node) {
-      return false;
-    }
-
-    try {
-      await this.treeView.reveal(node, {
-        select: true,
-        focus: true,
-        expand: 3,
-      });
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.outputChannel.appendLine(`[tree] Не удалось выделить узел после операции: ${message}`);
-      return false;
-    }
+  /**
+   * No-op: нативный TreeView демонтирован, основной UI навигатора — webview,
+   * который сам управляет выделением узлов. Подсветка узла после операций здесь
+   * никогда не работала (треевью не создавался), поэтому метод всегда возвращает false.
+   * Оставлен для совместимости с контрактом CommandServices.
+   */
+  private revealTreeNode(): Promise<boolean> {
+    return Promise.resolve(false);
   }
 
   /**
@@ -835,14 +810,20 @@ export class Container {
   }
 
   private startBslAnalyzerMcpServers(): void {
-    const settings = this.aiMcpViewProvider.getSettings();
-    void this.bslAnalyzerMcpService.applyAutoStart(settings).then(() => {
-      this.aiMcpViewProvider.refresh();
-    }).catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
-      this.outputChannel.appendLine(`[bsl-mcp][error] ${message}`);
-      this.aiMcpViewProvider.refresh();
-    });
+    void this.aiMcpViewProvider
+      // Сначала переносим устаревшие секреты в SecretStorage и чистим
+      // settings.json, затем запускаем MCP с разрешёнными секретами.
+      .migrateLegacySecrets()
+      .then(() => this.aiMcpViewProvider.getResolvedSettings())
+      .then((settings) => this.bslAnalyzerMcpService.applyAutoStart(settings))
+      .then(() => {
+        this.aiMcpViewProvider.refresh();
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.outputChannel.appendLine(`[bsl-mcp][error] ${message}`);
+        this.aiMcpViewProvider.refresh();
+      });
   }
 
   private isProjectInitialized(): boolean {

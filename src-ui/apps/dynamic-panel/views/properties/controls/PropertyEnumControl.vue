@@ -44,14 +44,16 @@ function onMultiChange(event: Event): void {
       class="prop-multi-select"
       multiple
       :size="Math.min(Math.max(control.options?.length ?? 2, 2), 8)"
-      :value="selectedValues"
       :disabled="readonly || control.readonly"
       @change="onMultiChange"
     >
+      <!-- DOM-свойство value у <select multiple> не принимает массив,
+           поэтому выбранные опции подсвечиваем через :selected на <option>. -->
       <option
         v-for="opt in control.options"
         :key="opt.value"
         :value="opt.value"
+        :selected="selectedValues.includes(opt.value)"
       >
         {{ opt.label }}
       </option>

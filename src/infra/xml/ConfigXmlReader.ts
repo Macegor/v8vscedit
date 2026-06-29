@@ -1,41 +1,32 @@
 import * as fs from 'fs';
 import { XMLParser } from 'fast-xml-parser';
 import type { ConfigInfo } from '../../domain/Configuration';
-import { extractSimpleTag, extractSynonym } from './XmlUtils';
-
-interface XmlTextNode { '#text': string }
-type XmlElementNode = Record<string, XmlNodeList>;
-type XmlNode = XmlTextNode | XmlElementNode;
-type XmlNodeList = XmlNode[];
+import {
+  extractSimpleTag,
+  extractSynonym,
+  findFirstElement,
+  getElementChildren,
+  getElementName,
+  isTextNode,
+  type XmlNodeList,
+} from './XmlUtils';
 
 const parser = new XMLParser({
   preserveOrder: true,
   ignoreAttributes: false,
   trimValues: false,
   parseTagValue: false,
-  processEntities: false,
+  // Декодируем 5 предопределённых XML-сущностей (&amp; &lt; &gt; &quot; &apos;)
+  // при чтении: иначе сырые «&amp;» ломают сравнение имён и вывод. Симметрия
+  // сохраняется записью через escapeXmlText, который кодирует те же сущности обратно.
+  processEntities: true,
 });
 
-function isTextNode(node: XmlNode): node is XmlTextNode {
-  return Object.prototype.hasOwnProperty.call(node, '#text');
-}
-
-function getElementName(node: XmlNode): string | null {
-  if (isTextNode(node)) {
-    return null;
-  }
-  const [name] = Object.keys(node);
-  return name;
-}
-
-function getElementChildren(node: XmlNode): XmlNodeList {
-  if (isTextNode(node)) {
-    return [];
-  }
-  const name = getElementName(node);
-  return name ? (node[name] ?? []) : [];
-}
-
+// ВНИМАНИЕ: локальный collectText намеренно НЕ рекурсивный, в отличие от
+// XmlUtils.collectText (тот спускается в дочерние элементы). Здесь читаются имена
+// объектов из <ChildObjects> (`<Catalog>Имя</Catalog>` — прямой текстовый узел),
+// где рекурсия не нужна. Объединять с XmlUtils-версией нельзя: поведение разойдётся
+// на вложенных узлах (латентное расхождение, требует отдельного решения).
 function collectText(nodes: XmlNodeList): string {
   let result = '';
   for (const node of nodes) {
@@ -44,23 +35,6 @@ function collectText(nodes: XmlNodeList): string {
     }
   }
   return result.trim();
-}
-
-function findFirstElement(nodes: XmlNodeList, tagName: string): XmlElementNode | null {
-  for (const node of nodes) {
-    const name = getElementName(node);
-    if (!name) {
-      continue;
-    }
-    if (name === tagName) {
-      return node as XmlElementNode;
-    }
-    const found = findFirstElement(getElementChildren(node), tagName);
-    if (found) {
-      return found;
-    }
-  }
-  return null;
 }
 
 /**

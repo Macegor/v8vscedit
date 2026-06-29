@@ -3,7 +3,7 @@ import * as path from 'path';
 import { getMetaFolder, type MetaKind } from '../../domain/MetaTypes';
 import { getObjectLocationFromXml } from '../fs/ObjectLocation';
 import { ObjectXmlReader } from './ObjectXmlReader';
-import { writeTextFilePreservingBomAndEol } from './XmlUtils';
+import { escapeXmlText, writeTextFilePreservingBomAndEol } from './XmlUtils';
 
 type PropertyValueKind = 'string' | 'boolean' | 'localizedString' | 'metadataReferenceList' | 'metadataFieldList';
 type RootPropertyKind = 'scalar' | 'localized' | 'reference' | 'boolean' | 'multiEnum';
@@ -86,11 +86,11 @@ export class ConfigurationXmlEditor {
     }
 
     const replacement = this.buildRootPropertyBlock(propertyName, value, kind);
-    const updatedProps = properties.replace(propRe, replacement);
+    const updatedProps = properties.replace(propRe, () => replacement);
     if (updatedProps === properties) {
       return this.warn('Значение свойства не изменилось.');
     }
-    const updatedXml = xml.replace(properties, updatedProps);
+    const updatedXml = xml.replace(properties, () => updatedProps);
     writeTextFilePreservingBomAndEol(configXmlPath, xml, updatedXml);
     return this.ok([configXmlPath]);
   }
@@ -127,9 +127,9 @@ export class ConfigurationXmlEditor {
     current.sort((a, b) => this.sortChildObjects(a, b));
     const nextInner = this.buildChildObjectsBlock(current, this.detectIndent(childObjects, '\t\t\t'));
     const updatedXml = childObjectsMatch
-      ? xml.replace(childObjectsMatch[0], `<ChildObjects>${nextInner}</ChildObjects>`)
+      ? xml.replace(childObjectsMatch[0], () => `<ChildObjects>${nextInner}</ChildObjects>`)
       : selfClosingChildObjectsMatch
-        ? xml.replace(selfClosingChildObjectsMatch[0], `<ChildObjects>${nextInner}</ChildObjects>`)
+        ? xml.replace(selfClosingChildObjectsMatch[0], () => `<ChildObjects>${nextInner}</ChildObjects>`)
         : xml;
     writeTextFilePreservingBomAndEol(configXmlPath, xml, updatedXml);
     return this.ok([configXmlPath]);
@@ -152,7 +152,7 @@ export class ConfigurationXmlEditor {
       return this.warn(`Объект "${objectRef}" не найден в ChildObjects.`);
     }
     const nextInner = this.buildChildObjectsBlock(next, this.detectIndent(childObjects, '\t\t\t'));
-    const updatedXml = xml.replace(childObjects, nextInner);
+    const updatedXml = xml.replace(childObjects, () => nextInner);
     writeTextFilePreservingBomAndEol(configXmlPath, xml, updatedXml);
     return this.ok([configXmlPath]);
   }
@@ -308,9 +308,9 @@ export class ConfigurationXmlEditor {
 
     const replacement = this.buildDefaultRolesBlock(items, this.detectIndent(props, '\t\t\t'));
     const nextProps = pairedMatch
-      ? props.replace(pairedRe, replacement)
-      : props.replace(selfClosingRe, replacement);
-    const updatedXml = xml.replace(props, nextProps);
+      ? props.replace(pairedRe, () => replacement)
+      : props.replace(selfClosingRe, () => replacement);
+    const updatedXml = xml.replace(props, () => nextProps);
     writeTextFilePreservingBomAndEol(configXmlPath, xml, updatedXml);
     return this.ok([configXmlPath]);
   }
@@ -411,7 +411,7 @@ export class ConfigurationXmlEditor {
     if (!re.test(xml)) {
       return null;
     }
-    return xml.replace(re, `$1${escapeXmlText(nextValue)}$3`);
+    return xml.replace(re, (_m, open: string, _value: string, close: string) => `${open}${escapeXmlText(nextValue)}${close}`);
   }
 
   private replaceChildObjectName(configXml: string, childTag: string, oldName: string, newName: string): string | null {
@@ -427,7 +427,7 @@ export class ConfigurationXmlEditor {
       replaced = true;
       return `${open}${escapeXmlText(newName)}${close}`;
     });
-    return next !== block ? configXml.replace(block, next) : null;
+    return next !== block ? configXml.replace(block, () => next) : null;
   }
 
   private isObjectNameOccupiedInType(configXml: string, childTag: string, oldName: string, newName: string): boolean {
@@ -480,10 +480,6 @@ export class ConfigurationXmlEditor {
     return out;
   }
 
-  private isSamePath(a: string, b: string): boolean {
-    return path.normalize(a).toLowerCase() === path.normalize(b).toLowerCase();
-  }
-
   private ok(changedFiles: string[]): EditResult {
     return { success: true, changed: true, changedFiles, warnings: [], errors: [] };
   }
@@ -503,8 +499,4 @@ function isValidMetadataName(value: string): boolean {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function escapeXmlText(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
