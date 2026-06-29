@@ -79,6 +79,7 @@ interface UniversalPanelServices {
   readonly getProcessingState: () => UniversalPanelProcessingState;
   readonly gitMetadataStatusService: GitMetadataStatusService;
   readonly refreshActionsView: () => void;
+  readonly log?: (message: string) => void;
 }
 
 export interface UniversalPanelProcessingState {
@@ -118,6 +119,10 @@ const MODULE_SLOT_ACTIONS: Partial<Record<string, { command: string; title: stri
   ChildCommand: { command: 'v8vscedit.openCommandModule',   title: 'Открыть модуль команды',   icon: codicon('code') },
 };
 
+const FALLBACK_HTML =
+  '<!DOCTYPE html><html lang="ru"><body style="font-family:var(--vscode-font-family);padding:12px">' +
+  'Не удалось загрузить панель. Подробности — в выводе «1С Редактор».</body></html>';
+
 const CHILDREN_CHUNK_SIZE = 40;
 const PASSIVE_NODE_ACTIONS = new Set<string>([
   'v8vscedit.showProperties',
@@ -150,6 +155,12 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
   private cachedRootNodes: TreeNodeDto[] = [];
   private currentOpenNodeIds = new Set<string>();
   private currentSelectedNodeId: string | undefined;
+  // Webview прислал 'ready' (Vue примонтировался). На медленном холодном старте
+  // (Windows) первый рендер при восстановлении вью мог не успеть смонтироваться —
+  // тогда панель остаётся пустой. Этот флаг + healTimer перерисовывают её сами.
+  private ready = false;
+  private healAttempts = 0;
+  private healTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -176,16 +187,64 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
       ],
     };
 
-    webviewView.webview.html = this.buildHtml(webviewView.webview);
+    this.renderHtml();
     this.viewDisposables.push(
       webviewView.webview.onDidReceiveMessage((message: WebviewMessage) => {
         void this.handleMessage(message);
       }),
+      webviewView.onDidChangeVisibility(() => {
+        // Перерисовываем при показе только если вью так и не сообщила о готовности
+        // (пустая панель после неудачного восстановления), не сбрасывая рабочее состояние.
+        if (webviewView.visible && !this.ready) {
+          this.renderHtml();
+        }
+      }),
       webviewView.onDidDispose(() => {
         this.view = undefined;
+        this.clearHealTimer();
         this.disposeViewSubscriptions();
       })
     );
+  }
+
+  /** Ставит HTML и запускает контроль готовности webview. */
+  private renderHtml(): void {
+    if (!this.view) {return;}
+    this.ready = false;
+    this.healAttempts = 0;
+    try {
+      this.view.webview.html = this.buildHtml(this.view.webview);
+    } catch (error) {
+      // resolveWebviewView не должен бросать — иначе VS Code заменит вью
+      // плейсхолдером «Ошибка при восстановлении представления».
+      this.logError('Не удалось построить HTML панели', error);
+      this.view.webview.html = FALLBACK_HTML;
+      return;
+    }
+    this.scheduleHealCheck();
+  }
+
+  /**
+   * Если webview не пришлёт 'ready' за отведённое время, повторно ставим HTML.
+   * Покрывает гонку восстановления вью на медленном старте, когда первый рендер
+   * не смонтировался и панель осталась пустой.
+   */
+  private scheduleHealCheck(): void {
+    this.clearHealTimer();
+    this.healTimer = setTimeout(() => {
+      this.healTimer = undefined;
+      if (this.ready || !this.view || this.healAttempts >= 2) {return;}
+      this.healAttempts += 1;
+      this.view.webview.html = this.buildHtml(this.view.webview);
+      this.scheduleHealCheck();
+    }, 2500);
+  }
+
+  private clearHealTimer(): void {
+    if (this.healTimer) {
+      clearTimeout(this.healTimer);
+      this.healTimer = undefined;
+    }
   }
 
   private disposeViewSubscriptions(): void {
@@ -203,6 +262,7 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
 
   dispose(): void {
     this.treeListener.dispose();
+    this.clearHealTimer();
     this.disposeViewSubscriptions();
   }
 
@@ -261,6 +321,12 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
   // ── Сообщения от webview ──
 
   private async handleMessage(msg: WebviewMessage): Promise<void> {
+    if (msg.type === 'ready') {
+      this.ready = true;
+      this.clearHealTimer();
+      return;
+    }
+
     if (this.services.getProcessingState().active) {return;}
 
     if (msg.type === 'command') {
@@ -349,12 +415,32 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
   // ── Построение дерева ──
 
   private buildRootNodes(): TreeNodeDto[] {
-    const roots = this.services.treeProvider.getChildren();
     this.nodeById.clear();
     this.nodeKeyById.clear();
     this.currentOpenNodeIds = new Set<string>();
     this.currentSelectedNodeId = undefined;
-    return roots.map((node, i) => this.toDto(node, 0, `n${String(i)}`, ''));
+    let roots: MetadataNode[];
+    try {
+      roots = this.services.treeProvider.getChildren();
+    } catch (error) {
+      this.logError('Не удалось получить корневые узлы дерева', error);
+      return [];
+    }
+    return roots.flatMap((node, i) => {
+      try {
+        return [this.toDto(node, 0, `n${String(i)}`, '')];
+      } catch (error) {
+        // Сбой одного корня не должен ронять весь resolveWebviewView (иначе VS Code
+        // показывает плейсхолдер «Ошибка при восстановлении представления»).
+        this.logError(`Не удалось построить узел дерева: ${node.textLabel}`, error);
+        return [];
+      }
+    });
+  }
+
+  private logError(message: string, error: unknown): void {
+    const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);
+    this.services.log?.(`[universal] ${message}: ${detail}`);
   }
 
   private toDto(node: MetadataNode, depth: number, id: string, parentKey: string): TreeNodeDto {
@@ -374,13 +460,21 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
       this.currentSelectedNodeId = id;
     }
 
-    // Дети загружаем сразу, если узел открыт (как в старом коде)
+    // Дети загружаем сразу, если узел открыт (как в старом коде).
+    // Сбой обхода (например, недоступный XML) не должен ронять весь рендер —
+    // узел остаётся свёрнутым и подгрузится лениво.
     let children: TreeNodeDto[] | undefined;
     let loaded = false;
     if (open && hasChildren) {
-      const raw = this.services.treeProvider.getChildren(node);
-      children = raw.map((child, i) => this.toDto(child, depth + 1, `${id}_${String(i)}`, nodeKey));
-      loaded = true;
+      try {
+        const raw = this.services.treeProvider.getChildren(node);
+        children = raw.map((child, i) => this.toDto(child, depth + 1, `${id}_${String(i)}`, nodeKey));
+        loaded = true;
+      } catch (error) {
+        this.logError(`Не удалось загрузить дочерние узлы: ${node.textLabel}`, error);
+        children = undefined;
+        loaded = false;
+      }
     }
 
     return {

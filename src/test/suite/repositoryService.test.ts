@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { RepositoryService } from '../../infra/repository/RepositoryService';
+import { RepositoryService, type RepositoryTarget } from '../../infra/repository/RepositoryService';
 
 const EXAMPLE_ROOT = path.resolve(__dirname, '../../../example');
 const EXAMPLE_CF = path.join(EXAMPLE_ROOT, 'src', 'cf');
@@ -123,6 +123,32 @@ suite('RepositoryService', () => {
     const second = service.resolveTargetByXmlPath(xmlPath);
     assert.deepStrictEqual(second, first);
     assert.strictEqual(service.getConfigRootCacheSize(), size, 'Повторный вызов не должен расширять кэш.');
+  });
+
+  const sampleTarget: RepositoryTarget = {
+    configRoot: EXAMPLE_CF,
+    configKind: 'cf',
+    displayName: 'Тест',
+  };
+
+  test('Пустой env.json не роняет чтение привязки', () => {
+    fs.writeFileSync(envPath, '   \n', 'utf-8');
+    // Свежий сервис, чтобы исключить попадание в кэш предыдущего чтения.
+    const fresh = new RepositoryService(EXAMPLE_ROOT);
+    assert.doesNotThrow(() => fresh.hasBinding(sampleTarget));
+    assert.strictEqual(fresh.loadBinding(sampleTarget), null);
+  });
+
+  test('Битый env.json даёт внятную ошибку', () => {
+    fs.writeFileSync(envPath, '{ не json', 'utf-8');
+    const fresh = new RepositoryService(EXAMPLE_ROOT);
+    assert.throws(() => fresh.loadBinding(sampleTarget), /env\.json повреждён/);
+  });
+
+  test('env.json не-объект трактуется как повреждённый', () => {
+    fs.writeFileSync(envPath, '[1,2,3]', 'utf-8');
+    const fresh = new RepositoryService(EXAMPLE_ROOT);
+    assert.throws(() => fresh.loadBinding(sampleTarget), /ожидался объект/);
   });
 
   test('findConfigRoot — invalidateConfigRootCache сбрасывает кэш', () => {

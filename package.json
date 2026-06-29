@@ -11,6 +11,7 @@
     "vscode": "^1.85.0"
   },
   "activationEvents": [
+    "onStartupFinished",
     "workspaceContains:**/Configuration.xml",
     "onView:v8vsceditUniversal",
     "onLanguage:bsl",

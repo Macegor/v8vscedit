@@ -544,9 +544,28 @@ export class RepositoryService {
     }
 
     const raw = fs.readFileSync(envPath, 'utf-8');
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    this.envCache = { mtimeMs, value: parsed };
-    return parsed;
+    // Пустой env.json — легитимное состояние (создан инициализацией, но ещё не
+    // заполнен / очищен). Не должен ронять навигатор через JSON.parse('').
+    if (raw.trim().length === 0) {
+      const empty = { default: {} };
+      this.envCache = { mtimeMs, value: empty };
+      return empty;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(`env.json повреждён (${envPath}): ${reason}`, { cause: error });
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new Error(`env.json повреждён (${envPath}): ожидался объект`);
+    }
+
+    const value = parsed as Record<string, unknown>;
+    this.envCache = { mtimeMs, value };
+    return value;
   }
 
   private writeEnvFile(env: Record<string, unknown>): void {

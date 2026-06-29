@@ -37,6 +37,7 @@ import { CfePatchMethodService } from './infra/cfe/CfePatchMethodService';
 import { RoleRightsService } from './infra/role';
 import { SubsystemXmlService } from './infra/xml/SubsystemXmlService';
 import { RepositoryService } from './infra/repository/RepositoryService';
+import { ensureEnvJson } from './infra/repository/envJsonTemplate';
 import { GitMetadataStatusService } from './infra/git/GitMetadataStatusService';
 import { AiSkillsInstaller } from './infra/skills/AiSkillsInstaller';
 import { StandaloneServerService } from './infra/standalone';
@@ -256,6 +257,7 @@ export class Container {
       getProcessingState: () => this.treeProcessingState,
       gitMetadataStatusService: this.gitMetadataStatusService,
       refreshActionsView: () => this.refreshActionsView(),
+      log: (message) => this.outputChannel.appendLine(message),
     });
     context.subscriptions.push(this.universalPanelViewProvider);
 
@@ -310,6 +312,12 @@ export class Container {
   reloadEntries(): void {
     const rootPath = this.workspaceFolder.uri.fsPath;
     const entries = findConfigurations(rootPath);
+    // Пустой/отсутствующий env.json ломает чтение настроек хранилища и весь
+    // навигатор. В реальном проекте (есть выгрузки) доинициализируем его тем же
+    // шаблоном, что и при создании проекта.
+    if (entries.length > 0 && ensureEnvJson(rootPath)) {
+      this.outputChannel.appendLine('[init] env.json отсутствовал или был пуст — создан из шаблона');
+    }
     this.basedOnXmlService.invalidate();
     // P2-замечание: ensureHashCaches при первом запуске может пересчитывать хеш-кэш
     // целиком на потоке активации. Отложить его в microtask нельзя без регрессии —

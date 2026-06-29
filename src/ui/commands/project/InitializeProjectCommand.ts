@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import type { CommandServices } from '../_shared';
+import { ensureEnvJson } from '../../../infra/repository/envJsonTemplate';
 
 const PROJECT_DIRECTORIES = [
   '.vscode',
@@ -55,7 +56,7 @@ export function registerInitializeProjectCommand(
       try {
         ensureProjectDirectoryIsEmpty(rootPath);
         createProjectDirectories(rootPath);
-        createEnvJson(rootPath);
+        ensureEnvJson(rootPath);
         services.bslAnalyzerConfigService.ensureExists([]);
         ensureGitignore(rootPath);
         await services.reloadEntries();
@@ -83,32 +84,6 @@ function createProjectDirectories(rootPath: string): void {
   for (const directory of PROJECT_DIRECTORIES) {
     fs.mkdirSync(path.join(rootPath, directory), { recursive: true });
   }
-}
-
-function createEnvJson(rootPath: string): void {
-  const envPath = path.join(rootPath, 'env.json');
-  if (fs.existsSync(envPath)) {
-    return;
-  }
-
-  const content = {
-    $schema: 'https://raw.githubusercontent.com/vanessa-opensource/vanessa-runner/develop/vanessa-runner-schema.json',
-    default: {
-      '--ibconnection': '',
-      '--db-user': '',
-      '--db-pwd': '',
-      '--path': '',
-      '--root': '.',
-      '--workspace': '.',
-      '--v8version': '',
-      '--locale': 'ru',
-      '--language': 'ru',
-      '--additional': '/DisplayAllFunctions /Lru  /iTaxi /TESTMANAGER',
-      '--ordinaryapp': '-1',
-    },
-  };
-
-  fs.writeFileSync(envPath, `${JSON.stringify(content, null, 2)}\n`, 'utf-8');
 }
 
 function ensureGitignore(rootPath: string): void {
