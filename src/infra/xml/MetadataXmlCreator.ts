@@ -5,7 +5,8 @@ import type { ChildTag } from '../../domain/ChildTag';
 import { getMetaFolder, getMetaType, type MetaKind } from '../../domain/MetaTypes';
 import { ConfigurationXmlEditor, type EditResult } from './ConfigurationXmlEditor';
 import { getObjectLocationFromXml } from '../fs/MetaPathResolver';
-import { buildTypedFieldPropertyBlocks } from './TypedFieldPropertyRules';
+import { DEFAULT_FORMAT_VERSION, resolveFormatRuleset } from './format/formatRegistry';
+import type { FormatRuleset } from './format/FormatRuleset';
 import {
   escapeXmlAttribute as escapeXml,
   findDirectElementRanges,
@@ -14,9 +15,7 @@ import {
   writeTextFilePreservingBomAndEol,
 } from './XmlUtils';
 
-const DEFAULT_FORMAT_VERSION = '2.18';
 const DEFAULT_TEMPLATE_TYPE: TemplateType = 'SpreadsheetDocument';
-const METADATA_OBJECT_XMLNS = 'xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"';
 
 export type TemplateType =
   | 'SpreadsheetDocument'
@@ -27,141 +26,6 @@ export type TemplateType =
   | 'DataCompositionAppearanceTemplate'
   | 'GraphicalSchema'
   | 'AddIn';
-
-interface GeneratedTypeDef {
-  readonly prefix: string;
-  readonly category: string;
-}
-
-const GENERATED_TYPES: Partial<Record<MetaKind, readonly GeneratedTypeDef[]>> = {
-  Catalog: [
-    { prefix: 'CatalogObject', category: 'Object' },
-    { prefix: 'CatalogRef', category: 'Ref' },
-    { prefix: 'CatalogSelection', category: 'Selection' },
-    { prefix: 'CatalogList', category: 'List' },
-    { prefix: 'CatalogManager', category: 'Manager' },
-  ],
-  Document: [
-    { prefix: 'DocumentObject', category: 'Object' },
-    { prefix: 'DocumentRef', category: 'Ref' },
-    { prefix: 'DocumentSelection', category: 'Selection' },
-    { prefix: 'DocumentList', category: 'List' },
-    { prefix: 'DocumentManager', category: 'Manager' },
-  ],
-  Enum: [
-    { prefix: 'EnumRef', category: 'Ref' },
-    { prefix: 'EnumManager', category: 'Manager' },
-    { prefix: 'EnumList', category: 'List' },
-  ],
-  Constant: [
-    { prefix: 'ConstantManager', category: 'Manager' },
-    { prefix: 'ConstantValueManager', category: 'ValueManager' },
-    { prefix: 'ConstantValueKey', category: 'ValueKey' },
-  ],
-  InformationRegister: [
-    { prefix: 'InformationRegisterRecord', category: 'Record' },
-    { prefix: 'InformationRegisterManager', category: 'Manager' },
-    { prefix: 'InformationRegisterSelection', category: 'Selection' },
-    { prefix: 'InformationRegisterList', category: 'List' },
-    { prefix: 'InformationRegisterRecordSet', category: 'RecordSet' },
-    { prefix: 'InformationRegisterRecordKey', category: 'RecordKey' },
-    { prefix: 'InformationRegisterRecordManager', category: 'RecordManager' },
-  ],
-  AccumulationRegister: [
-    { prefix: 'AccumulationRegisterRecord', category: 'Record' },
-    { prefix: 'AccumulationRegisterManager', category: 'Manager' },
-    { prefix: 'AccumulationRegisterSelection', category: 'Selection' },
-    { prefix: 'AccumulationRegisterList', category: 'List' },
-    { prefix: 'AccumulationRegisterRecordSet', category: 'RecordSet' },
-    { prefix: 'AccumulationRegisterRecordKey', category: 'RecordKey' },
-  ],
-  AccountingRegister: [
-    { prefix: 'AccountingRegisterRecord', category: 'Record' },
-    { prefix: 'AccountingRegisterExtDimensions', category: 'ExtDimensions' },
-    { prefix: 'AccountingRegisterRecordSet', category: 'RecordSet' },
-    { prefix: 'AccountingRegisterRecordKey', category: 'RecordKey' },
-    { prefix: 'AccountingRegisterSelection', category: 'Selection' },
-    { prefix: 'AccountingRegisterList', category: 'List' },
-    { prefix: 'AccountingRegisterManager', category: 'Manager' },
-  ],
-  CalculationRegister: [
-    { prefix: 'CalculationRegisterRecord', category: 'Record' },
-    { prefix: 'CalculationRegisterManager', category: 'Manager' },
-    { prefix: 'CalculationRegisterSelection', category: 'Selection' },
-    { prefix: 'CalculationRegisterList', category: 'List' },
-    { prefix: 'CalculationRegisterRecordSet', category: 'RecordSet' },
-    { prefix: 'CalculationRegisterRecordKey', category: 'RecordKey' },
-    { prefix: 'RecalculationsManager', category: 'Recalcs' },
-  ],
-  ChartOfAccounts: [
-    { prefix: 'ChartOfAccountsObject', category: 'Object' },
-    { prefix: 'ChartOfAccountsRef', category: 'Ref' },
-    { prefix: 'ChartOfAccountsSelection', category: 'Selection' },
-    { prefix: 'ChartOfAccountsList', category: 'List' },
-    { prefix: 'ChartOfAccountsManager', category: 'Manager' },
-    { prefix: 'ChartOfAccountsExtDimensionTypes', category: 'ExtDimensionTypes' },
-    { prefix: 'ChartOfAccountsExtDimensionTypesRow', category: 'ExtDimensionTypesRow' },
-  ],
-  ChartOfCharacteristicTypes: [
-    { prefix: 'ChartOfCharacteristicTypesObject', category: 'Object' },
-    { prefix: 'ChartOfCharacteristicTypesRef', category: 'Ref' },
-    { prefix: 'ChartOfCharacteristicTypesSelection', category: 'Selection' },
-    { prefix: 'ChartOfCharacteristicTypesList', category: 'List' },
-    { prefix: 'ChartOfCharacteristicTypesCharacteristic', category: 'Characteristic' },
-    { prefix: 'ChartOfCharacteristicTypesManager', category: 'Manager' },
-  ],
-  ChartOfCalculationTypes: [
-    { prefix: 'ChartOfCalculationTypesObject', category: 'Object' },
-    { prefix: 'ChartOfCalculationTypesRef', category: 'Ref' },
-    { prefix: 'ChartOfCalculationTypesSelection', category: 'Selection' },
-    { prefix: 'ChartOfCalculationTypesList', category: 'List' },
-    { prefix: 'ChartOfCalculationTypesManager', category: 'Manager' },
-    { prefix: 'DisplacingCalculationTypes', category: 'DisplacingCalculationTypes' },
-    { prefix: 'DisplacingCalculationTypesRow', category: 'DisplacingCalculationTypesRow' },
-    { prefix: 'BaseCalculationTypes', category: 'BaseCalculationTypes' },
-    { prefix: 'BaseCalculationTypesRow', category: 'BaseCalculationTypesRow' },
-    { prefix: 'LeadingCalculationTypes', category: 'LeadingCalculationTypes' },
-    { prefix: 'LeadingCalculationTypesRow', category: 'LeadingCalculationTypesRow' },
-  ],
-  BusinessProcess: [
-    { prefix: 'BusinessProcessObject', category: 'Object' },
-    { prefix: 'BusinessProcessRef', category: 'Ref' },
-    { prefix: 'BusinessProcessSelection', category: 'Selection' },
-    { prefix: 'BusinessProcessList', category: 'List' },
-    { prefix: 'BusinessProcessManager', category: 'Manager' },
-    { prefix: 'BusinessProcessRoutePointRef', category: 'RoutePointRef' },
-  ],
-  Task: [
-    { prefix: 'TaskObject', category: 'Object' },
-    { prefix: 'TaskRef', category: 'Ref' },
-    { prefix: 'TaskSelection', category: 'Selection' },
-    { prefix: 'TaskList', category: 'List' },
-    { prefix: 'TaskManager', category: 'Manager' },
-  ],
-  ExchangePlan: [
-    { prefix: 'ExchangePlanObject', category: 'Object' },
-    { prefix: 'ExchangePlanRef', category: 'Ref' },
-    { prefix: 'ExchangePlanSelection', category: 'Selection' },
-    { prefix: 'ExchangePlanList', category: 'List' },
-    { prefix: 'ExchangePlanManager', category: 'Manager' },
-  ],
-  DefinedType: [
-    { prefix: 'DefinedType', category: 'DefinedType' },
-  ],
-  DocumentJournal: [
-    { prefix: 'DocumentJournalSelection', category: 'Selection' },
-    { prefix: 'DocumentJournalList', category: 'List' },
-    { prefix: 'DocumentJournalManager', category: 'Manager' },
-  ],
-  Report: [
-    { prefix: 'ReportObject', category: 'Object' },
-    { prefix: 'ReportManager', category: 'Manager' },
-  ],
-  DataProcessor: [
-    { prefix: 'DataProcessorObject', category: 'Object' },
-    { prefix: 'DataProcessorManager', category: 'Manager' },
-  ],
-};
 
 export interface AddRootMetadataOptions {
   configRoot: string;
@@ -205,8 +69,9 @@ export class MetadataXmlCreator {
 
     fs.mkdirSync(typeDir, { recursive: true });
     const formatVersion = resolveConfigFormatVersion(options.configRoot);
+    const ruleset = resolveFormatRuleset(formatVersion);
     const templateType = options.kind === 'CommonTemplate' ? resolveTemplateType(options.templateType) : undefined;
-    fs.writeFileSync(xmlPath, buildRootObjectXml(options.kind, options.name, formatVersion, templateType), 'utf-8');
+    fs.writeFileSync(xmlPath, buildRootObjectXml(options.kind, options.name, formatVersion, ruleset, templateType), 'utf-8');
 
     const changedFiles = [xmlPath];
     if (options.kind === 'CommonTemplate') {
@@ -255,26 +120,27 @@ export class MetadataXmlCreator {
       return fail(`Не найден XML владельца: ${options.ownerObjectXmlPath}`);
     }
 
+    const formatVersion = resolveObjectFormatVersion(options.ownerObjectXmlPath);
+    const ruleset = resolveFormatRuleset(formatVersion);
     const xml = fs.readFileSync(options.ownerObjectXmlPath, 'utf-8');
-    const nextXml = addChildToObjectXml(xml, options);
+    const nextXml = addChildToObjectXml(xml, options, ruleset);
     if (!nextXml.changed) {
       return fail(nextXml.error);
     }
 
     writeTextFilePreservingBomAndEol(options.ownerObjectXmlPath, xml, nextXml.xml);
-    const formatVersion = resolveObjectFormatVersion(options.ownerObjectXmlPath);
     const changedFiles = [options.ownerObjectXmlPath];
-    changedFiles.push(...ensureAuxiliaryChildFiles(options, formatVersion));
+    changedFiles.push(...ensureAuxiliaryChildFiles(options, formatVersion, ruleset));
     return ok(changedFiles);
   }
 }
 
-function addChildToObjectXml(xml: string, options: AddChildMetadataOptions): { changed: true; xml: string } | { changed: false; error: string } {
+function addChildToObjectXml(xml: string, options: AddChildMetadataOptions, ruleset: FormatRuleset): { changed: true; xml: string } | { changed: false; error: string } {
   if (options.childTag === 'Column') {
     if (!options.tabularSectionName) {
       return { changed: false, error: 'Не указана табличная часть для добавления колонки.' };
     }
-    return addColumnToTabularSectionXml(xml, options.tabularSectionName, options.name);
+    return addColumnToTabularSectionXml(xml, options.tabularSectionName, options.name, ruleset);
   }
 
   const ownerKind = extractMetadataObjectKind(xml);
@@ -292,7 +158,7 @@ function addChildToObjectXml(xml: string, options: AddChildMetadataOptions): { c
   const childObjectsInner = removeNestedSimpleChildReference(childObjects.inner, options.childTag, options.name);
   const indent = detectChildIndent(childObjectsInner, '\t\t\t');
   const ownerName = extractObjectName(xml);
-  const fragment = buildChildFragment(options.childTag, options.name, indent, ownerKind, ownerName);
+  const fragment = buildChildFragment(options.childTag, options.name, indent, ruleset, ownerKind, ownerName);
   const replacement = buildChildObjectsReplacement({ ...childObjects, inner: childObjectsInner }, fragment, indent);
   const nextXml = `${xml.slice(0, childObjects.start)}${replacement}${xml.slice(childObjects.end)}`;
   return {
@@ -301,7 +167,7 @@ function addChildToObjectXml(xml: string, options: AddChildMetadataOptions): { c
   };
 }
 
-function addColumnToTabularSectionXml(xml: string, tabularSectionName: string, columnName: string): { changed: true; xml: string } | { changed: false; error: string } {
+function addColumnToTabularSectionXml(xml: string, tabularSectionName: string, columnName: string, ruleset: FormatRuleset): { changed: true; xml: string } | { changed: false; error: string } {
   const section = findNamedChildBlock(xml, 'TabularSection', tabularSectionName);
   if (!section) {
     return { changed: false, error: `Табличная часть "${tabularSectionName}" не найдена.` };
@@ -316,7 +182,7 @@ function addColumnToTabularSectionXml(xml: string, tabularSectionName: string, c
   }
 
   const indent = detectChildIndent(childObjects.inner, '\t\t\t\t\t');
-  const fragment = buildTypedFieldFragment('Attribute', columnName, indent);
+  const fragment = buildTypedFieldFragment('Attribute', columnName, indent, ruleset);
   const replacement = buildChildObjectsReplacement(childObjects, fragment, indent);
   const nextSectionXml = `${sectionXml.slice(0, childObjects.start)}${replacement}${sectionXml.slice(childObjects.end)}`;
   return {
@@ -325,13 +191,13 @@ function addColumnToTabularSectionXml(xml: string, tabularSectionName: string, c
   };
 }
 
-function buildRootObjectXml(kind: MetaKind, name: string, formatVersion: string, templateType?: TemplateType): string {
+function buildRootObjectXml(kind: MetaKind, name: string, formatVersion: string, ruleset: FormatRuleset, templateType?: TemplateType): string {
   const parts = [
     '<?xml version="1.0" encoding="utf-8"?>',
-    `<MetaDataObject ${METADATA_OBJECT_XMLNS} version="${formatVersion}">`,
+    `<MetaDataObject ${ruleset.metaDataObjectXmlns} version="${formatVersion}">`,
     `\t<${kind} uuid="${newUuid()}">`,
-    buildInternalInfo(kind, name, '\t\t'),
-    `\t\t<Properties>${buildRootProperties(kind, name, templateType)}\n\t\t</Properties>`,
+    buildInternalInfo(kind, name, '\t\t', ruleset),
+    `\t\t<Properties>${buildRootProperties(kind, name, ruleset, templateType)}\n\t\t</Properties>`,
     needsChildObjects(kind) ? '\t\t<ChildObjects/>' : '',
     `\t</${kind}>`,
     '</MetaDataObject>',
@@ -340,35 +206,66 @@ function buildRootObjectXml(kind: MetaKind, name: string, formatVersion: string,
   return parts.join('\n');
 }
 
-function buildRootProperties(kind: MetaKind, name: string, templateType?: TemplateType): string {
+function buildRootProperties(kind: MetaKind, name: string, ruleset: FormatRuleset, templateType?: TemplateType): string {
   const base = [
     `\n\t\t\t<Name>${escapeXml(name)}</Name>`,
     buildLocalizedTag('\t\t\t', 'Synonym', splitCamelCase(name)),
     '\t\t\t<Comment/>',
   ];
 
+  const typeBlock = () => ruleset.buildDefaultTypeBlock('\t\t\t');
   switch (kind) {
     case 'Catalog':
       return [...base, ...buildCatalogProperties(name)].join('\n');
     case 'Document':
-    case 'BusinessProcess':
-    case 'Task':
-      return [...base, '\t\t\t<NumberLength>9</NumberLength>', '\t\t\t<NumberType>String</NumberType>'].join('\n');
-    case 'Constant':
-    case 'DefinedType':
-    case 'CommonAttribute':
-    case 'SessionParameter':
-      return [...base, buildStringType('\t\t\t')].join('\n');
-    case 'CommonModule':
-      return [...base, '\t\t\t<Global>false</Global>', '\t\t\t<ClientManagedApplication>true</ClientManagedApplication>', '\t\t\t<Server>true</Server>'].join('\n');
-    case 'ScheduledJob':
-      return [...base, '\t\t\t<MethodName/>', '\t\t\t<Use>false</Use>', '\t\t\t<Predefined>false</Predefined>'].join('\n');
+      return [...base, ...buildDocumentProperties()].join('\n');
+    case 'DocumentJournal':
+      return [...base, ...buildDocumentJournalProperties()].join('\n');
+    case 'Enum':
+      return [...base, ...buildEnumProperties()].join('\n');
     case 'InformationRegister':
-      return [...base, '\t\t\t<Periodicity>Nonperiodical</Periodicity>', '\t\t\t<WriteMode>Independent</WriteMode>'].join('\n');
+      return [...base, ...buildInformationRegisterProperties()].join('\n');
     case 'AccumulationRegister':
-      return [...base, '\t\t\t<RegisterType>Balance</RegisterType>'].join('\n');
-    case 'Role':
-      return [...base, '\t\t\t<SetForNewObjects>false</SetForNewObjects>', '\t\t\t<SetForAttributesByDefault>true</SetForAttributesByDefault>', '\t\t\t<IndependentRightsOfChildObjects>false</IndependentRightsOfChildObjects>'].join('\n');
+      return [...base, ...buildAccumulationRegisterProperties()].join('\n');
+    case 'AccountingRegister':
+      return [...base, ...buildAccountingRegisterProperties()].join('\n');
+    case 'ChartOfAccounts':
+      return [...base, ...buildChartOfAccountsProperties(name)].join('\n');
+    case 'ChartOfCharacteristicTypes':
+      return [...base, ...buildChartOfCharacteristicTypesProperties(name)].join('\n');
+    case 'ChartOfCalculationTypes':
+      return [...base, ...buildChartOfCalculationTypesProperties(name)].join('\n');
+    case 'BusinessProcess':
+      return [...base, ...buildBusinessProcessProperties(name)].join('\n');
+    case 'Task':
+      return [...base, ...buildTaskProperties(name)].join('\n');
+    case 'ExchangePlan':
+      return [...base, ...buildExchangePlanProperties()].join('\n');
+    case 'Report':
+      return [...base, ...buildReportProperties()].join('\n');
+    case 'DataProcessor':
+      return [...base, ...buildDataProcessorProperties()].join('\n');
+    case 'Constant':
+      return [...base, typeBlock(), ...buildConstantPropertiesAfterType()].join('\n');
+    case 'CommonAttribute':
+      return [...base, typeBlock(), ...buildCommonAttributePropertiesAfterType()].join('\n');
+    case 'DefinedType':
+    case 'SessionParameter':
+      return [...base, typeBlock()].join('\n');
+    case 'CommonModule':
+      return [...base, ...buildCommonModuleProperties()].join('\n');
+    case 'ScheduledJob':
+      return [...base, ...buildScheduledJobProperties()].join('\n');
+    case 'Subsystem':
+      return [...base, ...buildSubsystemProperties()].join('\n');
+    case 'CommonCommand':
+      return [...base, ...buildCommonCommandProperties()].join('\n');
+    case 'HTTPService':
+      return [...base, ...buildHttpServiceProperties()].join('\n');
+    case 'WebService':
+      return [...base, ...buildWebServiceProperties()].join('\n');
+    case 'FunctionalOption':
+      return [...base, ...buildFunctionalOptionProperties()].join('\n');
     case 'CommonTemplate':
       return [...base, `\t\t\t<TemplateType>${escapeXml(resolveTemplateType(templateType))}</TemplateType>`].join('\n');
     default:
@@ -434,10 +331,608 @@ function buildCatalogProperties(name: string): string[] {
   ];
 }
 
+function buildReportProperties(): string[] {
+  return [
+    '\t\t\t<UseStandardCommands>false</UseStandardCommands>',
+    '\t\t\t<DefaultForm/>',
+    '\t\t\t<AuxiliaryForm/>',
+    '\t\t\t<MainDataCompositionSchema/>',
+    '\t\t\t<DefaultSettingsForm/>',
+    '\t\t\t<AuxiliarySettingsForm/>',
+    '\t\t\t<DefaultVariantForm/>',
+    '\t\t\t<AuxiliaryVariantForm/>',
+    '\t\t\t<VariantsStorage/>',
+    '\t\t\t<SettingsStorage/>',
+    '\t\t\t<IncludeHelpInContents>false</IncludeHelpInContents>',
+    '\t\t\t<ExtendedPresentation/>',
+    '\t\t\t<Explanation/>',
+  ];
+}
+
+function buildDataProcessorProperties(): string[] {
+  return [
+    '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
+    '\t\t\t<DefaultForm/>',
+    '\t\t\t<AuxiliaryForm/>',
+    '\t\t\t<IncludeHelpInContents>false</IncludeHelpInContents>',
+    '\t\t\t<ExtendedPresentation/>',
+    '\t\t\t<Explanation/>',
+  ];
+}
+
+/** Свойства константы после блока `<Type>` (его добавляет вызывающий через ruleset). */
+function buildConstantPropertiesAfterType(): string[] {
+  return [
+    '\t\t\t<UseStandardCommands>false</UseStandardCommands>',
+    '\t\t\t<DefaultForm/>',
+    '\t\t\t<ExtendedPresentation/>',
+    '\t\t\t<Explanation/>',
+    '\t\t\t<PasswordMode>false</PasswordMode>',
+    '\t\t\t<Format/>',
+    '\t\t\t<EditFormat/>',
+    '\t\t\t<ToolTip/>',
+    '\t\t\t<MarkNegatives>false</MarkNegatives>',
+    '\t\t\t<Mask/>',
+    '\t\t\t<MultiLine>false</MultiLine>',
+    '\t\t\t<ExtendedEdit>false</ExtendedEdit>',
+    '\t\t\t<MinValue xsi:nil="true"/>',
+    '\t\t\t<MaxValue xsi:nil="true"/>',
+    '\t\t\t<FillChecking>DontCheck</FillChecking>',
+    '\t\t\t<ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>',
+    '\t\t\t<ChoiceParameterLinks/>',
+    '\t\t\t<ChoiceParameters/>',
+    '\t\t\t<QuickChoice>Auto</QuickChoice>',
+    '\t\t\t<ChoiceForm/>',
+    '\t\t\t<LinkByType/>',
+    '\t\t\t<ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>',
+    '\t\t\t<DataLockControlMode>Managed</DataLockControlMode>',
+    '\t\t\t<DataHistory>DontUse</DataHistory>',
+    '\t\t\t<UpdateDataHistoryImmediatelyAfterWrite>false</UpdateDataHistoryImmediatelyAfterWrite>',
+    '\t\t\t<ExecuteAfterWriteDataHistoryVersionProcessing>false</ExecuteAfterWriteDataHistoryVersionProcessing>',
+  ];
+}
+
+function buildDocumentProperties(): string[] {
+  return [
+    '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
+    '\t\t\t<Numerator/>',
+    '\t\t\t<NumberType>String</NumberType>',
+    '\t\t\t<NumberLength>9</NumberLength>',
+    '\t\t\t<NumberAllowedLength>Variable</NumberAllowedLength>',
+    '\t\t\t<NumberPeriodicity>Nonperiodical</NumberPeriodicity>',
+    '\t\t\t<CheckUnique>true</CheckUnique>',
+    '\t\t\t<Autonumbering>true</Autonumbering>',
+    '\t\t\t<Characteristics/>',
+    '\t\t\t<BasedOn/>',
+    '\t\t\t<InputByString/>',
+    '\t\t\t<CreateOnInput>Use</CreateOnInput>',
+    '\t\t\t<SearchStringModeOnInputByString>Begin</SearchStringModeOnInputByString>',
+    '\t\t\t<FullTextSearchOnInputByString>DontUse</FullTextSearchOnInputByString>',
+    '\t\t\t<ChoiceDataGetModeOnInputByString>Directly</ChoiceDataGetModeOnInputByString>',
+    '\t\t\t<DefaultObjectForm/>',
+    '\t\t\t<DefaultListForm/>',
+    '\t\t\t<DefaultChoiceForm/>',
+    '\t\t\t<AuxiliaryObjectForm/>',
+    '\t\t\t<AuxiliaryListForm/>',
+    '\t\t\t<AuxiliaryChoiceForm/>',
+    '\t\t\t<Posting>Allow</Posting>',
+    '\t\t\t<RealTimePosting>Deny</RealTimePosting>',
+    '\t\t\t<RegisterRecordsDeletion>AutoDeleteOff</RegisterRecordsDeletion>',
+    '\t\t\t<RegisterRecordsWritingOnPost>WriteModified</RegisterRecordsWritingOnPost>',
+    '\t\t\t<SequenceFilling>AutoFill</SequenceFilling>',
+    '\t\t\t<RegisterRecords/>',
+    '\t\t\t<PostInPrivilegedMode>false</PostInPrivilegedMode>',
+    '\t\t\t<UnpostInPrivilegedMode>false</UnpostInPrivilegedMode>',
+    '\t\t\t<IncludeHelpInContents>false</IncludeHelpInContents>',
+    '\t\t\t<DataLockFields/>',
+    '\t\t\t<DataLockControlMode>Automatic</DataLockControlMode>',
+    '\t\t\t<FullTextSearch>Use</FullTextSearch>',
+    '\t\t\t<ObjectPresentation/>',
+    '\t\t\t<ExtendedObjectPresentation/>',
+    '\t\t\t<ListPresentation/>',
+    '\t\t\t<ExtendedListPresentation/>',
+    '\t\t\t<Explanation/>',
+    '\t\t\t<ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>',
+    '\t\t\t<DataHistory>DontUse</DataHistory>',
+    '\t\t\t<UpdateDataHistoryImmediatelyAfterWrite>false</UpdateDataHistoryImmediatelyAfterWrite>',
+    '\t\t\t<ExecuteAfterWriteDataHistoryVersionProcessing>false</ExecuteAfterWriteDataHistoryVersionProcessing>',
+  ];
+}
+
+function buildDocumentJournalProperties(): string[] {
+  return [
+    '\t\t\t<DefaultForm/>',
+    '\t\t\t<AuxiliaryForm/>',
+    '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
+    '\t\t\t<RegisteredDocuments/>',
+    '\t\t\t<IncludeHelpInContents>false</IncludeHelpInContents>',
+    '\t\t\t<ListPresentation/>',
+    '\t\t\t<ExtendedListPresentation/>',
+    '\t\t\t<Explanation/>',
+  ];
+}
+
+function buildEnumProperties(): string[] {
+  return [
+    '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
+    '\t\t\t<Characteristics/>',
+    '\t\t\t<QuickChoice>true</QuickChoice>',
+    '\t\t\t<ChoiceMode>BothWays</ChoiceMode>',
+    '\t\t\t<DefaultListForm/>',
+    '\t\t\t<DefaultChoiceForm/>',
+    '\t\t\t<AuxiliaryListForm/>',
+    '\t\t\t<AuxiliaryChoiceForm/>',
+    '\t\t\t<ListPresentation/>',
+    '\t\t\t<ExtendedListPresentation/>',
+    '\t\t\t<Explanation/>',
+    '\t\t\t<ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>',
+  ];
+}
+
+function buildInformationRegisterProperties(): string[] {
+  return [
+    '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
+    '\t\t\t<EditType>InDialog</EditType>',
+    '\t\t\t<DefaultRecordForm/>',
+    '\t\t\t<DefaultListForm/>',
+    '\t\t\t<AuxiliaryRecordForm/>',
+    '\t\t\t<AuxiliaryListForm/>',
+    '\t\t\t<InformationRegisterPeriodicity>Nonperiodical</InformationRegisterPeriodicity>',
+    '\t\t\t<WriteMode>Independent</WriteMode>',
+    '\t\t\t<MainFilterOnPeriod>false</MainFilterOnPeriod>',
+    '\t\t\t<IncludeHelpInContents>false</IncludeHelpInContents>',
+    '\t\t\t<DataLockControlMode>Managed</DataLockControlMode>',
+    '\t\t\t<FullTextSearch>DontUse</FullTextSearch>',
+    '\t\t\t<EnableTotalsSliceFirst>false</EnableTotalsSliceFirst>',
+    '\t\t\t<EnableTotalsSliceLast>false</EnableTotalsSliceLast>',
+    '\t\t\t<RecordPresentation/>',
+    '\t\t\t<ExtendedRecordPresentation/>',
+    '\t\t\t<ListPresentation/>',
+    '\t\t\t<ExtendedListPresentation/>',
+    '\t\t\t<Explanation/>',
+    '\t\t\t<DataHistory>DontUse</DataHistory>',
+    '\t\t\t<UpdateDataHistoryImmediatelyAfterWrite>false</UpdateDataHistoryImmediatelyAfterWrite>',
+    '\t\t\t<ExecuteAfterWriteDataHistoryVersionProcessing>false</ExecuteAfterWriteDataHistoryVersionProcessing>',
+  ];
+}
+
+function buildAccumulationRegisterProperties(): string[] {
+  return [
+    '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
+    '\t\t\t<DefaultListForm/>',
+    '\t\t\t<AuxiliaryListForm/>',
+    '\t\t\t<RegisterType>Balance</RegisterType>',
+    '\t\t\t<IncludeHelpInContents>false</IncludeHelpInContents>',
+    '\t\t\t<DataLockControlMode>Managed</DataLockControlMode>',
+    '\t\t\t<FullTextSearch>DontUse</FullTextSearch>',
+    '\t\t\t<EnableTotalsSplitting>false</EnableTotalsSplitting>',
+    '\t\t\t<ListPresentation/>',
+    '\t\t\t<ExtendedListPresentation/>',
+    '\t\t\t<Explanation/>',
+  ];
+}
+
+function buildAccountingRegisterProperties(): string[] {
+  return [
+    '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
+    '\t\t\t<IncludeHelpInContents>false</IncludeHelpInContents>',
+    '\t\t\t<ChartOfAccounts/>',
+    '\t\t\t<Correspondence>true</Correspondence>',
+    '\t\t\t<PeriodAdjustmentLength>0</PeriodAdjustmentLength>',
+    '\t\t\t<DefaultListForm/>',
+    '\t\t\t<AuxiliaryListForm/>',
+    '\t\t\t<DataLockControlMode>Managed</DataLockControlMode>',
+    '\t\t\t<EnableTotalsSplitting>false</EnableTotalsSplitting>',
+    '\t\t\t<FullTextSearch>DontUse</FullTextSearch>',
+    '\t\t\t<ListPresentation/>',
+    '\t\t\t<ExtendedListPresentation/>',
+    '\t\t\t<Explanation/>',
+  ];
+}
+
+function buildChartOfAccountsProperties(name: string): string[] {
+  return [
+    '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
+    '\t\t\t<IncludeHelpInContents>false</IncludeHelpInContents>',
+    '\t\t\t<BasedOn/>',
+    '\t\t\t<ExtDimensionTypes/>',
+    '\t\t\t<MaxExtDimensionCount>0</MaxExtDimensionCount>',
+    '\t\t\t<CodeMask/>',
+    '\t\t\t<CodeLength>0</CodeLength>',
+    '\t\t\t<DescriptionLength>25</DescriptionLength>',
+    '\t\t\t<CodeSeries>WholeChartOfAccounts</CodeSeries>',
+    '\t\t\t<CheckUnique>true</CheckUnique>',
+    '\t\t\t<DefaultPresentation>AsDescription</DefaultPresentation>',
+    '\t\t\t<Characteristics/>',
+    '\t\t\t<PredefinedDataUpdate>Auto</PredefinedDataUpdate>',
+    '\t\t\t<EditType>InDialog</EditType>',
+    '\t\t\t<QuickChoice>false</QuickChoice>',
+    '\t\t\t<ChoiceMode>BothWays</ChoiceMode>',
+    '\t\t\t<InputByString>',
+    `\t\t\t\t<xr:Field>ChartOfAccounts.${escapeXml(name)}.StandardAttribute.Description</xr:Field>`,
+    `\t\t\t\t<xr:Field>ChartOfAccounts.${escapeXml(name)}.StandardAttribute.Code</xr:Field>`,
+    '\t\t\t</InputByString>',
+    '\t\t\t<SearchStringModeOnInputByString>Begin</SearchStringModeOnInputByString>',
+    '\t\t\t<FullTextSearchOnInputByString>DontUse</FullTextSearchOnInputByString>',
+    '\t\t\t<ChoiceDataGetModeOnInputByString>Directly</ChoiceDataGetModeOnInputByString>',
+    '\t\t\t<CreateOnInput>DontUse</CreateOnInput>',
+    '\t\t\t<ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>',
+    '\t\t\t<DefaultObjectForm/>',
+    '\t\t\t<DefaultListForm/>',
+    '\t\t\t<DefaultChoiceForm/>',
+    '\t\t\t<AuxiliaryObjectForm/>',
+    '\t\t\t<AuxiliaryListForm/>',
+    '\t\t\t<AuxiliaryChoiceForm/>',
+    '\t\t\t<AutoOrderByCode>false</AutoOrderByCode>',
+    '\t\t\t<OrderLength>0</OrderLength>',
+    '\t\t\t<DataLockFields/>',
+    '\t\t\t<DataLockControlMode>Managed</DataLockControlMode>',
+    '\t\t\t<FullTextSearch>Use</FullTextSearch>',
+    '\t\t\t<DataHistory>DontUse</DataHistory>',
+    '\t\t\t<UpdateDataHistoryImmediatelyAfterWrite>false</UpdateDataHistoryImmediatelyAfterWrite>',
+    '\t\t\t<ExecuteAfterWriteDataHistoryVersionProcessing>false</ExecuteAfterWriteDataHistoryVersionProcessing>',
+    '\t\t\t<ObjectPresentation/>',
+    '\t\t\t<ExtendedObjectPresentation/>',
+    '\t\t\t<ListPresentation/>',
+    '\t\t\t<ExtendedListPresentation/>',
+    '\t\t\t<Explanation/>',
+  ];
+}
+
+function buildChartOfCharacteristicTypesProperties(name: string): string[] {
+  return [
+    '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
+    '\t\t\t<IncludeHelpInContents>false</IncludeHelpInContents>',
+    '\t\t\t<CharacteristicExtValues/>',
+    '\t\t\t<Type/>',
+    '\t\t\t<Hierarchical>false</Hierarchical>',
+    '\t\t\t<FoldersOnTop>true</FoldersOnTop>',
+    '\t\t\t<CodeLength>0</CodeLength>',
+    '\t\t\t<CodeAllowedLength>Variable</CodeAllowedLength>',
+    '\t\t\t<DescriptionLength>25</DescriptionLength>',
+    '\t\t\t<CodeSeries>WholeCharacteristicKind</CodeSeries>',
+    '\t\t\t<CheckUnique>true</CheckUnique>',
+    '\t\t\t<Autonumbering>true</Autonumbering>',
+    '\t\t\t<DefaultPresentation>AsDescription</DefaultPresentation>',
+    '\t\t\t<Characteristics/>',
+    '\t\t\t<PredefinedDataUpdate>Auto</PredefinedDataUpdate>',
+    '\t\t\t<EditType>InDialog</EditType>',
+    '\t\t\t<QuickChoice>false</QuickChoice>',
+    '\t\t\t<ChoiceMode>BothWays</ChoiceMode>',
+    '\t\t\t<InputByString>',
+    `\t\t\t\t<xr:Field>ChartOfCharacteristicTypes.${escapeXml(name)}.StandardAttribute.Description</xr:Field>`,
+    `\t\t\t\t<xr:Field>ChartOfCharacteristicTypes.${escapeXml(name)}.StandardAttribute.Code</xr:Field>`,
+    '\t\t\t</InputByString>',
+    '\t\t\t<CreateOnInput>DontUse</CreateOnInput>',
+    '\t\t\t<SearchStringModeOnInputByString>Begin</SearchStringModeOnInputByString>',
+    '\t\t\t<ChoiceDataGetModeOnInputByString>Directly</ChoiceDataGetModeOnInputByString>',
+    '\t\t\t<FullTextSearchOnInputByString>DontUse</FullTextSearchOnInputByString>',
+    '\t\t\t<ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>',
+    '\t\t\t<DefaultObjectForm/>',
+    '\t\t\t<DefaultFolderForm/>',
+    '\t\t\t<DefaultListForm/>',
+    '\t\t\t<DefaultChoiceForm/>',
+    '\t\t\t<DefaultFolderChoiceForm/>',
+    '\t\t\t<AuxiliaryObjectForm/>',
+    '\t\t\t<AuxiliaryFolderForm/>',
+    '\t\t\t<AuxiliaryListForm/>',
+    '\t\t\t<AuxiliaryChoiceForm/>',
+    '\t\t\t<AuxiliaryFolderChoiceForm/>',
+    '\t\t\t<BasedOn/>',
+    '\t\t\t<DataLockFields/>',
+    '\t\t\t<DataLockControlMode>Managed</DataLockControlMode>',
+    '\t\t\t<FullTextSearch>Use</FullTextSearch>',
+    '\t\t\t<ObjectPresentation/>',
+    '\t\t\t<ExtendedObjectPresentation/>',
+    '\t\t\t<ListPresentation/>',
+    '\t\t\t<ExtendedListPresentation/>',
+    '\t\t\t<Explanation/>',
+    '\t\t\t<DataHistory>DontUse</DataHistory>',
+    '\t\t\t<UpdateDataHistoryImmediatelyAfterWrite>false</UpdateDataHistoryImmediatelyAfterWrite>',
+    '\t\t\t<ExecuteAfterWriteDataHistoryVersionProcessing>false</ExecuteAfterWriteDataHistoryVersionProcessing>',
+  ];
+}
+
+function buildChartOfCalculationTypesProperties(name: string): string[] {
+  return [
+    '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
+    '\t\t\t<CodeLength>5</CodeLength>',
+    '\t\t\t<DescriptionLength>100</DescriptionLength>',
+    '\t\t\t<CodeType>String</CodeType>',
+    '\t\t\t<CodeAllowedLength>Variable</CodeAllowedLength>',
+    '\t\t\t<DefaultPresentation>AsDescription</DefaultPresentation>',
+    '\t\t\t<EditType>InDialog</EditType>',
+    '\t\t\t<QuickChoice>false</QuickChoice>',
+    '\t\t\t<ChoiceMode>BothWays</ChoiceMode>',
+    '\t\t\t<InputByString>',
+    `\t\t\t\t<xr:Field>ChartOfCalculationTypes.${escapeXml(name)}.StandardAttribute.Description</xr:Field>`,
+    `\t\t\t\t<xr:Field>ChartOfCalculationTypes.${escapeXml(name)}.StandardAttribute.Code</xr:Field>`,
+    '\t\t\t</InputByString>',
+    '\t\t\t<SearchStringModeOnInputByString>Begin</SearchStringModeOnInputByString>',
+    '\t\t\t<FullTextSearchOnInputByString>DontUse</FullTextSearchOnInputByString>',
+    '\t\t\t<ChoiceDataGetModeOnInputByString>Directly</ChoiceDataGetModeOnInputByString>',
+    '\t\t\t<CreateOnInput>DontUse</CreateOnInput>',
+    '\t\t\t<ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>',
+    '\t\t\t<DefaultObjectForm/>',
+    '\t\t\t<DefaultListForm/>',
+    '\t\t\t<DefaultChoiceForm/>',
+    '\t\t\t<AuxiliaryObjectForm/>',
+    '\t\t\t<AuxiliaryListForm/>',
+    '\t\t\t<AuxiliaryChoiceForm/>',
+    '\t\t\t<BasedOn/>',
+    '\t\t\t<DependenceOnCalculationTypes>DontUse</DependenceOnCalculationTypes>',
+    '\t\t\t<BaseCalculationTypes/>',
+    '\t\t\t<ActionPeriodUse>false</ActionPeriodUse>',
+    '\t\t\t<Characteristics/>',
+    '\t\t\t<PredefinedDataUpdate>Auto</PredefinedDataUpdate>',
+    '\t\t\t<IncludeHelpInContents>false</IncludeHelpInContents>',
+    '\t\t\t<DataLockFields/>',
+    '\t\t\t<DataLockControlMode>Managed</DataLockControlMode>',
+    '\t\t\t<FullTextSearch>Use</FullTextSearch>',
+    '\t\t\t<ObjectPresentation/>',
+    '\t\t\t<ExtendedObjectPresentation/>',
+    '\t\t\t<ListPresentation/>',
+    '\t\t\t<ExtendedListPresentation/>',
+    '\t\t\t<Explanation/>',
+    '\t\t\t<DataHistory>DontUse</DataHistory>',
+    '\t\t\t<UpdateDataHistoryImmediatelyAfterWrite>false</UpdateDataHistoryImmediatelyAfterWrite>',
+    '\t\t\t<ExecuteAfterWriteDataHistoryVersionProcessing>false</ExecuteAfterWriteDataHistoryVersionProcessing>',
+  ];
+}
+
+function buildBusinessProcessProperties(name: string): string[] {
+  return [
+    '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
+    '\t\t\t<EditType>InDialog</EditType>',
+    '\t\t\t<InputByString>',
+    `\t\t\t\t<xr:Field>BusinessProcess.${escapeXml(name)}.StandardAttribute.Number</xr:Field>`,
+    '\t\t\t</InputByString>',
+    '\t\t\t<CreateOnInput>DontUse</CreateOnInput>',
+    '\t\t\t<SearchStringModeOnInputByString>Begin</SearchStringModeOnInputByString>',
+    '\t\t\t<ChoiceDataGetModeOnInputByString>Directly</ChoiceDataGetModeOnInputByString>',
+    '\t\t\t<FullTextSearchOnInputByString>DontUse</FullTextSearchOnInputByString>',
+    '\t\t\t<DefaultObjectForm/>',
+    '\t\t\t<DefaultListForm/>',
+    '\t\t\t<DefaultChoiceForm/>',
+    '\t\t\t<AuxiliaryObjectForm/>',
+    '\t\t\t<AuxiliaryListForm/>',
+    '\t\t\t<AuxiliaryChoiceForm/>',
+    '\t\t\t<ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>',
+    '\t\t\t<NumberType>String</NumberType>',
+    '\t\t\t<NumberLength>11</NumberLength>',
+    '\t\t\t<NumberAllowedLength>Variable</NumberAllowedLength>',
+    '\t\t\t<CheckUnique>true</CheckUnique>',
+    '\t\t\t<Characteristics/>',
+    '\t\t\t<Autonumbering>true</Autonumbering>',
+    '\t\t\t<BasedOn/>',
+    '\t\t\t<NumberPeriodicity>Nonperiodical</NumberPeriodicity>',
+    '\t\t\t<Task/>',
+    '\t\t\t<CreateTaskInPrivilegedMode>true</CreateTaskInPrivilegedMode>',
+    '\t\t\t<DataLockFields/>',
+    '\t\t\t<DataLockControlMode>Managed</DataLockControlMode>',
+    '\t\t\t<IncludeHelpInContents>true</IncludeHelpInContents>',
+    '\t\t\t<FullTextSearch>Use</FullTextSearch>',
+    '\t\t\t<ObjectPresentation/>',
+    '\t\t\t<ExtendedObjectPresentation/>',
+    '\t\t\t<ListPresentation/>',
+    '\t\t\t<ExtendedListPresentation/>',
+    '\t\t\t<Explanation/>',
+    '\t\t\t<DataHistory>DontUse</DataHistory>',
+    '\t\t\t<UpdateDataHistoryImmediatelyAfterWrite>false</UpdateDataHistoryImmediatelyAfterWrite>',
+    '\t\t\t<ExecuteAfterWriteDataHistoryVersionProcessing>false</ExecuteAfterWriteDataHistoryVersionProcessing>',
+  ];
+}
+
+function buildTaskProperties(name: string): string[] {
+  return [
+    '\t\t\t<UseStandardCommands>false</UseStandardCommands>',
+    '\t\t\t<NumberType>String</NumberType>',
+    '\t\t\t<NumberLength>14</NumberLength>',
+    '\t\t\t<NumberAllowedLength>Fixed</NumberAllowedLength>',
+    '\t\t\t<CheckUnique>true</CheckUnique>',
+    '\t\t\t<Autonumbering>true</Autonumbering>',
+    '\t\t\t<TaskNumberAutoPrefix>BusinessProcessNumber</TaskNumberAutoPrefix>',
+    '\t\t\t<DescriptionLength>150</DescriptionLength>',
+    '\t\t\t<Addressing/>',
+    '\t\t\t<MainAddressingAttribute/>',
+    '\t\t\t<CurrentPerformer/>',
+    '\t\t\t<BasedOn/>',
+    '\t\t\t<Characteristics/>',
+    '\t\t\t<DefaultPresentation>AsDescription</DefaultPresentation>',
+    '\t\t\t<EditType>InDialog</EditType>',
+    '\t\t\t<InputByString>',
+    `\t\t\t\t<xr:Field>Task.${escapeXml(name)}.StandardAttribute.Description</xr:Field>`,
+    `\t\t\t\t<xr:Field>Task.${escapeXml(name)}.StandardAttribute.Number</xr:Field>`,
+    '\t\t\t</InputByString>',
+    '\t\t\t<SearchStringModeOnInputByString>Begin</SearchStringModeOnInputByString>',
+    '\t\t\t<FullTextSearchOnInputByString>DontUse</FullTextSearchOnInputByString>',
+    '\t\t\t<ChoiceDataGetModeOnInputByString>Directly</ChoiceDataGetModeOnInputByString>',
+    '\t\t\t<CreateOnInput>DontUse</CreateOnInput>',
+    '\t\t\t<DefaultObjectForm/>',
+    '\t\t\t<DefaultListForm/>',
+    '\t\t\t<DefaultChoiceForm/>',
+    '\t\t\t<AuxiliaryObjectForm/>',
+    '\t\t\t<AuxiliaryListForm/>',
+    '\t\t\t<AuxiliaryChoiceForm/>',
+    '\t\t\t<ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>',
+    '\t\t\t<IncludeHelpInContents>true</IncludeHelpInContents>',
+    '\t\t\t<DataLockFields/>',
+    '\t\t\t<DataLockControlMode>Managed</DataLockControlMode>',
+    '\t\t\t<FullTextSearch>Use</FullTextSearch>',
+    '\t\t\t<ObjectPresentation/>',
+    '\t\t\t<ExtendedObjectPresentation/>',
+    '\t\t\t<ListPresentation/>',
+    '\t\t\t<ExtendedListPresentation/>',
+    '\t\t\t<Explanation/>',
+    '\t\t\t<DataHistory>DontUse</DataHistory>',
+    '\t\t\t<UpdateDataHistoryImmediatelyAfterWrite>false</UpdateDataHistoryImmediatelyAfterWrite>',
+    '\t\t\t<ExecuteAfterWriteDataHistoryVersionProcessing>false</ExecuteAfterWriteDataHistoryVersionProcessing>',
+  ];
+}
+
+function buildExchangePlanProperties(): string[] {
+  return [
+    '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
+    '\t\t\t<CodeLength>9</CodeLength>',
+    '\t\t\t<CodeAllowedLength>Variable</CodeAllowedLength>',
+    '\t\t\t<DescriptionLength>25</DescriptionLength>',
+    '\t\t\t<DefaultPresentation>AsDescription</DefaultPresentation>',
+    '\t\t\t<EditType>InDialog</EditType>',
+    '\t\t\t<QuickChoice>false</QuickChoice>',
+    '\t\t\t<ChoiceMode>BothWays</ChoiceMode>',
+    '\t\t\t<InputByString/>',
+    '\t\t\t<SearchStringModeOnInputByString>Begin</SearchStringModeOnInputByString>',
+    '\t\t\t<FullTextSearchOnInputByString>DontUse</FullTextSearchOnInputByString>',
+    '\t\t\t<ChoiceDataGetModeOnInputByString>Directly</ChoiceDataGetModeOnInputByString>',
+    '\t\t\t<DefaultObjectForm/>',
+    '\t\t\t<DefaultListForm/>',
+    '\t\t\t<DefaultChoiceForm/>',
+    '\t\t\t<AuxiliaryObjectForm/>',
+    '\t\t\t<AuxiliaryListForm/>',
+    '\t\t\t<AuxiliaryChoiceForm/>',
+    '\t\t\t<Characteristics/>',
+    '\t\t\t<BasedOn/>',
+    '\t\t\t<DistributedInfoBase>false</DistributedInfoBase>',
+    '\t\t\t<IncludeConfigurationExtensions>false</IncludeConfigurationExtensions>',
+    '\t\t\t<CreateOnInput>DontUse</CreateOnInput>',
+    '\t\t\t<ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>',
+    '\t\t\t<IncludeHelpInContents>false</IncludeHelpInContents>',
+    '\t\t\t<DataLockFields/>',
+    '\t\t\t<DataLockControlMode>Managed</DataLockControlMode>',
+    '\t\t\t<FullTextSearch>Use</FullTextSearch>',
+    '\t\t\t<ObjectPresentation/>',
+    '\t\t\t<ExtendedObjectPresentation/>',
+    '\t\t\t<ListPresentation/>',
+    '\t\t\t<ExtendedListPresentation/>',
+    '\t\t\t<Explanation/>',
+    '\t\t\t<DataHistory>DontUse</DataHistory>',
+    '\t\t\t<UpdateDataHistoryImmediatelyAfterWrite>false</UpdateDataHistoryImmediatelyAfterWrite>',
+    '\t\t\t<ExecuteAfterWriteDataHistoryVersionProcessing>false</ExecuteAfterWriteDataHistoryVersionProcessing>',
+  ];
+}
+
+function buildCommonModuleProperties(): string[] {
+  return [
+    '\t\t\t<Global>false</Global>',
+    '\t\t\t<ClientManagedApplication>true</ClientManagedApplication>',
+    '\t\t\t<Server>true</Server>',
+    '\t\t\t<ExternalConnection>false</ExternalConnection>',
+    '\t\t\t<ClientOrdinaryApplication>false</ClientOrdinaryApplication>',
+    '\t\t\t<ServerCall>false</ServerCall>',
+    '\t\t\t<Privileged>false</Privileged>',
+    '\t\t\t<ReturnValuesReuse>DontUse</ReturnValuesReuse>',
+  ];
+}
+
+/** Свойства общего реквизита после блока `<Type>` (его добавляет вызывающий через ruleset). */
+function buildCommonAttributePropertiesAfterType(): string[] {
+  return [
+    '\t\t\t<PasswordMode>false</PasswordMode>',
+    '\t\t\t<Format/>',
+    '\t\t\t<EditFormat/>',
+    '\t\t\t<ToolTip/>',
+    '\t\t\t<MarkNegatives>false</MarkNegatives>',
+    '\t\t\t<Mask/>',
+    '\t\t\t<MultiLine>false</MultiLine>',
+    '\t\t\t<ExtendedEdit>false</ExtendedEdit>',
+    '\t\t\t<MinValue xsi:nil="true"/>',
+    '\t\t\t<MaxValue xsi:nil="true"/>',
+    '\t\t\t<FillFromFillingValue>false</FillFromFillingValue>',
+    '\t\t\t<FillValue xsi:type="xs:string"/>',
+    '\t\t\t<FillChecking>DontCheck</FillChecking>',
+    '\t\t\t<ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>',
+    '\t\t\t<ChoiceParameterLinks/>',
+    '\t\t\t<ChoiceParameters/>',
+    '\t\t\t<QuickChoice>Auto</QuickChoice>',
+    '\t\t\t<CreateOnInput>Auto</CreateOnInput>',
+    '\t\t\t<ChoiceForm/>',
+    '\t\t\t<LinkByType/>',
+    '\t\t\t<ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>',
+    '\t\t\t<Content/>',
+    '\t\t\t<AutoUse>DontUse</AutoUse>',
+    '\t\t\t<DataSeparation>DontUse</DataSeparation>',
+    '\t\t\t<SeparatedDataUse>Independently</SeparatedDataUse>',
+    '\t\t\t<DataSeparationValue/>',
+    '\t\t\t<DataSeparationUse/>',
+    '\t\t\t<ConditionalSeparation/>',
+    '\t\t\t<UsersSeparation>DontUse</UsersSeparation>',
+    '\t\t\t<AuthenticationSeparation>DontUse</AuthenticationSeparation>',
+    '\t\t\t<ConfigurationExtensionsSeparation>DontUse</ConfigurationExtensionsSeparation>',
+    '\t\t\t<Indexing>DontIndex</Indexing>',
+    '\t\t\t<FullTextSearch>Use</FullTextSearch>',
+    '\t\t\t<DataHistory>Use</DataHistory>',
+  ];
+}
+
+function buildScheduledJobProperties(): string[] {
+  return [
+    '\t\t\t<MethodName/>',
+    '\t\t\t<Description/>',
+    '\t\t\t<Key/>',
+    '\t\t\t<Use>false</Use>',
+    '\t\t\t<Predefined>false</Predefined>',
+    '\t\t\t<RestartCountOnFailure>0</RestartCountOnFailure>',
+    '\t\t\t<RestartIntervalOnFailure>0</RestartIntervalOnFailure>',
+  ];
+}
+
+function buildSubsystemProperties(): string[] {
+  return [
+    '\t\t\t<IncludeHelpInContents>true</IncludeHelpInContents>',
+    '\t\t\t<IncludeInCommandInterface>true</IncludeInCommandInterface>',
+    '\t\t\t<UseOneCommand>false</UseOneCommand>',
+    '\t\t\t<Explanation/>',
+    '\t\t\t<Picture/>',
+    '\t\t\t<Content/>',
+  ];
+}
+
+function buildCommonCommandProperties(): string[] {
+  return [
+    '\t\t\t<Group/>',
+    '\t\t\t<Representation>Auto</Representation>',
+    '\t\t\t<ToolTip/>',
+    '\t\t\t<Picture/>',
+    '\t\t\t<Shortcut/>',
+    '\t\t\t<IncludeHelpInContents>false</IncludeHelpInContents>',
+    '\t\t\t<CommandParameterType/>',
+    '\t\t\t<ParameterUseMode>Single</ParameterUseMode>',
+    '\t\t\t<ModifiesData>false</ModifiesData>',
+    '\t\t\t<OnMainServerUnavalableBehavior>Auto</OnMainServerUnavalableBehavior>',
+  ];
+}
+
+function buildHttpServiceProperties(): string[] {
+  return [
+    '\t\t\t<RootURL/>',
+    '\t\t\t<ReuseSessions>AutoUse</ReuseSessions>',
+    '\t\t\t<SessionMaxAge>20</SessionMaxAge>',
+  ];
+}
+
+function buildWebServiceProperties(): string[] {
+  return [
+    '\t\t\t<Namespace/>',
+    '\t\t\t<XDTOPackages/>',
+    '\t\t\t<DescriptorFileName/>',
+    '\t\t\t<ReuseSessions>AutoUse</ReuseSessions>',
+    '\t\t\t<SessionMaxAge>20</SessionMaxAge>',
+  ];
+}
+
+function buildFunctionalOptionProperties(): string[] {
+  return [
+    '\t\t\t<Location/>',
+    '\t\t\t<PrivilegedGetMode>true</PrivilegedGetMode>',
+    '\t\t\t<Content/>',
+  ];
+}
+
 function buildChildFragment(
   tag: ChildTag,
   name: string,
   indent: string,
+  ruleset: FormatRuleset,
   ownerKind?: string,
   ownerName?: string
 ): string {
@@ -445,10 +940,10 @@ function buildChildFragment(
     throw new Error('Стандартные реквизиты создаются платформой 1С и не добавляются вручную.');
   }
   if (tag === 'Attribute' || tag === 'AddressingAttribute' || tag === 'Dimension' || tag === 'Resource') {
-    return buildTypedFieldFragment(tag, name, indent);
+    return buildTypedFieldFragment(tag, name, indent, ruleset);
   }
   if (tag === 'TabularSection') {
-    return buildTabularSectionFragment(name, indent, ownerKind, ownerName);
+    return buildTabularSectionFragment(name, indent, ruleset, ownerKind, ownerName);
   }
   if (tag === 'Form') {
     return buildSimpleChildFragment('Form', name, indent, ['FormType>Managed']);
@@ -459,8 +954,8 @@ function buildChildFragment(
   return buildSimpleChildFragment(tag, name, indent);
 }
 
-function buildTypedFieldFragment(tag: 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource', name: string, indent: string): string {
-  const typeBlock = buildStringType(`${indent}\t\t`);
+function buildTypedFieldFragment(tag: 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource', name: string, indent: string, ruleset: FormatRuleset): string {
+  const typeBlock = ruleset.buildDefaultTypeBlock(`${indent}\t\t`);
   return [
     `${indent}<${tag} uuid="${newUuid()}">`,
     `${indent}\t<Properties>`,
@@ -468,16 +963,16 @@ function buildTypedFieldFragment(tag: 'Attribute' | 'AddressingAttribute' | 'Dim
     buildLocalizedTag(`${indent}\t\t`, 'Synonym', splitCamelCase(name)),
     `${indent}\t\t<Comment/>`,
     typeBlock,
-    ...buildTypedFieldPropertyBlocks(tag, typeBlock, `${indent}\t\t`),
+    ...ruleset.buildTypedFieldProperties(tag, typeBlock, `${indent}\t\t`),
     `${indent}\t</Properties>`,
     `${indent}</${tag}>`,
   ].join('\n');
 }
 
-function buildTabularSectionFragment(name: string, indent: string, ownerKind?: string, ownerName?: string): string {
+function buildTabularSectionFragment(name: string, indent: string, ruleset: FormatRuleset, ownerKind?: string, ownerName?: string): string {
   return [
     `${indent}<TabularSection uuid="${newUuid()}">`,
-    ownerKind && ownerName ? buildTabularSectionInternalInfo(ownerKind, ownerName, name, `${indent}\t`) : '',
+    ownerKind && ownerName ? buildTabularSectionInternalInfo(ownerKind, ownerName, name, `${indent}\t`, ruleset) : '',
     `${indent}\t<Properties>`,
     `${indent}\t\t<Name>${escapeXml(name)}</Name>`,
     buildLocalizedTag(`${indent}\t\t`, 'Synonym', splitCamelCase(name)),
@@ -488,8 +983,8 @@ function buildTabularSectionFragment(name: string, indent: string, ownerKind?: s
   ].filter((item) => item.length > 0).join('\n');
 }
 
-function buildInternalInfo(kind: MetaKind, objectName: string, indent: string): string {
-  const types = GENERATED_TYPES[kind];
+function buildInternalInfo(kind: MetaKind, objectName: string, indent: string, ruleset: FormatRuleset): string {
+  const types = ruleset.generatedTypes[kind];
   if (!types?.length) {
     return '';
   }
@@ -508,13 +1003,13 @@ function buildInternalInfo(kind: MetaKind, objectName: string, indent: string): 
   return lines.join('\n');
 }
 
-function buildTabularSectionInternalInfo(ownerKind: string, ownerName: string, sectionName: string, indent: string): string {
-  const typePrefix = `${ownerKind}TabularSection`;
-  const rowPrefix = `${ownerKind}TabularSectionRow`;
+function buildTabularSectionInternalInfo(ownerKind: string, ownerName: string, sectionName: string, indent: string, ruleset: FormatRuleset): string {
+  const generatedTypeLines = ruleset
+    .tabularSectionGeneratedTypes(ownerKind, ownerName, sectionName)
+    .flatMap((ref) => buildGeneratedTypeLines(ref.name, ref.category, `${indent}\t`));
   return [
     `${indent}<InternalInfo>`,
-    ...buildGeneratedTypeLines(`${typePrefix}.${ownerName}.${sectionName}`, 'TabularSection', `${indent}\t`),
-    ...buildGeneratedTypeLines(`${rowPrefix}.${ownerName}.${sectionName}`, 'TabularSectionRow', `${indent}\t`),
+    ...generatedTypeLines,
     `${indent}</InternalInfo>`,
   ].join('\n');
 }
@@ -644,7 +1139,7 @@ function updateMainDataCompositionSchemaIfNeeded(
   return xml.replace(openClose, `<MainDataCompositionSchema>${escapeXml(value)}</MainDataCompositionSchema>`);
 }
 
-function ensureAuxiliaryChildFiles(options: AddChildMetadataOptions, formatVersion: string): string[] {
+function ensureAuxiliaryChildFiles(options: AddChildMetadataOptions, formatVersion: string, ruleset: FormatRuleset): string[] {
   const loc = getObjectLocationFromXml(options.ownerObjectXmlPath);
   if (options.childTag === 'Command') {
     const commandModule = path.join(loc.objectDir, 'Commands', options.name, 'Ext', 'CommandModule.bsl');
@@ -666,7 +1161,7 @@ function ensureAuxiliaryChildFiles(options: AddChildMetadataOptions, formatVersi
     const changedFiles: string[] = [];
     fs.mkdirSync(path.dirname(templateXml), { recursive: true });
     if (!fs.existsSync(templateXml)) {
-      fs.writeFileSync(templateXml, buildTemplateXml(options.name, formatVersion, templateType), 'utf-8');
+      fs.writeFileSync(templateXml, buildTemplateXml(options.name, formatVersion, templateType, ruleset), 'utf-8');
       changedFiles.push(templateXml);
     }
     changedFiles.push(...ensureTemplateContentFiles(templateDir, templateType, formatVersion));
@@ -785,18 +1280,6 @@ function buildLocalizedTag(indent: string, tag: string, text: string): string {
   ].join('\n');
 }
 
-function buildStringType(indent: string): string {
-  return [
-    `${indent}<Type>`,
-    `${indent}\t<v8:Type>xs:string</v8:Type>`,
-    `${indent}\t<v8:StringQualifiers>`,
-    `${indent}\t\t<v8:Length>10</v8:Length>`,
-    `${indent}\t\t<v8:AllowedLength>Variable</v8:AllowedLength>`,
-    `${indent}\t</v8:StringQualifiers>`,
-    `${indent}</Type>`,
-  ].join('\n');
-}
-
 function buildEmptyRightsXml(formatVersion: string): string {
   // Пустой Rights.xml роли без явно выданных прав. Использует тот же неймспейс
   // и атрибут version, что и `RoleRightsXml.serializeRightsXml`, чтобы платформа
@@ -805,7 +1288,7 @@ function buildEmptyRightsXml(formatVersion: string): string {
   // с конфигурацией других версий.
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    `<Rights xmlns="http://v8.1c.ru/8.2/roles" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="${formatVersion}">`,
+    `<Rights xmlns="http://v8.1c.ru/8.2/roles" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="Rights" version="${formatVersion}">`,
     '\t<setForNewObjects>false</setForNewObjects>',
     '\t<setForAttributesByDefault>true</setForAttributesByDefault>',
     '\t<independentRightsOfChildObjects>false</independentRightsOfChildObjects>',
@@ -823,22 +1306,27 @@ function buildBusinessProcessFlowchartXml(formatVersion: string): string {
 }
 
 function buildManagedFormXml(formatVersion: string): string {
+  // Формат 2.21: корень формы — namespace `xcf/logform` (старый
+  // `managed-application/forms` устарел) с полным набором префиксов. Минимальный
+  // каркас пустой формы: WindowOpeningMode, Group, AutoCommandBar, Attributes
+  // (AutoCommandBar и Attributes присутствуют в 100% форм донора). Снято с
+  // донора UNFEVOLC.
   return [
     '<?xml version="1.0" encoding="utf-8"?>',
-    `<Form xmlns="http://v8.1c.ru/8.3/managed-application/forms" version="${formatVersion}">`,
+    `<Form xmlns="http://v8.1c.ru/8.3/xcf/logform" xmlns:app="http://v8.1c.ru/8.2/managed-application/core" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:dcscor="http://v8.1c.ru/8.1/data-composition-system/core" xmlns:dcssch="http://v8.1c.ru/8.1/data-composition-system/schema" xmlns:dcsset="http://v8.1c.ru/8.1/data-composition-system/settings" xmlns:ent="http://v8.1c.ru/8.1/data/enterprise" xmlns:lf="http://v8.1c.ru/8.2/managed-application/logform" xmlns:pal="http://v8.1c.ru/8.1/data/ui/colors/palette" xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:sys="http://v8.1c.ru/8.1/data/ui/fonts/system" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:web="http://v8.1c.ru/8.1/data/ui/colors/web" xmlns:win="http://v8.1c.ru/8.1/data/ui/colors/windows" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="${formatVersion}">`,
+    '\t<WindowOpeningMode>DontBlock</WindowOpeningMode>',
+    '\t<Group>Vertical</Group>',
     '\t<AutoCommandBar name="ФормаКоманднаяПанель" id="-1"/>',
-    '\t<ChildItems/>',
     '\t<Attributes/>',
-    '\t<Commands/>',
     '</Form>',
     '',
   ].join('\n');
 }
 
-function buildTemplateXml(name: string, formatVersion: string, templateType: TemplateType): string {
+function buildTemplateXml(name: string, formatVersion: string, templateType: TemplateType, ruleset: FormatRuleset): string {
   return [
     '<?xml version="1.0" encoding="utf-8"?>',
-    `<MetaDataObject ${METADATA_OBJECT_XMLNS} version="${formatVersion}">`,
+    `<MetaDataObject ${ruleset.metaDataObjectXmlns} version="${formatVersion}">`,
     `\t<Template uuid="${newUuid()}">`,
     '\t\t<Properties>',
     `\t\t\t<Name>${escapeXml(name)}</Name>`,
