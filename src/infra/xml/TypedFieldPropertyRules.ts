@@ -244,7 +244,15 @@ function getAllowedPropertyKeys(kind: TypeAwarePropertyOwnerKind, categories: Re
     appendUnique(keys, ADDRESSING_ORDER);
   }
 
-  return sortByControlledOrder(keys);
+  // Колонка ТЧ (сериализуется как <Attribute> внутри TabularSection) не входит
+  // в наполнение объекта, поэтому свойств заполнения у неё нет. Платформа 1С их
+  // не принимает: «Свойство FillFromFillingValue/FillValue не входит в состав
+  // объекта метаданных Attribute».
+  const filtered = kind === 'Column'
+    ? keys.filter((key) => key !== 'FillFromFillingValue' && key !== 'FillValue')
+    : keys;
+
+  return sortByControlledOrder(filtered);
 }
 
 function appendUnique(target: string[], values: readonly string[]): void {

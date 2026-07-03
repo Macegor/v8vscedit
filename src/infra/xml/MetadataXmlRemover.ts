@@ -271,6 +271,7 @@ export class MetadataXmlRemover {
     if (options.childTag === 'Command') {
       removePath(path.join(loc.objectDir, 'Commands', options.name));
     } else if (options.childTag === 'Form') {
+      removePath(path.join(loc.objectDir, 'Forms', `${options.name}.xml`));
       removePath(path.join(loc.objectDir, 'Forms', options.name));
     } else if (options.childTag === 'Template') {
       removePath(path.join(loc.objectDir, 'Templates', `${options.name}.xml`));

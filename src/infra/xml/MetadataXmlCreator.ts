@@ -182,7 +182,9 @@ function addColumnToTabularSectionXml(xml: string, tabularSectionName: string, c
   }
 
   const indent = detectChildIndent(childObjects.inner, '\t\t\t\t\t');
-  const fragment = buildTypedFieldFragment('Attribute', columnName, indent, ruleset);
+  // Тег колонки в XML — <Attribute>, но набор свойств у неё «колоночный»
+  // (без свойств заполнения), поэтому передаём kind='Column'.
+  const fragment = buildTypedFieldFragment('Attribute', columnName, indent, ruleset, 'Column');
   const replacement = buildChildObjectsReplacement(childObjects, fragment, indent);
   const nextSectionXml = `${sectionXml.slice(0, childObjects.start)}${replacement}${sectionXml.slice(childObjects.end)}`;
   return {
@@ -1076,7 +1078,14 @@ function buildChildFragment(
     return buildTabularSectionFragment(name, indent, ruleset, ownerKind, ownerName);
   }
   if (tag === 'Form') {
-    return buildSimpleChildFragment('Form', name, indent, ['FormType>Managed']);
+    // Форма в <ChildObjects> — простая ссылка `<Form>Имя</Form>` (как макет).
+    // Полное описание формы лежит отдельным файлом `Forms/Имя.xml`
+    // (см. ensureAuxiliaryChildFiles). Полный блок с uuid внутри ChildObjects
+    // платформа 1С отклоняет.
+    return `${indent}<Form>${escapeXml(name)}</Form>`;
+  }
+  if (tag === 'Command') {
+    return buildObjectCommandFragment(name, indent);
   }
   if (tag === 'Template') {
     return `${indent}<Template>${escapeXml(name)}</Template>`;
@@ -1084,7 +1093,13 @@ function buildChildFragment(
   return buildSimpleChildFragment(tag, name, indent);
 }
 
-function buildTypedFieldFragment(tag: 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource', name: string, indent: string, ruleset: FormatRuleset): string {
+function buildTypedFieldFragment(
+  tag: 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource',
+  name: string,
+  indent: string,
+  ruleset: FormatRuleset,
+  propertyKind: 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column' = tag
+): string {
   const typeBlock = ruleset.buildDefaultTypeBlock(`${indent}\t\t`);
   return [
     `${indent}<${tag} uuid="${newUuid()}">`,
@@ -1093,7 +1108,7 @@ function buildTypedFieldFragment(tag: 'Attribute' | 'AddressingAttribute' | 'Dim
     buildLocalizedTag(`${indent}\t\t`, 'Synonym', splitCamelCase(name)),
     `${indent}\t\t<Comment/>`,
     typeBlock,
-    ...ruleset.buildTypedFieldProperties(tag, typeBlock, `${indent}\t\t`),
+    ...ruleset.buildTypedFieldProperties(propertyKind, typeBlock, `${indent}\t\t`),
     `${indent}\t</Properties>`,
     `${indent}</${tag}>`,
   ].join('\n');
@@ -1153,20 +1168,44 @@ function buildGeneratedTypeLines(name: string, category: string, indent: string)
   ];
 }
 
-function buildSimpleChildFragment(tag: 'Form' | 'Command' | 'Template' | 'EnumValue', name: string, indent: string, extraRawTags: string[] = []): string {
-  const extra = extraRawTags.map((raw) => {
-    const [tagName, value] = raw.split('>');
-    return `${indent}\t\t<${tagName}>${escapeXml(value)}</${tagName}>`;
-  });
+function buildSimpleChildFragment(tag: 'EnumValue', name: string, indent: string): string {
   return [
     `${indent}<${tag} uuid="${newUuid()}">`,
     `${indent}\t<Properties>`,
     `${indent}\t\t<Name>${escapeXml(name)}</Name>`,
     buildLocalizedTag(`${indent}\t\t`, 'Synonym', splitCamelCase(name)),
     `${indent}\t\t<Comment/>`,
-    ...extra,
     `${indent}\t</Properties>`,
     `${indent}</${tag}>`,
+  ].join('\n');
+}
+
+/**
+ * Полный блок команды объекта внутри `<ChildObjects>`. В отличие от формы/макета
+ * команда сериализуется целиком (uuid + свойства), а не ссылкой. Набор и порядок
+ * свойств — как в эталонной выгрузке 2.20 (пустой объект): без них платформа 1С
+ * отклоняет команду.
+ */
+function buildObjectCommandFragment(name: string, indent: string): string {
+  return [
+    `${indent}<Command uuid="${newUuid()}">`,
+    `${indent}\t<Properties>`,
+    `${indent}\t\t<Name>${escapeXml(name)}</Name>`,
+    buildLocalizedTag(`${indent}\t\t`, 'Synonym', splitCamelCase(name)),
+    `${indent}\t\t<Comment/>`,
+    // Объектной команде обязательна непустая группа командного интерфейса —
+    // иначе платформа: «Не указана группа, в которую входит команда по умолчанию».
+    `${indent}\t\t<Group>FormCommandBarImportant</Group>`,
+    `${indent}\t\t<CommandParameterType/>`,
+    `${indent}\t\t<ParameterUseMode>Single</ParameterUseMode>`,
+    `${indent}\t\t<ModifiesData>false</ModifiesData>`,
+    `${indent}\t\t<Representation>Auto</Representation>`,
+    `${indent}\t\t<ToolTip/>`,
+    `${indent}\t\t<Picture/>`,
+    `${indent}\t\t<Shortcut/>`,
+    `${indent}\t\t<OnMainServerUnavalableBehavior>Auto</OnMainServerUnavalableBehavior>`,
+    `${indent}\t</Properties>`,
+    `${indent}</Command>`,
   ].join('\n');
 }
 
@@ -1277,12 +1316,14 @@ function ensureAuxiliaryChildFiles(options: AddChildMetadataOptions, formatVersi
     return [commandModule];
   }
   if (options.childTag === 'Form') {
+    const descriptorXml = path.join(loc.objectDir, 'Forms', `${options.name}.xml`);
     const formModule = path.join(loc.objectDir, 'Forms', options.name, 'Ext', 'Form', 'Module.bsl');
     const formXml = path.join(loc.objectDir, 'Forms', options.name, 'Ext', 'Form.xml');
     fs.mkdirSync(path.dirname(formXml), { recursive: true });
+    fs.writeFileSync(descriptorXml, buildFormDescriptorXml(options.name, formatVersion, ruleset), 'utf-8');
     fs.writeFileSync(formXml, buildManagedFormXml(formatVersion), 'utf-8');
     ensureEmptyFile(formModule);
-    return [formXml, formModule];
+    return [descriptorXml, formXml, formModule];
   }
   if (options.childTag === 'Template') {
     const templateXml = path.join(loc.objectDir, 'Templates', `${options.name}.xml`);
@@ -1444,17 +1485,43 @@ function buildBusinessProcessFlowchartXml(formatVersion: string): string {
   ].join('\n');
 }
 
-function buildManagedFormXml(formatVersion: string): string {
-  // Формат 2.21: корень формы — namespace `xcf/logform` (старый
-  // `managed-application/forms` устарел) с полным набором префиксов. Минимальный
-  // каркас пустой формы: WindowOpeningMode, Group, AutoCommandBar, Attributes
-  // (AutoCommandBar и Attributes присутствуют в 100% форм донора). Снято с
-  // донора UNFEVOLC.
+/**
+ * Дескриптор формы `Forms/<Имя>.xml` — отдельный `MetaDataObject` с описанием
+ * формы (uuid + свойства). На него ссылается `<Form>Имя</Form>` в ChildObjects
+ * владельца, а содержимое формы лежит в `Forms/<Имя>/Ext/Form.xml`. Минимальный
+ * набор свойств снят с эталона 2.20 (пустая форма объекта): без FormType и
+ * UsePurposes платформа 1С форму не принимает.
+ */
+function buildFormDescriptorXml(name: string, formatVersion: string, ruleset: FormatRuleset): string {
   return [
-    '<?xml version="1.0" encoding="utf-8"?>',
-    `<Form xmlns="http://v8.1c.ru/8.3/xcf/logform" xmlns:app="http://v8.1c.ru/8.2/managed-application/core" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:dcscor="http://v8.1c.ru/8.1/data-composition-system/core" xmlns:dcssch="http://v8.1c.ru/8.1/data-composition-system/schema" xmlns:dcsset="http://v8.1c.ru/8.1/data-composition-system/settings" xmlns:ent="http://v8.1c.ru/8.1/data/enterprise" xmlns:lf="http://v8.1c.ru/8.2/managed-application/logform" xmlns:pal="http://v8.1c.ru/8.1/data/ui/colors/palette" xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:sys="http://v8.1c.ru/8.1/data/ui/fonts/system" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:web="http://v8.1c.ru/8.1/data/ui/colors/web" xmlns:win="http://v8.1c.ru/8.1/data/ui/colors/windows" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="${formatVersion}">`,
-    '\t<WindowOpeningMode>DontBlock</WindowOpeningMode>',
-    '\t<Group>Vertical</Group>',
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    `<MetaDataObject ${ruleset.metaDataObjectXmlns} version="${formatVersion}">`,
+    `\t<Form uuid="${newUuid()}">`,
+    '\t\t<Properties>',
+    `\t\t\t<Name>${escapeXml(name)}</Name>`,
+    buildLocalizedTag('\t\t\t', 'Synonym', splitCamelCase(name)),
+    '\t\t\t<Comment/>',
+    '\t\t\t<FormType>Managed</FormType>',
+    '\t\t\t<IncludeHelpInContents>false</IncludeHelpInContents>',
+    '\t\t\t<UsePurposes>',
+    '\t\t\t\t<v8:Value xsi:type="app:ApplicationUsePurpose">PlatformApplication</v8:Value>',
+    '\t\t\t</UsePurposes>',
+    '\t\t</Properties>',
+    '\t</Form>',
+    '</MetaDataObject>',
+    '',
+  ].join('\n');
+}
+
+function buildManagedFormXml(formatVersion: string): string {
+  // Минимальный каркас пустой управляемой формы (namespace `xcf/logform`).
+  // Ровно как в эталоне 2.20: только AutoCommandBar + пустые Attributes, без
+  // WindowOpeningMode/Group и без префикса pal. Ранее лишний корневой
+  // `<Group>` и pal вызывали XDTO-исключение при чтении формы платформой 2.20.
+  // Набор префиксов и порядок элементов совпадают с реальными формами донора.
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    `<Form xmlns="http://v8.1c.ru/8.3/xcf/logform" xmlns:app="http://v8.1c.ru/8.2/managed-application/core" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:dcscor="http://v8.1c.ru/8.1/data-composition-system/core" xmlns:dcssch="http://v8.1c.ru/8.1/data-composition-system/schema" xmlns:dcsset="http://v8.1c.ru/8.1/data-composition-system/settings" xmlns:ent="http://v8.1c.ru/8.1/data/enterprise" xmlns:lf="http://v8.1c.ru/8.2/managed-application/logform" xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:sys="http://v8.1c.ru/8.1/data/ui/fonts/system" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:web="http://v8.1c.ru/8.1/data/ui/colors/web" xmlns:win="http://v8.1c.ru/8.1/data/ui/colors/windows" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="${formatVersion}">`,
     '\t<AutoCommandBar name="ФормаКоманднаяПанель" id="-1"/>',
     '\t<Attributes/>',
     '</Form>',
