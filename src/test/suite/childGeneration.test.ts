@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { getMetaFolder, type MetaKind } from '../../domain/MetaTypes';
 import { MetadataXmlCreator } from '../../infra/xml/MetadataXmlCreator';
 import { MetadataXmlRemover } from '../../infra/xml/MetadataXmlRemover';
 import { ObjectXmlReader } from '../../infra/xml/ObjectXmlReader';
@@ -25,6 +26,27 @@ function makeCatalog(): { configRoot: string; ownerXml: string } {
   return { configRoot, ownerXml: path.join(configRoot, 'Catalogs', 'Тест.xml') };
 }
 
+/** Создаёт объект произвольного вида на временной выгрузке 2.20 и возвращает путь его XML. */
+function makeObject(kind: MetaKind): { configRoot: string; ownerXml: string } {
+  const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v8-child-'));
+  fs.writeFileSync(
+    path.join(configRoot, 'Configuration.xml'),
+    '<?xml version="1.0" encoding="utf-8"?>\n<MetaDataObject version="2.20">\n\t<Configuration>\n\t\t<Properties>\n\t\t\t<Name>Тест</Name>\n\t\t\t<Synonym/>\n\t\t</Properties>\n\t\t<ChildObjects/>\n\t</Configuration>\n</MetaDataObject>',
+    'utf-8'
+  );
+  const result = new MetadataXmlCreator().addRootObject({ configRoot, kind, name: 'Р' });
+  assert.strictEqual(result.success, true, result.errors.join('; '));
+  return { configRoot, ownerXml: path.join(configRoot, getMetaFolder(kind) ?? '', 'Р.xml') };
+}
+
+/** XML блока первого измерения/ресурса указанного тега внутри владельца. */
+function firstChildBlock(ownerXml: string, tag: 'Dimension' | 'Resource'): string {
+  const xml = fs.readFileSync(ownerXml, 'utf-8');
+  const m = new RegExp(`<${tag} uuid=[\\s\\S]*?</${tag}>`).exec(xml);
+  assert.ok(m, `блок ${tag} не найден`);
+  return m[0];
+}
+
 suite('Генерация дочерних элементов — контракт формата 1С', () => {
   test('Форма: простая ссылка <Form>Имя</Form> + отдельный дескриптор Forms/Имя.xml', () => {
     const { configRoot, ownerXml } = makeCatalog();
@@ -33,7 +55,7 @@ suite('Генерация дочерних элементов — контрак
 
     const xml = fs.readFileSync(ownerXml, 'utf-8');
     assert.ok(xml.includes('<Form>ФормаЭлемента</Form>'), 'форма должна быть простой ссылкой');
-    assert.ok(!/<Form uuid=/.test(xml), 'внутри ChildObjects не должно быть блока <Form uuid=…>');
+    assert.ok(!xml.includes('<Form uuid='), 'внутри ChildObjects не должно быть блока <Form uuid=…>');
 
     const descriptor = path.join(configRoot, 'Catalogs', 'Тест', 'Forms', 'ФормаЭлемента.xml');
     assert.ok(fs.existsSync(descriptor), 'должен быть создан дескриптор Forms/Имя.xml');
@@ -60,7 +82,7 @@ suite('Генерация дочерних элементов — контрак
     const r = new MetadataXmlCreator().addChildElement({ ownerObjectXmlPath: ownerXml, childTag: 'Command', name: 'МояКоманда' });
     assert.strictEqual(r.success, true, r.errors.join('; '));
     const xml = fs.readFileSync(ownerXml, 'utf-8');
-    assert.ok(/<Command uuid=/.test(xml), 'команда — полный блок с uuid');
+    assert.ok(xml.includes('<Command uuid='), 'команда — полный блок с uuid');
     assert.ok(xml.includes('<Group>FormCommandBarImportant</Group>'), 'группа должна быть непустой');
     assert.ok(xml.includes('<ParameterUseMode>Single</ParameterUseMode>'));
     assert.ok(xml.includes('<ModifiesData>false</ModifiesData>'));
@@ -85,6 +107,44 @@ suite('Генерация дочерних элементов — контрак
     const column = getTypedFieldPropertyKeys('Column', '');
     assert.ok(attribute.includes('FillFromFillingValue') && attribute.includes('FillValue'));
     assert.ok(!column.includes('FillFromFillingValue') && !column.includes('FillValue'));
+  });
+
+  test('getTypedFieldPropertyKeys: измерение/ресурс зависят от типа регистра', () => {
+    const irDim = getTypedFieldPropertyKeys('Dimension', '', 'InformationRegister');
+    const accDim = getTypedFieldPropertyKeys('Dimension', '', 'AccumulationRegister');
+    const irRes = getTypedFieldPropertyKeys('Resource', '', 'InformationRegister');
+    // Измерение ИР: Master/MainFilter/TypeReductionMode, без UseInTotals.
+    assert.ok(irDim.includes('Master') && irDim.includes('MainFilter') && irDim.includes('TypeReductionMode'));
+    assert.ok(!irDim.includes('UseInTotals'));
+    // Измерение РН: UseInTotals, без Master/Fill*/DataHistory.
+    assert.ok(accDim.includes('UseInTotals'));
+    assert.ok(!accDim.includes('Master') && !accDim.includes('FillFromFillingValue') && !accDim.includes('DataHistory'));
+    // Ресурс ИР: без Balance/AccountingFlag/UseInTotals.
+    assert.ok(!irRes.includes('Balance') && !irRes.includes('AccountingFlag') && !irRes.includes('UseInTotals'));
+  });
+
+  test('РегистрСведений: измерение без UseInTotals, ресурс без Balance и QuickChoice≠Auto', () => {
+    const { ownerXml } = makeObject('InformationRegister');
+    const creator = new MetadataXmlCreator();
+    assert.strictEqual(creator.addChildElement({ ownerObjectXmlPath: ownerXml, childTag: 'Dimension', name: 'Изм' }).success, true);
+    assert.strictEqual(creator.addChildElement({ ownerObjectXmlPath: ownerXml, childTag: 'Resource', name: 'Рес' }).success, true);
+
+    const dim = firstChildBlock(ownerXml, 'Dimension');
+    assert.ok(!dim.includes('<UseInTotals>'), 'у измерения ИР не должно быть UseInTotals');
+    assert.ok(dim.includes('<Master>') && dim.includes('<TypeReductionMode>'));
+
+    const res = firstChildBlock(ownerXml, 'Resource');
+    assert.ok(!res.includes('<Balance>') && !res.includes('<AccountingFlag>'), 'у ресурса ИР нет Balance/AccountingFlag');
+    assert.ok(res.includes('<QuickChoice>DontUse</QuickChoice>'), 'ресурс ИР: QuickChoice=DontUse (не Auto)');
+    assert.ok(res.includes('<CreateOnInput>Use</CreateOnInput>'), 'ресурс ИР: CreateOnInput=Use (не Auto)');
+  });
+
+  test('РегистрНакопления: измерение с UseInTotals и без свойств заполнения', () => {
+    const { ownerXml } = makeObject('AccumulationRegister');
+    assert.strictEqual(new MetadataXmlCreator().addChildElement({ ownerObjectXmlPath: ownerXml, childTag: 'Dimension', name: 'Изм' }).success, true);
+    const dim = firstChildBlock(ownerXml, 'Dimension');
+    assert.ok(dim.includes('<UseInTotals>'), 'у измерения РН должен быть UseInTotals');
+    assert.ok(!dim.includes('<FillFromFillingValue>') && !dim.includes('<FillValue>') && !dim.includes('<DataHistory>'));
   });
 
   test('Remover: удаление формы стирает и дескриптор Forms/Имя.xml, и папку', () => {

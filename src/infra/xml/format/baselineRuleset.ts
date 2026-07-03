@@ -1,5 +1,5 @@
 import type { MetaKind } from '../../../domain/MetaTypes';
-import { buildTypedFieldPropertyBlocks, type TypeAwarePropertyOwnerKind } from '../TypedFieldPropertyRules';
+import { buildTypedFieldPropertyBlocks, type RegisterOwnerKind, type TypeAwarePropertyOwnerKind } from '../TypedFieldPropertyRules';
 import type { FormatRuleset, GeneratedTypeDef, GeneratedTypeRef } from './FormatRuleset';
 import { STANDARD_ATTRIBUTES_BLOCKS, STANDARD_TABULAR_SECTIONS_BLOCKS } from './standardAttributes';
 
@@ -184,8 +184,8 @@ export const BASELINE_RULESET: FormatRuleset = {
   // генерации и для перестроения после смены типа. Таблицы живут в
   // TypedFieldPropertyRules (используются и путём правки), ruleset владеет
   // привязкой, чтобы будущий формат мог их переопределить.
-  buildTypedFieldProperties(kind: TypeAwarePropertyOwnerKind, typeInnerXml: string, indent: string): readonly string[] {
-    return buildTypedFieldPropertyBlocks(kind, typeInnerXml, indent);
+  buildTypedFieldProperties(kind: TypeAwarePropertyOwnerKind, typeInnerXml: string, indent: string, registerKind?: RegisterOwnerKind): readonly string[] {
+    return buildTypedFieldPropertyBlocks(kind, typeInnerXml, indent, registerKind);
   },
 
   tabularSectionGeneratedTypes(ownerKind: string, ownerName: string, sectionName: string): readonly GeneratedTypeRef[] {

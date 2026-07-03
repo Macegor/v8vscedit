@@ -7,6 +7,7 @@ import { ConfigurationXmlEditor, type EditResult } from './ConfigurationXmlEdito
 import { getObjectLocationFromXml } from '../fs/MetaPathResolver';
 import { DEFAULT_FORMAT_VERSION, resolveFormatRuleset } from './format/formatRegistry';
 import type { FormatRuleset } from './format/FormatRuleset';
+import type { RegisterOwnerKind } from './TypedFieldPropertyRules';
 import {
   escapeXmlAttribute as escapeXml,
   findDirectElementRanges,
@@ -1060,6 +1061,11 @@ function buildLanguageProperties(): string[] {
   ];
 }
 
+/** Сужает тип владельца до известных типов регистров; для прочих — undefined (общий набор свойств). */
+function toRegisterOwnerKind(ownerKind?: string): RegisterOwnerKind | undefined {
+  return ownerKind === 'InformationRegister' || ownerKind === 'AccumulationRegister' ? ownerKind : undefined;
+}
+
 function buildChildFragment(
   tag: ChildTag,
   name: string,
@@ -1072,7 +1078,7 @@ function buildChildFragment(
     throw new Error('Стандартные реквизиты создаются платформой 1С и не добавляются вручную.');
   }
   if (tag === 'Attribute' || tag === 'AddressingAttribute' || tag === 'Dimension' || tag === 'Resource') {
-    return buildTypedFieldFragment(tag, name, indent, ruleset);
+    return buildTypedFieldFragment(tag, name, indent, ruleset, tag, toRegisterOwnerKind(ownerKind));
   }
   if (tag === 'TabularSection') {
     return buildTabularSectionFragment(name, indent, ruleset, ownerKind, ownerName);
@@ -1098,7 +1104,8 @@ function buildTypedFieldFragment(
   name: string,
   indent: string,
   ruleset: FormatRuleset,
-  propertyKind: 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column' = tag
+  propertyKind: 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column' = tag,
+  registerKind?: RegisterOwnerKind
 ): string {
   const typeBlock = ruleset.buildDefaultTypeBlock(`${indent}\t\t`);
   return [
@@ -1108,7 +1115,7 @@ function buildTypedFieldFragment(
     buildLocalizedTag(`${indent}\t\t`, 'Synonym', splitCamelCase(name)),
     `${indent}\t\t<Comment/>`,
     typeBlock,
-    ...ruleset.buildTypedFieldProperties(propertyKind, typeBlock, `${indent}\t\t`),
+    ...ruleset.buildTypedFieldProperties(propertyKind, typeBlock, `${indent}\t\t`, registerKind),
     `${indent}\t</Properties>`,
     `${indent}</${tag}>`,
   ].join('\n');
