@@ -214,66 +214,99 @@ function buildRootProperties(kind: MetaKind, name: string, ruleset: FormatRulese
   ];
 
   const typeBlock = () => ruleset.buildDefaultTypeBlock('\t\t\t');
+  const join = (parts: string[]) => parts.filter((part) => part.length > 0).join('\n');
   switch (kind) {
     case 'Catalog':
-      return [...base, ...buildCatalogProperties(name)].join('\n');
+      return join([...base, ...buildCatalogProperties(name, ruleset)]);
     case 'Document':
-      return [...base, ...buildDocumentProperties()].join('\n');
+      return join([...base, ...buildDocumentProperties(ruleset)]);
     case 'DocumentJournal':
-      return [...base, ...buildDocumentJournalProperties()].join('\n');
+      return join([...base, ...buildDocumentJournalProperties()]);
     case 'Enum':
-      return [...base, ...buildEnumProperties()].join('\n');
+      return join([...base, ...buildEnumProperties()]);
     case 'InformationRegister':
-      return [...base, ...buildInformationRegisterProperties()].join('\n');
+      return join([...base, ...buildInformationRegisterProperties()]);
     case 'AccumulationRegister':
-      return [...base, ...buildAccumulationRegisterProperties()].join('\n');
+      return join([...base, ...buildAccumulationRegisterProperties(ruleset)]);
     case 'AccountingRegister':
-      return [...base, ...buildAccountingRegisterProperties()].join('\n');
+      return join([...base, ...buildAccountingRegisterProperties(ruleset)]);
+    case 'CalculationRegister':
+      return join([...base, ...buildCalculationRegisterProperties(ruleset)]);
     case 'ChartOfAccounts':
-      return [...base, ...buildChartOfAccountsProperties(name)].join('\n');
+      return join([...base, ...buildChartOfAccountsProperties(name, ruleset)]);
     case 'ChartOfCharacteristicTypes':
-      return [...base, ...buildChartOfCharacteristicTypesProperties(name)].join('\n');
+      return join([...base, ...buildChartOfCharacteristicTypesProperties(name, ruleset)]);
     case 'ChartOfCalculationTypes':
-      return [...base, ...buildChartOfCalculationTypesProperties(name)].join('\n');
+      return join([...base, ...buildChartOfCalculationTypesProperties(name, ruleset)]);
     case 'BusinessProcess':
-      return [...base, ...buildBusinessProcessProperties(name)].join('\n');
+      return join([...base, ...buildBusinessProcessProperties(name, ruleset)]);
     case 'Task':
-      return [...base, ...buildTaskProperties(name)].join('\n');
+      return join([...base, ...buildTaskProperties(name, ruleset)]);
     case 'ExchangePlan':
-      return [...base, ...buildExchangePlanProperties()].join('\n');
+      return join([...base, ...buildExchangePlanProperties(ruleset)]);
     case 'Report':
-      return [...base, ...buildReportProperties()].join('\n');
+      return join([...base, ...buildReportProperties(ruleset)]);
     case 'DataProcessor':
-      return [...base, ...buildDataProcessorProperties()].join('\n');
+      return join([...base, ...buildDataProcessorProperties()]);
     case 'Constant':
-      return [...base, typeBlock(), ...buildConstantPropertiesAfterType()].join('\n');
+      return join([...base, typeBlock(), ...buildConstantPropertiesAfterType()]);
     case 'CommonAttribute':
-      return [...base, typeBlock(), ...buildCommonAttributePropertiesAfterType()].join('\n');
+      return join([...base, typeBlock(), ...buildCommonAttributePropertiesAfterType()]);
     case 'DefinedType':
     case 'SessionParameter':
-      return [...base, typeBlock()].join('\n');
+      return join([...base, typeBlock()]);
     case 'CommonModule':
-      return [...base, ...buildCommonModuleProperties()].join('\n');
+      return join([...base, ...buildCommonModuleProperties()]);
     case 'ScheduledJob':
-      return [...base, ...buildScheduledJobProperties()].join('\n');
+      return join([...base, ...buildScheduledJobProperties()]);
     case 'Subsystem':
-      return [...base, ...buildSubsystemProperties()].join('\n');
+      return join([...base, ...buildSubsystemProperties()]);
     case 'CommonCommand':
-      return [...base, ...buildCommonCommandProperties()].join('\n');
+      return join([...base, ...buildCommonCommandProperties()]);
+    case 'CommandGroup':
+      return join([...base, ...buildCommandGroupProperties()]);
     case 'HTTPService':
-      return [...base, ...buildHttpServiceProperties()].join('\n');
+      return join([...base, ...buildHttpServiceProperties()]);
     case 'WebService':
-      return [...base, ...buildWebServiceProperties()].join('\n');
+      return join([...base, ...buildWebServiceProperties()]);
     case 'FunctionalOption':
-      return [...base, ...buildFunctionalOptionProperties()].join('\n');
+      return join([...base, ...buildFunctionalOptionProperties()]);
+    case 'FunctionalOptionsParameter':
+      return join([...base, '\t\t\t<Use/>']);
+    case 'EventSubscription':
+      return join([...base, ...buildEventSubscriptionProperties()]);
+    case 'FilterCriterion':
+      return join([...base, ...buildFilterCriterionProperties()]);
+    case 'SettingsStorage':
+      return join([...base, ...buildSettingsStorageProperties()]);
+    case 'StyleItem':
+      return join([...base, ...buildStyleItemProperties()]);
+    case 'CommonPicture':
+      return join([...base, ...buildCommonPictureProperties()]);
+    case 'Bot':
+      return join([...base, ...buildBotProperties()]);
+    case 'Language':
+      return join([...base, ...buildLanguageProperties()]);
     case 'CommonTemplate':
-      return [...base, `\t\t\t<TemplateType>${escapeXml(resolveTemplateType(templateType))}</TemplateType>`].join('\n');
+      return join([...base, `\t\t\t<TemplateType>${escapeXml(resolveTemplateType(templateType))}</TemplateType>`]);
     default:
-      return base.join('\n');
+      return join(base);
   }
 }
 
-function buildCatalogProperties(name: string): string[] {
+/** Блок `<StandardAttributes>` вида (или пусто) как элемент массива свойств. */
+function saBlock(kind: MetaKind, ruleset: FormatRuleset): string[] {
+  const block = ruleset.standardAttributes(kind);
+  return block ? [block] : [];
+}
+
+/** Блок `<StandardTabularSections>` вида (или пусто) как элемент массива свойств. */
+function stsBlock(kind: MetaKind, ruleset: FormatRuleset): string[] {
+  const block = ruleset.standardTabularSections(kind);
+  return block ? [block] : [];
+}
+
+function buildCatalogProperties(name: string, ruleset: FormatRuleset): string[] {
   return [
     '\t\t\t<Hierarchical>false</Hierarchical>',
     '\t\t\t<HierarchyType>HierarchyFoldersAndItems</HierarchyType>',
@@ -291,6 +324,7 @@ function buildCatalogProperties(name: string): string[] {
     '\t\t\t<CheckUnique>true</CheckUnique>',
     '\t\t\t<Autonumbering>true</Autonumbering>',
     '\t\t\t<DefaultPresentation>AsDescription</DefaultPresentation>',
+    ...saBlock('Catalog', ruleset),
     '\t\t\t<Characteristics/>',
     '\t\t\t<PredefinedDataUpdate>Auto</PredefinedDataUpdate>',
     '\t\t\t<EditType>InDialog</EditType>',
@@ -331,7 +365,7 @@ function buildCatalogProperties(name: string): string[] {
   ];
 }
 
-function buildReportProperties(): string[] {
+function buildReportProperties(ruleset: FormatRuleset): string[] {
   return [
     '\t\t\t<UseStandardCommands>false</UseStandardCommands>',
     '\t\t\t<DefaultForm/>',
@@ -340,7 +374,7 @@ function buildReportProperties(): string[] {
     '\t\t\t<DefaultSettingsForm/>',
     '\t\t\t<AuxiliarySettingsForm/>',
     '\t\t\t<DefaultVariantForm/>',
-    '\t\t\t<AuxiliaryVariantForm/>',
+    ...(ruleset.includeReportAuxiliaryVariantForm ? ['\t\t\t<AuxiliaryVariantForm/>'] : []),
     '\t\t\t<VariantsStorage/>',
     '\t\t\t<SettingsStorage/>',
     '\t\t\t<IncludeHelpInContents>false</IncludeHelpInContents>',
@@ -392,7 +426,7 @@ function buildConstantPropertiesAfterType(): string[] {
   ];
 }
 
-function buildDocumentProperties(): string[] {
+function buildDocumentProperties(ruleset: FormatRuleset): string[] {
   return [
     '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
     '\t\t\t<Numerator/>',
@@ -402,6 +436,7 @@ function buildDocumentProperties(): string[] {
     '\t\t\t<NumberPeriodicity>Nonperiodical</NumberPeriodicity>',
     '\t\t\t<CheckUnique>true</CheckUnique>',
     '\t\t\t<Autonumbering>true</Autonumbering>',
+    ...saBlock('Document', ruleset),
     '\t\t\t<Characteristics/>',
     '\t\t\t<BasedOn/>',
     '\t\t\t<InputByString/>',
@@ -496,13 +531,14 @@ function buildInformationRegisterProperties(): string[] {
   ];
 }
 
-function buildAccumulationRegisterProperties(): string[] {
+function buildAccumulationRegisterProperties(ruleset: FormatRuleset): string[] {
   return [
     '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
     '\t\t\t<DefaultListForm/>',
     '\t\t\t<AuxiliaryListForm/>',
     '\t\t\t<RegisterType>Balance</RegisterType>',
     '\t\t\t<IncludeHelpInContents>false</IncludeHelpInContents>',
+    ...saBlock('AccumulationRegister', ruleset),
     '\t\t\t<DataLockControlMode>Managed</DataLockControlMode>',
     '\t\t\t<FullTextSearch>DontUse</FullTextSearch>',
     '\t\t\t<EnableTotalsSplitting>false</EnableTotalsSplitting>',
@@ -512,7 +548,7 @@ function buildAccumulationRegisterProperties(): string[] {
   ];
 }
 
-function buildAccountingRegisterProperties(): string[] {
+function buildAccountingRegisterProperties(ruleset: FormatRuleset): string[] {
   return [
     '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
     '\t\t\t<IncludeHelpInContents>false</IncludeHelpInContents>',
@@ -521,6 +557,7 @@ function buildAccountingRegisterProperties(): string[] {
     '\t\t\t<PeriodAdjustmentLength>0</PeriodAdjustmentLength>',
     '\t\t\t<DefaultListForm/>',
     '\t\t\t<AuxiliaryListForm/>',
+    ...saBlock('AccountingRegister', ruleset),
     '\t\t\t<DataLockControlMode>Managed</DataLockControlMode>',
     '\t\t\t<EnableTotalsSplitting>false</EnableTotalsSplitting>',
     '\t\t\t<FullTextSearch>DontUse</FullTextSearch>',
@@ -530,7 +567,29 @@ function buildAccountingRegisterProperties(): string[] {
   ];
 }
 
-function buildChartOfAccountsProperties(name: string): string[] {
+function buildCalculationRegisterProperties(ruleset: FormatRuleset): string[] {
+  return [
+    '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
+    '\t\t\t<DefaultListForm/>',
+    '\t\t\t<AuxiliaryListForm/>',
+    '\t\t\t<Periodicity>Month</Periodicity>',
+    '\t\t\t<ActionPeriod>false</ActionPeriod>',
+    '\t\t\t<BasePeriod>false</BasePeriod>',
+    '\t\t\t<Schedule/>',
+    '\t\t\t<ScheduleValue/>',
+    '\t\t\t<ScheduleDate/>',
+    '\t\t\t<ChartOfCalculationTypes/>',
+    '\t\t\t<IncludeHelpInContents>false</IncludeHelpInContents>',
+    ...saBlock('CalculationRegister', ruleset),
+    '\t\t\t<DataLockControlMode>Automatic</DataLockControlMode>',
+    '\t\t\t<FullTextSearch>Use</FullTextSearch>',
+    '\t\t\t<ListPresentation/>',
+    '\t\t\t<ExtendedListPresentation/>',
+    '\t\t\t<Explanation/>',
+  ];
+}
+
+function buildChartOfAccountsProperties(name: string, ruleset: FormatRuleset): string[] {
   return [
     '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
     '\t\t\t<IncludeHelpInContents>false</IncludeHelpInContents>',
@@ -543,14 +602,15 @@ function buildChartOfAccountsProperties(name: string): string[] {
     '\t\t\t<CodeSeries>WholeChartOfAccounts</CodeSeries>',
     '\t\t\t<CheckUnique>true</CheckUnique>',
     '\t\t\t<DefaultPresentation>AsDescription</DefaultPresentation>',
+    ...saBlock('ChartOfAccounts', ruleset),
     '\t\t\t<Characteristics/>',
+    ...stsBlock('ChartOfAccounts', ruleset),
     '\t\t\t<PredefinedDataUpdate>Auto</PredefinedDataUpdate>',
     '\t\t\t<EditType>InDialog</EditType>',
     '\t\t\t<QuickChoice>false</QuickChoice>',
     '\t\t\t<ChoiceMode>BothWays</ChoiceMode>',
     '\t\t\t<InputByString>',
     `\t\t\t\t<xr:Field>ChartOfAccounts.${escapeXml(name)}.StandardAttribute.Description</xr:Field>`,
-    `\t\t\t\t<xr:Field>ChartOfAccounts.${escapeXml(name)}.StandardAttribute.Code</xr:Field>`,
     '\t\t\t</InputByString>',
     '\t\t\t<SearchStringModeOnInputByString>Begin</SearchStringModeOnInputByString>',
     '\t\t\t<FullTextSearchOnInputByString>DontUse</FullTextSearchOnInputByString>',
@@ -579,7 +639,7 @@ function buildChartOfAccountsProperties(name: string): string[] {
   ];
 }
 
-function buildChartOfCharacteristicTypesProperties(name: string): string[] {
+function buildChartOfCharacteristicTypesProperties(name: string, ruleset: FormatRuleset): string[] {
   return [
     '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
     '\t\t\t<IncludeHelpInContents>false</IncludeHelpInContents>',
@@ -594,6 +654,7 @@ function buildChartOfCharacteristicTypesProperties(name: string): string[] {
     '\t\t\t<CheckUnique>true</CheckUnique>',
     '\t\t\t<Autonumbering>true</Autonumbering>',
     '\t\t\t<DefaultPresentation>AsDescription</DefaultPresentation>',
+    ...saBlock('ChartOfCharacteristicTypes', ruleset),
     '\t\t\t<Characteristics/>',
     '\t\t\t<PredefinedDataUpdate>Auto</PredefinedDataUpdate>',
     '\t\t\t<EditType>InDialog</EditType>',
@@ -601,7 +662,6 @@ function buildChartOfCharacteristicTypesProperties(name: string): string[] {
     '\t\t\t<ChoiceMode>BothWays</ChoiceMode>',
     '\t\t\t<InputByString>',
     `\t\t\t\t<xr:Field>ChartOfCharacteristicTypes.${escapeXml(name)}.StandardAttribute.Description</xr:Field>`,
-    `\t\t\t\t<xr:Field>ChartOfCharacteristicTypes.${escapeXml(name)}.StandardAttribute.Code</xr:Field>`,
     '\t\t\t</InputByString>',
     '\t\t\t<CreateOnInput>DontUse</CreateOnInput>',
     '\t\t\t<SearchStringModeOnInputByString>Begin</SearchStringModeOnInputByString>',
@@ -633,7 +693,7 @@ function buildChartOfCharacteristicTypesProperties(name: string): string[] {
   ];
 }
 
-function buildChartOfCalculationTypesProperties(name: string): string[] {
+function buildChartOfCalculationTypesProperties(name: string, ruleset: FormatRuleset): string[] {
   return [
     '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
     '\t\t\t<CodeLength>5</CodeLength>',
@@ -663,6 +723,7 @@ function buildChartOfCalculationTypesProperties(name: string): string[] {
     '\t\t\t<DependenceOnCalculationTypes>DontUse</DependenceOnCalculationTypes>',
     '\t\t\t<BaseCalculationTypes/>',
     '\t\t\t<ActionPeriodUse>false</ActionPeriodUse>',
+    ...saBlock('ChartOfCalculationTypes', ruleset),
     '\t\t\t<Characteristics/>',
     '\t\t\t<PredefinedDataUpdate>Auto</PredefinedDataUpdate>',
     '\t\t\t<IncludeHelpInContents>false</IncludeHelpInContents>',
@@ -680,7 +741,7 @@ function buildChartOfCalculationTypesProperties(name: string): string[] {
   ];
 }
 
-function buildBusinessProcessProperties(name: string): string[] {
+function buildBusinessProcessProperties(name: string, ruleset: FormatRuleset): string[] {
   return [
     '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
     '\t\t\t<EditType>InDialog</EditType>',
@@ -702,6 +763,7 @@ function buildBusinessProcessProperties(name: string): string[] {
     '\t\t\t<NumberLength>11</NumberLength>',
     '\t\t\t<NumberAllowedLength>Variable</NumberAllowedLength>',
     '\t\t\t<CheckUnique>true</CheckUnique>',
+    ...saBlock('BusinessProcess', ruleset),
     '\t\t\t<Characteristics/>',
     '\t\t\t<Autonumbering>true</Autonumbering>',
     '\t\t\t<BasedOn/>',
@@ -723,7 +785,7 @@ function buildBusinessProcessProperties(name: string): string[] {
   ];
 }
 
-function buildTaskProperties(name: string): string[] {
+function buildTaskProperties(name: string, ruleset: FormatRuleset): string[] {
   return [
     '\t\t\t<UseStandardCommands>false</UseStandardCommands>',
     '\t\t\t<NumberType>String</NumberType>',
@@ -737,6 +799,7 @@ function buildTaskProperties(name: string): string[] {
     '\t\t\t<MainAddressingAttribute/>',
     '\t\t\t<CurrentPerformer/>',
     '\t\t\t<BasedOn/>',
+    ...saBlock('Task', ruleset),
     '\t\t\t<Characteristics/>',
     '\t\t\t<DefaultPresentation>AsDescription</DefaultPresentation>',
     '\t\t\t<EditType>InDialog</EditType>',
@@ -770,7 +833,7 @@ function buildTaskProperties(name: string): string[] {
   ];
 }
 
-function buildExchangePlanProperties(): string[] {
+function buildExchangePlanProperties(ruleset: FormatRuleset): string[] {
   return [
     '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
     '\t\t\t<CodeLength>9</CodeLength>',
@@ -790,6 +853,7 @@ function buildExchangePlanProperties(): string[] {
     '\t\t\t<AuxiliaryObjectForm/>',
     '\t\t\t<AuxiliaryListForm/>',
     '\t\t\t<AuxiliaryChoiceForm/>',
+    ...saBlock('ExchangePlan', ruleset),
     '\t\t\t<Characteristics/>',
     '\t\t\t<BasedOn/>',
     '\t\t\t<DistributedInfoBase>false</DistributedInfoBase>',
@@ -925,6 +989,72 @@ function buildFunctionalOptionProperties(): string[] {
     '\t\t\t<Location/>',
     '\t\t\t<PrivilegedGetMode>true</PrivilegedGetMode>',
     '\t\t\t<Content/>',
+  ];
+}
+
+function buildEventSubscriptionProperties(): string[] {
+  return [
+    '\t\t\t<Source/>',
+    '\t\t\t<Event/>',
+    '\t\t\t<Handler/>',
+  ];
+}
+
+function buildFilterCriterionProperties(): string[] {
+  return [
+    '\t\t\t<Type/>',
+    '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
+    '\t\t\t<Content/>',
+    '\t\t\t<DefaultForm/>',
+    '\t\t\t<AuxiliaryForm/>',
+    '\t\t\t<ListPresentation/>',
+    '\t\t\t<ExtendedListPresentation/>',
+    '\t\t\t<Explanation/>',
+  ];
+}
+
+function buildSettingsStorageProperties(): string[] {
+  return [
+    '\t\t\t<DefaultSaveForm/>',
+    '\t\t\t<DefaultLoadForm/>',
+    '\t\t\t<AuxiliarySaveForm/>',
+    '\t\t\t<AuxiliaryLoadForm/>',
+  ];
+}
+
+function buildCommandGroupProperties(): string[] {
+  return [
+    '\t\t\t<Representation>Auto</Representation>',
+    '\t\t\t<ToolTip/>',
+    '\t\t\t<Picture/>',
+    '\t\t\t<Category>NavigationPanel</Category>',
+  ];
+}
+
+function buildStyleItemProperties(): string[] {
+  return [
+    '\t\t\t<Type>Color</Type>',
+    '\t\t\t<Value xsi:type="v8ui:Color">#000000</Value>',
+  ];
+}
+
+function buildCommonPictureProperties(): string[] {
+  return [
+    '\t\t\t<AvailabilityForChoice>false</AvailabilityForChoice>',
+    '\t\t\t<AvailabilityForAppearance>false</AvailabilityForAppearance>',
+  ];
+}
+
+function buildBotProperties(): string[] {
+  return [
+    '\t\t\t<Predefined>false</Predefined>',
+    '\t\t\t<Picture/>',
+  ];
+}
+
+function buildLanguageProperties(): string[] {
+  return [
+    '\t\t\t<LanguageCode/>',
   ];
 }
 
@@ -1250,9 +1380,18 @@ function getDefaultModulePaths(kind: MetaKind, objectDir: string): string[] {
  *   «ошибка формата документа — читаемое свойство не соответствует ожидаемому».
  */
 function needsChildObjects(kind: MetaKind): boolean {
-  // Подсистеме всегда нужен <ChildObjects/> (вложенные подсистемы): без него
-  // платформа 1С не загружает выгрузку ("ожидаемое ChildObjects").
-  if (kind === 'Subsystem') {
+  // Ряд видов содержит контейнер <ChildObjects> в схеме, даже если в реестре
+  // META_TYPES у них не объявлены дочерние теги: подсистема (вложенные
+  // подсистемы), критерий отбора и хранилище настроек (формы). В эталонной
+  // выгрузке 2.20 у них присутствует пустой <ChildObjects/>; без него платформа
+  // 1С не загружает объект ("ожидаемое ChildObjects").
+  if (
+    kind === 'Subsystem' ||
+    kind === 'FilterCriterion' ||
+    kind === 'SettingsStorage' ||
+    kind === 'HTTPService' ||
+    kind === 'WebService'
+  ) {
     return true;
   }
   const def = getMetaType(kind);

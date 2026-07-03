@@ -11,7 +11,7 @@ import { buildCommandProperties } from '../../ui/views/properties/PropertyBuilde
 import { TypeRegistryService } from '../../ui/views/properties/TypeRegistryService';
 import type { EnumPropertyValue } from '../../ui/views/properties/_types';
 
-const EXAMPLE_CF = path.resolve(__dirname, '../../../example/src/cf');
+const EXAMPLE_CF = path.resolve(__dirname, '../../../example/2.20/src/cf');
 
 // Возвращает путь к первому XML объекта в указанной папке корня конфигурации.
 function findFirstXmlInGroup(group: string): string | null {
@@ -98,7 +98,7 @@ suite('Properties — команды', () => {
   });
 
   test('Строит enum для группы командного интерфейса общей команды', function () {
-    // Требуется CommonCommand в example/src/cf/CommonCommands; в минимальной выгрузке
+    // Требуется CommonCommand в example/2.20/src/cf/CommonCommands; в минимальной выгрузке
     // их может не быть — тогда тест неприменим.
     const xmlPath = findFirstXmlInGroup('CommonCommands');
     if (!xmlPath) {
@@ -148,10 +148,10 @@ suite('Properties — команды', () => {
   });
 
   test('Фильтрует типы для реквизитов, команд и подписок через общий реестр', () => {
-    // Используем любой Catalog как источник — достаточно валидного пути в example/src/cf.
+    // Используем любой Catalog как источник — достаточно валидного пути в example/2.20/src/cf.
     const registry = new TypeRegistryService();
     const sourceXmlPath = findFirstXmlInGroup('Catalogs');
-    assert.ok(sourceXmlPath, 'В example/src/cf нет ни одного справочника для теста реестра типов');
+    assert.ok(sourceXmlPath, 'В example/2.20/src/cf нет ни одного справочника для теста реестра типов');
 
     const valueTypes = flattenTypeGroups(registry.getAvailableTypes(sourceXmlPath, 'value'));
     assert.ok(valueTypes.includes('String'));

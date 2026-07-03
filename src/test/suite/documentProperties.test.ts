@@ -3,14 +3,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { buildRootMetaObjectProperties } from '../../ui/views/properties/PropertyBuilder';
 
-const EXAMPLE_CF = path.resolve(__dirname, '../../../example/src/cf');
+const EXAMPLE_CF = path.resolve(__dirname, '../../../example/2.20/src/cf');
 
 function findFirstDocument(): string {
   const documentsDir = path.join(EXAMPLE_CF, 'Documents');
-  assert.ok(fs.existsSync(documentsDir), 'В example/src/cf/Documents нет каталога документов');
+  assert.ok(fs.existsSync(documentsDir), 'В example/2.20/src/cf/Documents нет каталога документов');
   const entry = fs.readdirSync(documentsDir, { withFileTypes: true })
     .find((item) => item.isFile() && item.name.endsWith('.xml'));
-  assert.ok(entry, 'В example/src/cf/Documents нет ни одного документа');
+  assert.ok(entry, 'В example/2.20/src/cf/Documents нет ни одного документа');
   return path.join(documentsDir, entry.name);
 }
 

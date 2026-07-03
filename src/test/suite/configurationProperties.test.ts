@@ -8,8 +8,8 @@ import {
 import { formatXmlPropertyDisplay } from '../../ui/views/properties/PropertyPresentationRegistry';
 import type { EnumPropertyValue, MultiEnumPropertyValue } from '../../ui/views/properties/_types';
 
-const EXAMPLE_CFE_ROOT = path.resolve(__dirname, '../../../example/src/cfe');
-const EXAMPLE_CF = path.resolve(__dirname, '../../../example/src/cf');
+const EXAMPLE_CFE_ROOT = path.resolve(__dirname, '../../../example/2.21/src/cfe');
+const EXAMPLE_CF = path.resolve(__dirname, '../../../example/2.20/src/cf');
 
 function findFirstCfeRoot(): string | null {
   if (!fs.existsSync(EXAMPLE_CFE_ROOT)) {
@@ -56,7 +56,7 @@ suite('Properties — Configuration.xml', () => {
   test('Показывает свойства расширения и список ролей по умолчанию', function () {
     const cfeRoot = findFirstCfeRoot();
     if (!cfeRoot) {
-      // Тест применим только при наличии CFE-расширения в example/src/cfe.
+      // Тест применим только при наличии CFE-расширения в example/2.21/src/cfe.
       this.skip();
     }
     const xml = fs.readFileSync(path.join(cfeRoot, 'Configuration.xml'), 'utf-8');

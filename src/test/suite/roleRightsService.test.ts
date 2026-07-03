@@ -7,7 +7,7 @@ import { ConfigurationInfoService, ConfigurationScaffoldService } from '../../in
 
 suite('roleRightsService', () => {
   test('читает сводку прав роли из реального Rights.xml', function () {
-    // Используем первую найденную роль в example/src/cf/Roles. RLS и шаблоны
+    // Используем первую найденную роль в example/2.20/src/cf/Roles. RLS и шаблоны
     // могут отсутствовать в произвольной выгрузке — проверяем только базовый контракт.
     const target = findFirstRoleRightsPath();
     if (!target) {
@@ -244,12 +244,12 @@ suite('roleRightsService', () => {
   });
 });
 
-// Находит первую роль в example/src/cf/Roles, у которой есть Ext/Rights.xml
-// с реальным содержимым (хотя бы один <object> или <setForNewObjects>).
+// Находит первую роль в example/2.20/src/cf/Roles, у которой есть Ext/Rights.xml
+// с реальными объектными правами (хотя бы один <object>) — так totalAllowed > 0.
 // Самозакрывающийся <Rights/> валиден как XML, но не соответствует контракту
 // RoleRightsXml.readRole — такие роли пропускаются.
 function findFirstRoleRightsPath(): { rightsPath: string; roleName: string } | null {
-  const rolesDir = path.join(__dirname, '..', '..', '..', 'example', 'src', 'cf', 'Roles');
+  const rolesDir = path.join(__dirname, '..', '..', '..', 'example', '2.20', 'src', 'cf', 'Roles');
   if (!fs.existsSync(rolesDir)) {
     return null;
   }
@@ -262,7 +262,7 @@ function findFirstRoleRightsPath(): { rightsPath: string; roleName: string } | n
       continue;
     }
     const content = fs.readFileSync(rightsPath, 'utf-8');
-    if (!/<(?:[^:>\s]+:)?(?:object|setForNewObjects)\b/i.test(content)) {
+    if (!/<(?:[^:>\s]+:)?object\b/i.test(content)) {
       continue;
     }
     return { rightsPath, roleName: entry.name };

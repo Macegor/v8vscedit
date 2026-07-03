@@ -3,11 +3,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ExchangePlanContentService } from '../../infra/xml/ExchangePlanContentService';
 
-const EXAMPLE_CF = path.resolve(__dirname, '../../../example/src/cf');
+const EXAMPLE_CF = path.resolve(__dirname, '../../../example/2.20/src/cf');
 
 suite('ExchangePlanContentService', () => {
   test('Находит планы обмена, в состав которых входит объект метаданных', function () {
-    // Тест применим только при наличии планов обмена в example/src/cf/ExchangePlans;
+    // Тест применим только при наличии планов обмена в example/2.20/src/cf/ExchangePlans;
     // в минимальной выгрузке их может не быть.
     const exchangePlansDir = path.join(EXAMPLE_CF, 'ExchangePlans');
     if (!fs.existsSync(exchangePlansDir)) {
