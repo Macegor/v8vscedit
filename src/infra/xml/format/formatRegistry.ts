@@ -1,4 +1,5 @@
 import { BASELINE_RULESET } from './baselineRuleset';
+import { FORMAT_2_20_RULESET } from './format2_20Ruleset';
 import type { FormatRuleset } from './FormatRuleset';
 
 /**
@@ -8,7 +9,10 @@ import type { FormatRuleset } from './FormatRuleset';
 export const DEFAULT_FORMAT_VERSION = '2.18';
 
 /** Все зарегистрированные ruleset'ы по их id. */
-const RULESETS = new Map<string, FormatRuleset>([[BASELINE_RULESET.id, BASELINE_RULESET]]);
+const RULESETS = new Map<string, FormatRuleset>([
+  [BASELINE_RULESET.id, BASELINE_RULESET],
+  [FORMAT_2_20_RULESET.id, FORMAT_2_20_RULESET],
+]);
 
 /**
  * Карта «версия формата → id ruleset». Несколько версий могут ссылаться на
@@ -18,7 +22,7 @@ const RULESETS = new Map<string, FormatRuleset>([[BASELINE_RULESET.id, BASELINE_
 const SUPPORTED_FORMATS = new Map<string, string>([
   ['2.18', BASELINE_RULESET.id],
   ['2.19', BASELINE_RULESET.id],
-  ['2.20', BASELINE_RULESET.id],
+  ['2.20', FORMAT_2_20_RULESET.id],
   ['2.21', BASELINE_RULESET.id],
 ]);
 

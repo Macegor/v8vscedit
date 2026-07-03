@@ -384,6 +384,16 @@ export class Container {
     };
   }
 
+  /**
+   * Доступ к сервисам для E2E-тестов: раннер открывает example/<версия> как
+   * workspace, получает Container через `activate`-экспорт и гоняет реальные
+   * сервисы/команды (создание → загрузка в базу → правка → удаление). Не для
+   * прод-кода — только тестовый харнесс.
+   */
+  getServicesForTests(): CommandServices {
+    return this.buildCommandServices();
+  }
+
   private buildMcpCommandServices(): Omit<CommandServices, 'aiMcpViewProvider'> {
     return {
       treeProvider: this.treeProvider,

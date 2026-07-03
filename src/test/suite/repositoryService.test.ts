@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { RepositoryService, type RepositoryTarget } from '../../infra/repository/RepositoryService';
 
-const EXAMPLE_ROOT = path.resolve(__dirname, '../../../example');
+const EXAMPLE_ROOT = path.resolve(__dirname, '../../../example/2.20');
 const EXAMPLE_CF = path.join(EXAMPLE_ROOT, 'src', 'cf');
 
 suite('RepositoryService', () => {

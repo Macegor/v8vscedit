@@ -4,7 +4,7 @@ import * as path from 'path';
 import { SupportInfoService, SupportMode } from '../../infra/support/SupportInfoService';
 import type { Logger } from '../../infra/support/Logger';
 
-const EXAMPLE_CF = path.resolve(__dirname, '../../../example/src/cf');
+const EXAMPLE_CF = path.resolve(__dirname, '../../../example/2.20/src/cf');
 
 class TestLogger implements Logger {
   readonly messages: string[] = [];

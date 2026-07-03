@@ -1,6 +1,7 @@
 import type { MetaKind } from '../../../domain/MetaTypes';
-import { buildTypedFieldPropertyBlocks, type TypeAwarePropertyOwnerKind } from '../TypedFieldPropertyRules';
+import { buildTypedFieldPropertyBlocks, type RegisterOwnerKind, type TypeAwarePropertyOwnerKind } from '../TypedFieldPropertyRules';
 import type { FormatRuleset, GeneratedTypeDef, GeneratedTypeRef } from './FormatRuleset';
+import { STANDARD_ATTRIBUTES_BLOCKS, STANDARD_TABULAR_SECTIONS_BLOCKS } from './standardAttributes';
 
 /**
  * Таблица сгенерированных типов (`xr:GeneratedType`) текущего формата.
@@ -81,7 +82,7 @@ const BASELINE_GENERATED_TYPES: Partial<Record<MetaKind, readonly GeneratedTypeD
     { prefix: 'ChartOfCharacteristicTypesRef', category: 'Ref' },
     { prefix: 'ChartOfCharacteristicTypesSelection', category: 'Selection' },
     { prefix: 'ChartOfCharacteristicTypesList', category: 'List' },
-    { prefix: 'ChartOfCharacteristicTypesCharacteristic', category: 'Characteristic' },
+    { prefix: 'Characteristic', category: 'Characteristic' },
     { prefix: 'ChartOfCharacteristicTypesManager', category: 'Manager' },
   ],
   ChartOfCalculationTypes: [
@@ -135,6 +136,13 @@ const BASELINE_GENERATED_TYPES: Partial<Record<MetaKind, readonly GeneratedTypeD
     { prefix: 'DataProcessorObject', category: 'Object' },
     { prefix: 'DataProcessorManager', category: 'Manager' },
   ],
+  FilterCriterion: [
+    { prefix: 'FilterCriterionManager', category: 'Manager' },
+    { prefix: 'FilterCriterionList', category: 'List' },
+  ],
+  SettingsStorage: [
+    { prefix: 'SettingsStorageManager', category: 'Manager' },
+  ],
 };
 
 /**
@@ -150,6 +158,15 @@ export const BASELINE_RULESET: FormatRuleset = {
   metaDataObjectXmlns:
     'xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:app="http://v8.1c.ru/8.2/managed-application/core" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:cmi="http://v8.1c.ru/8.2/managed-application/cmi" xmlns:ent="http://v8.1c.ru/8.1/data/enterprise" xmlns:lf="http://v8.1c.ru/8.2/managed-application/logform" xmlns:pal="http://v8.1c.ru/8.1/data/ui/colors/palette" xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:sys="http://v8.1c.ru/8.1/data/ui/fonts/system" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:web="http://v8.1c.ru/8.1/data/ui/colors/web" xmlns:win="http://v8.1c.ru/8.1/data/ui/colors/windows" xmlns:xen="http://v8.1c.ru/8.3/xcf/enums" xmlns:xpr="http://v8.1c.ru/8.3/xcf/predef" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"',
   generatedTypes: BASELINE_GENERATED_TYPES,
+  includeReportAuxiliaryVariantForm: true,
+
+  standardAttributes(kind: MetaKind): string {
+    return STANDARD_ATTRIBUTES_BLOCKS[kind] ?? '';
+  },
+
+  standardTabularSections(kind: MetaKind): string {
+    return STANDARD_TABULAR_SECTIONS_BLOCKS[kind] ?? '';
+  },
 
   buildDefaultTypeBlock(indent: string): string {
     return [
@@ -167,8 +184,8 @@ export const BASELINE_RULESET: FormatRuleset = {
   // генерации и для перестроения после смены типа. Таблицы живут в
   // TypedFieldPropertyRules (используются и путём правки), ruleset владеет
   // привязкой, чтобы будущий формат мог их переопределить.
-  buildTypedFieldProperties(kind: TypeAwarePropertyOwnerKind, typeInnerXml: string, indent: string): readonly string[] {
-    return buildTypedFieldPropertyBlocks(kind, typeInnerXml, indent);
+  buildTypedFieldProperties(kind: TypeAwarePropertyOwnerKind, typeInnerXml: string, indent: string, registerKind?: RegisterOwnerKind): readonly string[] {
+    return buildTypedFieldPropertyBlocks(kind, typeInnerXml, indent, registerKind);
   },
 
   tabularSectionGeneratedTypes(ownerKind: string, ownerName: string, sectionName: string): readonly GeneratedTypeRef[] {

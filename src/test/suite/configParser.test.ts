@@ -5,12 +5,12 @@ import * as path from 'path';
 import { ConfigXmlReader } from '../../infra/xml/ConfigXmlReader';
 import { ObjectXmlReader } from '../../infra/xml/ObjectXmlReader';
 
-const EXAMPLE_CFE_ROOT = path.resolve(__dirname, '../../../example/src/cfe');
-const EXAMPLE_CF = path.resolve(__dirname, '../../../example/src/cf');
+const EXAMPLE_CFE_ROOT = path.resolve(__dirname, '../../../example/2.21/src/cfe');
+const EXAMPLE_CF = path.resolve(__dirname, '../../../example/2.20/src/cf');
 const configReader = new ConfigXmlReader();
 const objectReader = new ObjectXmlReader();
 
-// Тесты CFE применимы только когда в example/src/cfe есть хоть одно расширение.
+// Тесты CFE применимы только когда в example/2.21/src/cfe есть хоть одно расширение.
 // Возвращает корневой каталог первого найденного расширения или null.
 function findFirstCfeRoot(): string | null {
   if (!fs.existsSync(EXAMPLE_CFE_ROOT)) {

@@ -877,7 +877,9 @@
     "test": "node ./out/test/runTests.js",
     "coverage": "c8 --check-coverage --100 npm test",
     "coverage:report": "c8 npm test",
-    "pretest": "npm run typecheck && npm run build && npm run test:compile"
+    "pretest": "npm run typecheck && npm run build && npm run test:compile",
+    "pretest:e2e": "npm run build && npm run test:compile",
+    "test:e2e": "node ./out/test/e2e/runE2ETests.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

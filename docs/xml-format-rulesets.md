@@ -24,8 +24,21 @@
   - `buildDefaultTypeBlock()` — блок `<Type>` нового типизированного поля;
   - `buildTypedFieldProperties()` — свойства типизированного поля по его типу;
   - `tabularSectionGeneratedTypes()` — `xr:GeneratedType` табличной части/строки.
-- **`baselineRuleset.ts`** — `BASELINE_RULESET`: текущее поведение, перенесённое
-  из `MetadataXmlCreator` дословно (вывод побайтово совпадает с прежним).
+- **`baselineRuleset.ts`** — `BASELINE_RULESET`: формат 2.21 (namespace с
+  `xmlns:pal`, у отчёта есть `<AuxiliaryVariantForm/>`). К нему привязаны
+  версии 2.18–2.19 и 2.21.
+- **`format2_20Ruleset.ts`** — `FORMAT_2_20_RULESET`: дельта от baseline для
+  формата 2.20. Отличия, снятые с эталона `example/2.20`: у корневого
+  `<MetaDataObject>` нет `xmlns:pal`; у отчёта нет `<AuxiliaryVariantForm/>`.
+  Всё остальное (SA-блоки, generatedTypes) наследуется из baseline.
+- **`standardAttributes.ts`** — константные блоки `<StandardAttributes>` и
+  `<StandardTabularSections>` по виду метаданных (сгенерированы из эталонных
+  выгрузок). Блоки не зависят от имени объекта; по составу/порядку реквизитов
+  едины для 2.20 и 2.21. Ruleset публикует их через `standardAttributes(kind)`
+  и `standardTabularSections(kind)`; `MetadataXmlCreator` вставляет в
+  `<Properties>` на фиксированную позицию вида. Виды без стандартных реквизитов
+  у свежего объекта (перечисление, журнал документов, независимый
+  непериодический регистр сведений) блок не получают.
 - **`formatRegistry.ts`** — карта «версия → ruleset», резолвер и version-guard:
   - `resolveFormatRuleset(version)` — ruleset по версии;
   - для **незнакомой** версии берётся самый свежий известный ruleset и
@@ -59,7 +72,11 @@
 
 - namespace вспомогательных файлов (формы, роли, макеты, схемы СКД, графсхемы);
 - наборы и порядок свойств корневых объектов по видам метаданных
-  (`buildRootProperties` / `buildCatalogProperties`, `PropertySchema`).
+  (`buildRootProperties` / `buildCatalogProperties`, `PropertySchema`). Позиция
+  вставки `<StandardAttributes>`/`<StandardTabularSections>` пока задаётся прямо
+  в `build*`-функциях (сами блоки уже принадлежат ruleset);
+- `<StandardAttributes>` табличных частей (реквизит `LineNumber`) при добавлении
+  ТЧ через `addChildElement` — на данный момент не генерируется.
 
 Примечание: таблицы свойств типизированных полей (`TypedFieldPropertyRules`)
 физически остаются общим модулем — они используются и путём правки

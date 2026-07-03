@@ -6,10 +6,10 @@ import { ObjectXmlReader } from '../../infra/xml/ObjectXmlReader';
 import { ensureStandardAttributeXml } from '../../infra/xml/XmlUtils';
 import { buildRootMetaObjectProperties } from '../../ui/views/properties/PropertyBuilder';
 
-const EXAMPLE_CF = path.resolve(__dirname, '../../../example/src/cf');
+const EXAMPLE_CF = path.resolve(__dirname, '../../../example/2.20/src/cf');
 const objectReader = new ObjectXmlReader();
 
-// Возвращает путь к первому Catalog в example/src/cf без блока StandardAttributes.
+// Возвращает путь к первому Catalog в example/2.20/src/cf без блока StandardAttributes.
 function findFirstCatalogWithoutStandardAttributes(): string | null {
   const catalogsDir = path.join(EXAMPLE_CF, 'Catalogs');
   if (!fs.existsSync(catalogsDir)) {
@@ -33,7 +33,7 @@ suite('Properties — справочник', () => {
     // Тест проверяет наличие ключевых свойств, общих для любого справочника;
     // конкретные значения зависят от выгрузки и не проверяются.
     const catalogPath = findFirstCatalogWithoutStandardAttributes()
-      ?? path.join(EXAMPLE_CF, 'Catalogs', 'Пользователи.xml');
+      ?? path.join(EXAMPLE_CF, 'Catalogs', 'Товары.xml');
     const xml = fs.readFileSync(catalogPath, 'utf-8');
     const props = buildRootMetaObjectProperties(xml, 'Catalog');
 
@@ -62,13 +62,13 @@ suite('Properties — справочник', () => {
   });
 
   test('Показывает стандартные реквизиты корневого объекта с русскими представлениями', () => {
-    // Используем любой доступный Catalog из example/src/cf — в нём всегда есть
+    // Используем любой доступный Catalog из example/2.20/src/cf — в нём всегда есть
     // дефолтные стандартные реквизиты (PredefinedDataName, Ref, ...), даже если
     // блока StandardAttributes нет в XML, парсер добавляет их по умолчанию.
     const catalogsDir = path.join(EXAMPLE_CF, 'Catalogs');
     const entry = fs.readdirSync(catalogsDir, { withFileTypes: true })
       .find((item) => item.isFile() && item.name.endsWith('.xml'));
-    assert.ok(entry, 'В example/src/cf/Catalogs нет ни одного справочника');
+    assert.ok(entry, 'В example/2.20/src/cf/Catalogs нет ни одного справочника');
     const objectInfo = objectReader.read(path.join(catalogsDir, entry.name));
 
     const standardAttributes = objectInfo?.children.filter((item) => item.tag === 'StandardAttribute') ?? [];
@@ -108,7 +108,7 @@ suite('Properties — справочник', () => {
     // проверяем, что материализация добавляет нужные узлы. Так тест не зависит
     // от конкретного объекта и не модифицирует фикстуру example/.
     const sourcePath = findFirstCatalogWithoutStandardAttributes()
-      ?? path.join(EXAMPLE_CF, 'Catalogs', 'Пользователи.xml');
+      ?? path.join(EXAMPLE_CF, 'Catalogs', 'Товары.xml');
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-catalog-prop-'));
     try {
       const targetPath = path.join(tempRoot, path.basename(sourcePath));

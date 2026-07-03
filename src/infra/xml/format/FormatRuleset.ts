@@ -1,5 +1,5 @@
 import type { MetaKind } from '../../../domain/MetaTypes';
-import type { TypeAwarePropertyOwnerKind } from '../TypedFieldPropertyRules';
+import type { RegisterOwnerKind, TypeAwarePropertyOwnerKind } from '../TypedFieldPropertyRules';
 
 /** Описание сгенерированного типа объекта (xr:GeneratedType) — префикс + категория. */
 export interface GeneratedTypeDef {
@@ -43,6 +43,27 @@ export interface FormatRuleset {
   readonly generatedTypes: Partial<Record<MetaKind, readonly GeneratedTypeDef[]>>;
 
   /**
+   * Нужно ли выпускать свойство `<AuxiliaryVariantForm/>` у отчёта. В формате
+   * 2.21 оно присутствует, в 2.20 — отсутствует (свойство появилось позже).
+   */
+  readonly includeReportAuxiliaryVariantForm: boolean;
+
+  /**
+   * Готовый блок `<StandardAttributes>…</StandardAttributes>` для свежего
+   * объекта вида (отступ — 3 таба, как в `<Properties>`), либо пустая строка,
+   * если у объектов этого вида в дефолтной конфигурации стандартных реквизитов
+   * нет (например, независимый непериодический регистр сведений). Наполнение —
+   * формат-зависимое, поэтому владеет им ruleset.
+   */
+  standardAttributes(kind: MetaKind): string;
+
+  /**
+   * Готовый блок `<StandardTabularSections>…</StandardTabularSections>` (только
+   * план счетов — стандартная ТЧ `ExtDimensionTypes`), либо пустая строка.
+   */
+  standardTabularSections(kind: MetaKind): string;
+
+  /**
    * Блок `<Type>…</Type>` нового типизированного поля по умолчанию
    * (строка(10), переменной длины). `indent` — отступ открывающего `<Type>`.
    */
@@ -52,8 +73,15 @@ export interface FormatRuleset {
    * Дополнительные блоки свойств нового типизированного поля, зависящие от его
    * типа (`<Type>`-состав определяет, какие свойства уместны). `typeInnerXml` —
    * XML блока типа для определения категории, `indent` — отступ свойств.
+   * `registerKind` — тип регистра-владельца измерения/ресурса (набор свойств и
+   * их значения по умолчанию зависят от типа регистра).
    */
-  buildTypedFieldProperties(kind: TypeAwarePropertyOwnerKind, typeInnerXml: string, indent: string): readonly string[];
+  buildTypedFieldProperties(
+    kind: TypeAwarePropertyOwnerKind,
+    typeInnerXml: string,
+    indent: string,
+    registerKind?: RegisterOwnerKind
+  ): readonly string[];
 
   /**
    * Сгенерированные типы (`xr:GeneratedType`) табличной части и её строки.
