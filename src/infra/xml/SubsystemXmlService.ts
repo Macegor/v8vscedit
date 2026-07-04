@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { ConfigXmlReader } from './ConfigXmlReader';
-import { escapeXmlText, extractSimpleTag, writeTextFilePreservingBomAndEol } from './XmlUtils';
+import { escapeXmlText, extractSimpleTag, unescapeXml, writeTextFilePreservingBomAndEol } from './XmlUtils';
 import { getMetaFolder, getMetaLabel, META_TYPES, type MetaKind } from '../../domain/MetaTypes';
 
 export type SubsystemPropertyKey =
@@ -517,12 +517,12 @@ function extractLocalizedStringPresentation(xml: string, tagName: string): strin
     return '';
   }
   const content = /<v8:content>([\s\S]*?)<\/v8:content>/.exec(section)?.[1];
-  return unescapeXmlText(content?.trim() ?? '');
+  return unescapeXml(content?.trim() ?? '');
 }
 
 function extractPictureRef(xml: string): string {
   const picture = /<Picture>([\s\S]*?)<\/Picture>/.exec(xml)?.[1];
-  return unescapeXmlText(/<xr:Ref>([\s\S]*?)<\/xr:Ref>/.exec(picture ?? '')?.[1]?.trim() ?? '');
+  return unescapeXml(/<xr:Ref>([\s\S]*?)<\/xr:Ref>/.exec(picture ?? '')?.[1]?.trim() ?? '');
 }
 
 function extractPictureLoadTransparent(xml: string): boolean {
@@ -637,8 +637,4 @@ function uniqueStrings(values: string[]): string[] {
 
 function normalizeContentRefs(values: readonly string[]): string[] {
   return uniqueStrings(values.map((value) => value.trim()).filter(Boolean));
-}
-
-function unescapeXmlText(value: string): string {
-  return value.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 }

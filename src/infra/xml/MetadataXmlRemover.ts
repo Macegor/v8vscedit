@@ -4,7 +4,7 @@ import type { ChildTag } from '../../domain/ChildTag';
 import { getMetaFolder, type MetaKind } from '../../domain/MetaTypes';
 import { getObjectLocationFromXml } from '../fs/ObjectLocation';
 import { ConfigurationXmlEditor, type EditResult } from './ConfigurationXmlEditor';
-import { writeTextFilePreservingBomAndEol } from './XmlUtils';
+import { escapeRegExp, writeTextFilePreservingBomAndEol } from './XmlUtils';
 
 export interface MetadataReference {
   filePath: string;
@@ -271,6 +271,7 @@ export class MetadataXmlRemover {
     if (options.childTag === 'Command') {
       removePath(path.join(loc.objectDir, 'Commands', options.name));
     } else if (options.childTag === 'Form') {
+      removePath(path.join(loc.objectDir, 'Forms', `${options.name}.xml`));
       removePath(path.join(loc.objectDir, 'Forms', options.name));
     } else if (options.childTag === 'Template') {
       removePath(path.join(loc.objectDir, 'Templates', `${options.name}.xml`));
@@ -412,8 +413,4 @@ function uniquePaths(items: string[]): string[] {
 function isPathInsideOrEqual(targetPath: string, rootPath: string): boolean {
   const relative = path.relative(rootPath, targetPath);
   return relative === '' || (Boolean(relative) && !relative.startsWith('..') && !path.isAbsolute(relative));
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

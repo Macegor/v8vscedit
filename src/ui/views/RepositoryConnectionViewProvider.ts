@@ -6,7 +6,8 @@ export type ConnectionMode = 'connect' | 'create';
 export interface RepositoryBinding {
   readonly repoPath: string;
   readonly repoUser: string;
-  readonly repoPassword: string;
+  /** Пароль в webview не передаётся — только признак того, что он уже задан. */
+  readonly repoPasswordSet: boolean;
 }
 
 export interface RepositoryConnectionFormData {

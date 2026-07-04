@@ -51,8 +51,13 @@ export function registerRepositoryCommands(
         return;
       }
 
-      const initialBinding = services.repositoryService.loadBinding(target);
-      const formData = await services.repositoryConnectionViewProvider.show('connect', target.displayName, initialBinding ?? undefined);
+      const initialBinding = await services.repositoryService.loadBinding(target);
+      const repoPasswordSet = await services.repositoryService.hasStoredRepoPassword(target);
+      const formData = await services.repositoryConnectionViewProvider.show(
+        'connect',
+        target.displayName,
+        initialBinding ? { ...initialBinding, repoPasswordSet } : undefined
+      );
       if (!formData) {
         return;
       }
@@ -76,8 +81,8 @@ export function registerRepositoryCommands(
         successMessage: `Конфигурация "${target.displayName}" подключена к хранилищу.`,
         errorTitle: `Ошибка подключения "${target.displayName}" к хранилищу.`,
         failureOperation: 'подключении к хранилищу',
-        afterSuccess: () => {
-          services.repositoryService.saveBinding(target, validation.binding);
+        afterSuccess: async () => {
+          await services.repositoryService.saveBinding(target, validation.binding);
           services.repositoryService.setConnected(target, true);
           refreshRepositoryUi(services);
         },
@@ -94,8 +99,13 @@ export function registerRepositoryCommands(
         return;
       }
 
-      const initialBinding = services.repositoryService.loadBinding(target);
-      const formData = await services.repositoryConnectionViewProvider.show('create', target.displayName, initialBinding ?? undefined);
+      const initialBinding = await services.repositoryService.loadBinding(target);
+      const repoPasswordSet = await services.repositoryService.hasStoredRepoPassword(target);
+      const formData = await services.repositoryConnectionViewProvider.show(
+        'create',
+        target.displayName,
+        initialBinding ? { ...initialBinding, repoPasswordSet } : undefined
+      );
       if (!formData) {
         return;
       }
@@ -121,8 +131,8 @@ export function registerRepositoryCommands(
         successMessage: `Хранилище для "${target.displayName}" создано.`,
         errorTitle: `Ошибка создания хранилища для "${target.displayName}".`,
         failureOperation: 'создании хранилища',
-        afterSuccess: () => {
-          services.repositoryService.saveBinding(target, validation.binding);
+        afterSuccess: async () => {
+          await services.repositoryService.saveBinding(target, validation.binding);
           services.repositoryService.setConnected(target, !formData.noBind);
           refreshRepositoryUi(services);
         },
@@ -158,8 +168,8 @@ export function registerRepositoryCommands(
         successMessage: `Конфигурация "${target.displayName}" отключена от хранилища.`,
         errorTitle: `Ошибка отключения "${target.displayName}" от хранилища.`,
         failureOperation: 'отключении от хранилища',
-        afterSuccess: () => {
-          services.repositoryService.clearBinding(target);
+        afterSuccess: async () => {
+          await services.repositoryService.clearBinding(target);
           refreshRepositoryUi(services);
         },
       }, toCliServices(services));
@@ -539,6 +549,7 @@ function toCliServices(services: CommandServices): RepositoryCliServices {
     workspaceFolder: services.workspaceFolder,
     outputChannel: services.outputChannel,
     repositoryService: services.repositoryService,
+    projectSecretStorage: services.projectSecretStorage,
   };
 }
 

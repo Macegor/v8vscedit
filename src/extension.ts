@@ -9,14 +9,20 @@ import { registerBslSurroundCommands } from './ui/commands/snippets/BslSurroundC
  */
 let container: Container | undefined;
 
-export function activate(context: vscode.ExtensionContext): void {
+/** Публичный API расширения. Используется E2E-тестами для доступа к Container. */
+export interface ExtensionApi {
+  readonly container: Container;
+}
+
+export function activate(context: vscode.ExtensionContext): ExtensionApi | undefined {
   registerBslSurroundCommands(context, () => container?.lspManager);
 
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) {
-    return;
+    return undefined;
   }
   container = Container.bootstrap(context, folders[0]);
+  return { container };
 }
 
 export function deactivate(): Promise<void> | undefined {

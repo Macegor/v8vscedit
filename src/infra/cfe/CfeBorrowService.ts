@@ -4,6 +4,7 @@ import * as path from 'path';
 import { META_TYPES, type MetaKind, getMetaFolder } from '../../domain/MetaTypes';
 import { ConfigurationXmlEditor } from '../xml/ConfigurationXmlEditor';
 import {
+  escapeRegExp,
   escapeXmlText,
   extractChildMetaElementXml,
   extractNestingAwareBlock,
@@ -782,6 +783,3 @@ export class CfeBorrowService {
   }
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}

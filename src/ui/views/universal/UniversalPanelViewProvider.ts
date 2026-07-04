@@ -9,6 +9,8 @@ import type { StandaloneServerStatus } from '../../../infra/standalone';
 import { META_TYPES } from '../../../domain/MetaTypes';
 import { getIconUris } from '../../tree/presentation/icon';
 import { WebviewHtmlFactory } from '../webview/WebviewHtmlFactory';
+import { resolveWebviewLocalResourceRoots } from '../webview/webviewResourceRoots';
+import { isWebviewCommandAllowed } from '../webview/webviewCommandGuard';
 import type { MetadataTreeProvider } from '../../tree/MetadataTreeProvider';
 import type { MetadataNode } from '../../tree/TreeNode';
 
@@ -151,6 +153,8 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
   private readonly openNodeKeys = new Set<string>();
   private readonly treeListener: vscode.Disposable;
   private viewDisposables: vscode.Disposable[] = [];
+  /** Кэш зарегистрированных команд для guard'а webview (S2); команды расширения стабильны после активации. */
+  private registeredCommandsCache: readonly string[] | undefined;
   private selectedNodeKey: string | undefined;
   private cachedRootNodes: TreeNodeDto[] = [];
   private currentOpenNodeIds = new Set<string>();
@@ -181,10 +185,7 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
     this.view = webviewView;
     webviewView.webview.options = {
       enableScripts: true,
-      localResourceRoots: [
-        vscode.Uri.joinPath(this.extensionUri, 'dist', 'ui'),
-        this.extensionUri,
-      ],
+      localResourceRoots: resolveWebviewLocalResourceRoots(this.extensionUri, { includeIcons: true }),
     };
 
     this.renderHtml();
@@ -370,18 +371,9 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
       return;
     }
 
-    // Остальные команды — прямой вызов VS Code
-    try {
-      const node = p?.nodeId ? this.nodeById.get(p.nodeId) : undefined;
-      if (node) {
-        await vscode.commands.executeCommand(command, node);
-      } else {
-        await vscode.commands.executeCommand(command);
-      }
-    } catch (error) {
-      const text = error instanceof Error ? error.message : String(error);
-      await vscode.window.showErrorMessage(`Команда не выполнена: ${text}`);
-    }
+    // Остальные команды — через единый guarded-gateway (S2)
+    const node = p?.nodeId ? this.nodeById.get(p.nodeId) : undefined;
+    await this.executeCommand(command, node);
   }
 
   private async handleRequest(name: string, _requestId: string, payload?: unknown): Promise<void> {
@@ -684,6 +676,10 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
   }
 
   private async executeCommand(command: string, node?: MetadataNode, options?: Record<string, unknown>): Promise<void> {
+    if (!(await this.isWebviewCommandAllowed(command))) {
+      this.services.log?.(`[webview][guard] Отклонена команда из webview: ${command}`);
+      return;
+    }
     try {
       if (node) {
         if (options !== undefined) {
@@ -698,6 +694,16 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
       const text = error instanceof Error ? error.message : String(error);
       await vscode.window.showErrorMessage(`Команда не выполнена: ${text}`);
     }
+  }
+
+  /**
+   * Проверяет, что инициированная из webview команда допустима (S2): только
+   * зарегистрированные команды расширения `v8vscedit.*`. Список команд
+   * кэшируется — команды расширения регистрируются при активации и стабильны.
+   */
+  private async isWebviewCommandAllowed(command: string): Promise<boolean> {
+    this.registeredCommandsCache ??= await vscode.commands.getCommands(true);
+    return isWebviewCommandAllowed(command, this.registeredCommandsCache);
   }
 
   private rememberNodeState(nodeId: string, open: boolean): void {

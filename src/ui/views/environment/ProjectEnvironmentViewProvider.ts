@@ -25,7 +25,7 @@ export class ProjectEnvironmentViewProvider implements vscode.Disposable {
     private readonly extensionUri: vscode.Uri
   ) {}
 
-  show(): void {
+  async show(): Promise<void> {
     if (this.panel) {
       this.panel.reveal(vscode.ViewColumn.Active);
       this.loadSnapshot(false);
@@ -46,12 +46,13 @@ export class ProjectEnvironmentViewProvider implements vscode.Disposable {
       enableScripts: true,
       localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'ui')],
     };
+    const initialState = await this.service.getInitialSnapshot();
     this.panel.webview.html = new WebviewHtmlFactory(this.extensionUri).renderVueWebviewHtml({
       webview: this.panel.webview,
       title: 'Настройки проекта',
       entry: 'environment',
       viewKind: 'environment',
-      initialState: this.service.getInitialSnapshot(),
+      initialState,
       csp: { allowStyles: true },
     });
     this.panel.webview.onDidReceiveMessage((message: ProjectEnvironmentMessage) => {
@@ -87,7 +88,7 @@ export class ProjectEnvironmentViewProvider implements vscode.Disposable {
         return;
       }
 
-      const snapshot = this.service.save({
+      const snapshot = await this.service.save({
         platformPath: message.platformPath,
         baseId: message.baseId,
         dbUser: message.dbUser,
@@ -130,14 +131,16 @@ export class ProjectEnvironmentViewProvider implements vscode.Disposable {
     );
     this.loadingTimer = setTimeout(() => {
       this.loadingTimer = undefined;
-      try {
-        this.postState(this.service.getSnapshot(forceRefresh));
-        this.postStatus('idle', '');
-      } catch (error) {
-        const text = error instanceof Error ? error.message : String(error);
-        this.outputChannel.appendLine(`[environment][error] ${text}`);
-        this.postStatus('error', text);
-      }
+      void (async () => {
+        try {
+          this.postState(await this.service.getSnapshot(forceRefresh));
+          this.postStatus('idle', '');
+        } catch (error) {
+          const text = error instanceof Error ? error.message : String(error);
+          this.outputChannel.appendLine(`[environment][error] ${text}`);
+          this.postStatus('error', text);
+        }
+      })();
     }, 0);
   }
 }

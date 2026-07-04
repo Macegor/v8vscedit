@@ -7,8 +7,8 @@ import { buildMetadataCacheSnapshot, type MetadataCacheNode } from '../../infra/
 import { getObjectLocationFromXml } from '../../infra/fs/MetaPathResolver';
 import { MetadataXmlCreator } from '../../infra/xml/MetadataXmlCreator';
 
-const EXAMPLE_CFE_ROOT = path.resolve(__dirname, '../../../example/src/cfe');
-const EXAMPLE_CF = path.resolve(__dirname, '../../../example/src/cf');
+const EXAMPLE_CFE_ROOT = path.resolve(__dirname, '../../../example/2.21/src/cfe');
+const EXAMPLE_CF = path.resolve(__dirname, '../../../example/2.20/src/cf');
 
 function findFirstCfeRoot(): string | null {
   if (!fs.existsSync(EXAMPLE_CFE_ROOT)) {
@@ -28,8 +28,8 @@ function findFirstCfeRoot(): string | null {
 
 suite('MetadataCache', () => {
   test('Для объектов с плоским XML Git-декорация учитывает XML и каталог объекта', function () {
-    // Проверяем инвариант на любой доступной конфигурации: либо CFE из example/src/cfe,
-    // либо CF из example/src/cf — оба сценария содержат плоские XML объекты с боковым каталогом.
+    // Проверяем инвариант на любой доступной конфигурации: либо CFE из example/2.21/src/cfe,
+    // либо CF из example/2.20/src/cf — оба сценария содержат плоские XML объекты с боковым каталогом.
     const cfeRoot = findFirstCfeRoot();
     const entry: ConfigEntry = cfeRoot
       ? { rootPath: cfeRoot, kind: 'cfe' }

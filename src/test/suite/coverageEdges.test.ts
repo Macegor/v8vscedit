@@ -15,8 +15,8 @@ import {
   buildMetadataTypeItem,
 } from '../../ui/views/properties/MetadataTypeService';
 
-const EXAMPLE_CF = path.resolve(__dirname, '../../../example/src/cf');
-const EXAMPLE_CFE_ROOT = path.resolve(__dirname, '../../../example/src/cfe');
+const EXAMPLE_CF = path.resolve(__dirname, '../../../example/2.20/src/cf');
+const EXAMPLE_CFE_ROOT = path.resolve(__dirname, '../../../example/2.21/src/cfe');
 
 function findFirstCfeRoot(): string | null {
   if (!fs.existsSync(EXAMPLE_CFE_ROOT)) {
@@ -54,7 +54,7 @@ suite('coverage edge-сценарии на реальных данных', () =>
     assert.ok(changes.length >= 1);
     assert.strictEqual(changes[0]?.kind, 'cf');
 
-    // Подсистемы могут отсутствовать в текущей выгрузке example/src/cf —
+    // Подсистемы могут отсутствовать в текущей выгрузке example/2.20/src/cf —
     // тогда вместо проверки делаем no-op (узел просто не существует).
     const snapshot = buildMetadataCacheSnapshot('subsystems', { rootPath: EXAMPLE_CF, kind: 'cf' });
     const subsystem = findCacheNode(snapshot.root, (node) => node.type === 'Subsystem' && node.children.length > 0);

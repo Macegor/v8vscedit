@@ -321,9 +321,18 @@ export class AiMcpViewProvider implements vscode.Disposable {
   }
 
   private postState(): void {
-    void this.getSnapshot().then((state) => {
-      void this.panel?.webview.postMessage({ type: 'state', state });
-    });
+    this.getSnapshot()
+      .then((state) => {
+        void this.panel?.webview.postMessage({ type: 'state', state });
+      })
+      .catch((error: unknown) => {
+        // Интеграционный путь, без unit-арнеса: сбор снапшота может упасть на
+        // недоступном окружении — гасим floating rejection логированием.
+        /* c8 ignore next 3 */
+        this.outputChannel.appendLine(
+          `[ai-mcp][error] не удалось собрать состояние панели: ${error instanceof Error ? error.message : String(error)}`
+        );
+      });
   }
 
   private postStatus(kind: 'idle' | 'success' | 'error', message: string): void {

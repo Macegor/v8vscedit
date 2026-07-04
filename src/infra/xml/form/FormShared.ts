@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { FormPurpose } from './types';
-import { escapeXmlAttribute } from '../XmlUtils';
+import { escapeXmlAttribute, escapeRegExp, buildLocalizedTag, extractMetaDataObjectVersion } from '../XmlUtils';
 
 export const MD_XMLNS = 'xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:app="http://v8.1c.ru/8.2/managed-application/core" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:cmi="http://v8.1c.ru/8.2/managed-application/cmi" xmlns:ent="http://v8.1c.ru/8.1/data/enterprise" xmlns:lf="http://v8.1c.ru/8.2/managed-application/logform" xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:sys="http://v8.1c.ru/8.1/data/ui/fonts/system" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:web="http://v8.1c.ru/8.1/data/ui/colors/web" xmlns:win="http://v8.1c.ru/8.1/data/ui/colors/windows" xmlns:xen="http://v8.1c.ru/8.3/xcf/enums" xmlns:xpr="http://v8.1c.ru/8.3/xcf/predef" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"';
 export const FORM_XMLNS = 'xmlns="http://v8.1c.ru/8.3/xcf/logform" xmlns:app="http://v8.1c.ru/8.2/managed-application/core" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:dcscor="http://v8.1c.ru/8.1/data-composition-system/core" xmlns:dcsset="http://v8.1c.ru/8.1/data-composition-system/settings" xmlns:ent="http://v8.1c.ru/8.1/data/enterprise" xmlns:lf="http://v8.1c.ru/8.2/managed-application/logform" xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:sys="http://v8.1c.ru/8.1/data/ui/fonts/system" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:web="http://v8.1c.ru/8.1/data/ui/colors/web" xmlns:win="http://v8.1c.ru/8.1/data/ui/colors/windows" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"';
@@ -181,7 +181,7 @@ export function detectFormatVersion(startPath: string): string {
     const configXml = path.join(current, 'Configuration.xml');
     if (fs.existsSync(configXml)) {
       const head = fs.readFileSync(configXml, 'utf-8').slice(0, 2000);
-      return /<MetaDataObject\b[^>]*version="([^"]+)"/.exec(head)?.[1] ?? '2.17';
+      return extractMetaDataObjectVersion(head) ?? '2.17';
     }
     current = path.dirname(current);
   }
@@ -247,20 +247,15 @@ export function unique(values: readonly string[]): string[] {
 // атрибутов одной функцией, поэтому семантика совпадает с escapeXmlAttribute.
 export const escapeXml = escapeXmlAttribute;
 
-export function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+// Реэкспорт канонического хелпера из XmlUtils: внешние импортёры формы
+// (FormEditService/FormValidateService/FormInfoService/FormAddService) продолжают
+// брать escapeRegExp отсюда, но единственная реализация живёт в XmlUtils.
+export { escapeRegExp };
 
-export function buildLocalizedTag(indent: string, tag: string, text: string): string {
-  return [
-    `${indent}<${tag}>`,
-    `${indent}\t<v8:item>`,
-    `${indent}\t\t<v8:lang>ru</v8:lang>`,
-    `${indent}\t\t<v8:content>${escapeXml(text)}</v8:content>`,
-    `${indent}\t</v8:item>`,
-    `${indent}</${tag}>`,
-  ].join('\n');
-}
+// Реэкспорт канонического хелпера из XmlUtils: формы всегда генерируют полный
+// локализованный блок (без самозакрывающегося варианта для пустого текста), что
+// совпадает с дефолтом buildLocalizedTag (emptyAsSelfClosing не задан).
+export { buildLocalizedTag };
 
 export function appendBoolean(lines: string[], indent: string, tag: string, value: boolean | undefined): void {
   if (value !== undefined) {

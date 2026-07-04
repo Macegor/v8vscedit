@@ -10,7 +10,7 @@ import { McpPropertyService } from '../../ui/mcp/McpPropertyService';
 
 suite('McpPropertyService', () => {
   test('возвращает enum-контракт конкретного свойства конкретного реквизита', () => {
-    const xmlPath = path.resolve(__dirname, '../../../example/src/cf/Catalogs/Пользователи.xml');
+    const xmlPath = path.resolve(__dirname, '../../../example/2.20/src/cf/Catalogs/Пользователи.xml');
     const node = createAttributeNode(xmlPath);
     const service = new McpPropertyService(new ConfigurationXmlEditor());
 
@@ -221,7 +221,7 @@ suite('McpPropertyService', () => {
       const catalogDir = path.join(root, 'Catalogs');
       fs.mkdirSync(catalogDir, { recursive: true });
       const xmlPath = path.join(catalogDir, 'Пользователи.xml');
-      fs.copyFileSync(path.resolve(__dirname, '../../../example/src/cf/Catalogs/Пользователи.xml'), xmlPath);
+      fs.copyFileSync(path.resolve(__dirname, '../../../example/2.20/src/cf/Catalogs/Пользователи.xml'), xmlPath);
       const before = fs.readFileSync(xmlPath, 'utf-8');
       const node = createAttributeNode(xmlPath);
       const service = new McpPropertyService(new ConfigurationXmlEditor());
@@ -237,7 +237,7 @@ suite('McpPropertyService', () => {
   });
 
   test('не разрешает простую запись типизированного значения заполнения', () => {
-    const xmlPath = path.resolve(__dirname, '../../../example/src/cf/Catalogs/Пользователи.xml');
+    const xmlPath = path.resolve(__dirname, '../../../example/2.20/src/cf/Catalogs/Пользователи.xml');
     const node = createAttributeNode(xmlPath);
     const service = new McpPropertyService(new ConfigurationXmlEditor());
 

@@ -147,6 +147,30 @@ suite('ProcessDesignerAgentTransport', () => {
     await assert.rejects(transport.connect(), /shell denied/);
   });
 
+  // Волна 2 (M7, регресс): если hooks.onQuestion возвращает отклонённый promise,
+  // execute() не должен зависать навечно — ошибка обязана долететь до вызывающего
+  // кода, а подписки на output (messages/stderr/error/close) должны быть сняты
+  // (проверяем через второй вызов execute на том же транспорте: очередь не должна
+  // оставаться заблокированной старыми слушателями).
+  test('reject из hooks.onQuestion не теряется и не подвешивает execute', async () => {
+    const fake = new FakeSshClient();
+    fake.channel.replyMode = 'question';
+    const transport = new ProcessDesignerAgentTransport(baseOptions(), () => fake);
+
+    await assert.rejects(
+      transport.execute('config load-config-from-files --dir=workspace/test', {
+        onQuestion: () => Promise.reject(new Error('boom')),
+      }),
+      /boom/
+    );
+
+    // Очередь команд не должна быть заблокирована зависшим предыдущим вызовом —
+    // следующая команда в той же сессии обязана выполниться штатно.
+    fake.channel.replyMode = 'success';
+    const result = await transport.execute('config update-db-cfg');
+    assert.strictEqual(result.messages.at(-1)?.type, 'success');
+  });
+
   test('ошибка содержит команду и финальное сообщение конфигуратора', async () => {
     const fake = new FakeSshClient();
     fake.channel.replyMode = 'empty-unknown';

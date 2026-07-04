@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { XMLValidator } from 'fast-xml-parser';
-import { escapeXmlAttribute, escapeXmlText, writeTextFilePreservingBomAndEol } from './XmlUtils';
+import { escapeRegExp, escapeXmlAttribute, escapeXmlText, extractMetaDataObjectVersion, unescapeXml, writeTextFilePreservingBomAndEol } from './XmlUtils';
 
 const CI_NS = 'http://v8.1c.ru/8.3/xcf/extrnprops';
 const XR_NS = 'http://v8.1c.ru/8.3/xcf/readable';
@@ -544,9 +544,9 @@ function detectFormatVersion(startDir: string): string {
   while (current && path.dirname(current) !== current) {
     const configPath = path.join(current, 'Configuration.xml');
     if (fs.existsSync(configPath)) {
-      const match = /<MetaDataObject\b[^>]*version="([^"]+)"/.exec(fs.readFileSync(configPath, 'utf-8'));
-      if (match) {
-        return match[1];
+      const version = extractMetaDataObjectVersion(fs.readFileSync(configPath, 'utf-8'));
+      if (version !== undefined) {
+        return version;
       }
     }
     current = path.dirname(current);
@@ -605,12 +605,4 @@ function paginate(lines: readonly string[], limit?: number, offset?: number): st
     return [...sliced, '', `[ОБРЕЗАНО] Показано ${String(sliced.length)} из ${String(lines.length)} строк.`];
   }
   return sliced;
-}
-
-function unescapeXml(value: string): string {
-  return value.replace(/&quot;/g, '"').replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

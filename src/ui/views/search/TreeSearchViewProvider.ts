@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import type { StandaloneServerStatus } from '../../../infra/standalone';
 import type { MetadataTreeProvider } from '../../tree/MetadataTreeProvider';
 import { WebviewHtmlFactory } from '../webview/WebviewHtmlFactory';
+import { isWebviewCommandAllowed } from '../webview/webviewCommandGuard';
 
 type TreeSearchMessage =
   | { readonly type: 'command'; readonly command: string }
@@ -29,6 +30,8 @@ export class TreeSearchViewProvider implements vscode.WebviewViewProvider {
 
   private view: vscode.WebviewView | undefined;
   private htmlFactory: WebviewHtmlFactory;
+  /** Кэш зарегистрированных команд для guard'а webview (S2). */
+  private registeredCommandsCache: readonly string[] | undefined;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -88,6 +91,11 @@ export class TreeSearchViewProvider implements vscode.WebviewViewProvider {
         this.applySearch('');
         return;
       }
+      if (!(await this.isWebviewCommandAllowed(message.command))) {
+        // Отклоняем произвольную команду из webview (S2): выполнять можно только
+        // зарегистрированные команды расширения v8vscedit.*.
+        return;
+      }
       try {
         await vscode.commands.executeCommand(message.command);
       } catch (error) {
@@ -103,11 +111,20 @@ export class TreeSearchViewProvider implements vscode.WebviewViewProvider {
         : (message.payload as { query?: string }).query ?? '';
       this.applySearch(query);
 
+      // Единый конверт протокола host→webview (вариант A, как universal/subsystem):
+      // searchQuery берём из нормализованного состояния дерева, а не из сырого
+      // payload — короткий запрос (<3 символов) applySearch сбрасывает в '',
+      // и webview должен увидеть именно этот результат.
       void this.view?.webview.postMessage({
-        type: 'searchState',
-        value: query,
+        type: 'state',
+        state: { searchQuery: this.services.treeProvider.getSearchQuery() },
       });
     }
+  }
+
+  private async isWebviewCommandAllowed(command: string): Promise<boolean> {
+    this.registeredCommandsCache ??= await vscode.commands.getCommands(true);
+    return isWebviewCommandAllowed(command, this.registeredCommandsCache);
   }
 
   private applySearch(value: string): void {

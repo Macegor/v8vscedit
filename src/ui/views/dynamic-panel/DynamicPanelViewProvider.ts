@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { WebviewHtmlFactory } from '../webview/WebviewHtmlFactory';
+import { resolveWebviewLocalResourceRoots } from '../webview/webviewResourceRoots';
 import type { DynamicPanelController, DynamicPanelHost } from './DynamicPanelController';
 import type { DynamicPanelState } from './_types';
 
@@ -35,10 +36,7 @@ export class DynamicPanelViewProvider
     this.view = webviewView;
     webviewView.webview.options = {
       enableScripts: true,
-      localResourceRoots: [
-        vscode.Uri.joinPath(this.extensionUri, 'dist', 'ui'),
-        this.extensionUri,
-      ],
+      localResourceRoots: resolveWebviewLocalResourceRoots(this.extensionUri, { includeIcons: false }),
     };
 
     webviewView.webview.html = this.buildHtml(webviewView.webview);

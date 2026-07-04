@@ -26,6 +26,7 @@ export class DesignerAgentProcess {
   private exited = false;
   private exitCode: number | null = null;
   private exitSignal: NodeJS.Signals | null = null;
+  private spawnError: Error | undefined;
 
   start(options: DesignerAgentProcessOptions): void {
     if (this.child && !this.child.killed) {
@@ -35,23 +36,50 @@ export class DesignerAgentProcess {
     this.exited = false;
     this.exitCode = null;
     this.exitSignal = null;
+    this.spawnError = undefined;
     const args = buildDesignerAgentArgs(options);
-    this.child = spawn(resolveV8ExecutablePath(options.connection.v8Path), args, {
-      cwd: options.cwd,
-      detached: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    try {
+      this.child = spawn(resolveV8ExecutablePath(options.connection.v8Path), args, {
+        cwd: options.cwd,
+        detached: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (err) {
+      // На части платформ ошибка запуска (ENOEXEC/EACCES) бросается синхронно
+      // прямо из spawn(), минуя событие 'error'. Обрабатываем тем же путём.
+      this.handleSpawnFailure(err instanceof Error ? err : new Error(String(err)), options);
+      return;
+    }
     // stdout агента — JSON-протокол в UTF-8, оставляем как есть.
     this.child.stdout?.on('data', (chunk: Buffer) => options.onStdout?.(chunk.toString('utf-8').trim()));
     // stderr/лог-строки могут быть в OEM-866/Win1251 — нормализуем кодировку.
     this.child.stderr?.on('data', (chunk: Buffer) => options.onStderr?.(decodeProcessOutput(chunk).trim()));
+    // Без слушателя 'error' реальная spawn-ошибка (ENOENT/ENOEXEC/EACCES)
+    // роняет весь Extension Host необработанным исключением.
+    this.child.on('error', (err) => this.handleSpawnFailure(err, options));
     this.child.on('exit', (code, signal) => {
+      const alreadyExited = this.exited;
       this.exited = true;
+      // Не перезатираем корректный код, если 'error' пришёл раньше 'exit'.
       this.exitCode = code;
       this.exitSignal = signal;
-      options.onExit?.(code, signal);
+      if (!alreadyExited) {
+        options.onExit?.(code, signal);
+      }
     });
     this.child.unref();
+  }
+
+  /** Единый обработчик отказа spawn (синхронного и через событие 'error'). */
+  private handleSpawnFailure(err: Error, options: DesignerAgentProcessOptions): void {
+    this.spawnError = err;
+    const alreadyExited = this.exited;
+    this.exited = true;
+    options.onStderr?.(`Ошибка запуска конфигуратора: ${describeSpawnError(err)}`);
+    // onExit — ровно один раз: если 'exit' ещё не приходил, вызываем здесь.
+    if (!alreadyExited) {
+      options.onExit?.(this.exitCode, this.exitSignal);
+    }
   }
 
   async stop(timeoutMs = 5_000): Promise<void> {
@@ -107,7 +135,25 @@ export class DesignerAgentProcess {
     if (!this.exited) {
       return 'процесс ещё работает';
     }
+    if (this.spawnError) {
+      return `не удалось запустить конфигуратор: ${describeSpawnError(this.spawnError)}`;
+    }
     return `код=${String(this.exitCode ?? '-')}, сигнал=${this.exitSignal ?? '-'}`;
+  }
+}
+
+/** Переводит системную spawn-ошибку в человекочитаемую причину. */
+function describeSpawnError(err: Error): string {
+  const code = (err as NodeJS.ErrnoException).code;
+  switch (code) {
+    case 'ENOENT':
+      return 'исполняемый файл 1С не найден (ENOENT)';
+    case 'ENOEXEC':
+      return 'файл не является исполняемым для этой платформы (ENOEXEC)';
+    case 'EACCES':
+      return 'нет прав на выполнение файла (EACCES)';
+    default:
+      return err.message;
   }
 }
 

@@ -77,7 +77,7 @@ onUnmounted(() => {
 
     <template v-if="initialized">
       <div class="actions-section">
-        <vscode-button @click="executeCommand('v8vscedit.decompileExtension')" title="Импорт конфигураций">
+        <vscode-button @click="executeCommand('v8vscedit.importConfigurations')" title="Импорт конфигураций">
           <span class="codicon codicon-cloud-download"></span>
           <span class="action-label">Импорт</span>
         </vscode-button>
@@ -89,7 +89,7 @@ onUnmounted(() => {
           <span class="codicon codicon-tools"></span>
           <span class="action-label">Конфигуратор</span>
         </vscode-button>
-        <vscode-button @click="executeCommand('v8vscedit.environmentSettings')" title="Настройки проекта">
+        <vscode-button @click="executeCommand('v8vscedit.configureEnvironment')" title="Настройки проекта">
           <span class="codicon codicon-settings-gear"></span>
           <span class="action-label">Настройки</span>
         </vscode-button>
@@ -106,7 +106,7 @@ onUnmounted(() => {
           <vscode-button
             v-if="serverStatus.state === 'stopped' || serverStatus.state === 'stale'"
             appearance="secondary"
-            @click="executeCommand('v8vscedit.startStandaloneServer')"
+            @click="executeCommand('v8vscedit.standalone.start')"
             title="Запустить"
           >
             <span class="codicon codicon-play"></span>
@@ -114,14 +114,14 @@ onUnmounted(() => {
           <vscode-button
             v-if="serverStatus.state === 'running'"
             appearance="secondary"
-            @click="executeCommand('v8vscedit.stopStandaloneServer')"
+            @click="executeCommand('v8vscedit.standalone.stop')"
             title="Остановить"
           >
             <span class="codicon codicon-stop"></span>
           </vscode-button>
           <vscode-button
             appearance="secondary"
-            @click="executeCommand('v8vscedit.openStandaloneServerLog')"
+            @click="executeCommand('v8vscedit.standalone.showLog')"
             title="Лог"
           >
             <span class="codicon codicon-output"></span>
@@ -129,7 +129,7 @@ onUnmounted(() => {
           <vscode-button
             v-if="serverStatus.state === 'running'"
             appearance="secondary"
-            @click="executeCommand('v8vscedit.openStandaloneServer')"
+            @click="executeCommand('v8vscedit.standalone.openWebClient')"
             title="Открыть в браузере"
           >
             <span class="codicon codicon-browser"></span>

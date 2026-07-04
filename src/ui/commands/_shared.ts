@@ -4,6 +4,7 @@ import type { CfeBorrowService } from '../../infra/cfe/CfeBorrowService';
 import type { CfeDiffService } from '../../infra/cfe/CfeDiffService';
 import type { CfePatchMethodService } from '../../infra/cfe/CfePatchMethodService';
 import type { RepositoryService } from '../../infra/repository/RepositoryService';
+import type { ProjectSecretStorage } from '../../infra/environment';
 import type { RoleRightsService } from '../../infra/role';
 import type { AiSkillsInstaller } from '../../infra/skills/AiSkillsInstaller';
 import type { StandaloneServerService } from '../../infra/standalone';
@@ -65,6 +66,7 @@ export interface CommandServices {
   outputChannel: vscode.OutputChannel;
   supportService?: SupportInfoService;
   repositoryService: RepositoryService;
+  projectSecretStorage: ProjectSecretStorage;
   repositoryConnectionViewProvider: RepositoryConnectionViewProvider;
   repositoryCommitViewProvider: RepositoryCommitViewProvider;
   bslAnalyzerConfigService: BslAnalyzerConfigService;

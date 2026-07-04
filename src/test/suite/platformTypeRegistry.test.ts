@@ -8,7 +8,7 @@ import {
   type TypeContext,
 } from '../../infra/xml/PlatformTypeRegistry';
 
-const CONFIG_XML = path.resolve(__dirname, '../../../example/src/cf/Configuration.xml');
+const CONFIG_XML = path.resolve(__dirname, '../../../example/2.20/src/cf/Configuration.xml');
 
 function findGroup(groups: PlatformTypeGroup[], id: string): PlatformTypeGroup | undefined {
   return groups.find((g) => g.id === id);

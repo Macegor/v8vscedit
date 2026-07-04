@@ -3,6 +3,7 @@ import type { ChildTag } from '../../../domain/ChildTag';
 import { getMetaLabel } from '../../../domain/MetaTypes';
 import { updateMetadataCacheAfterAdd } from '../../../infra/cache/MetadataCache';
 import { getObjectLocationFromXml } from '../../../infra/fs/MetaPathResolver';
+import { SupportMode } from '../../../infra/support/SupportInfoService';
 import type { TemplateType } from '../../../infra/xml';
 import type { AddMetadataTarget, MetadataNode } from '../../tree/TreeNode';
 import type { CommandServices } from '../_shared';
@@ -36,7 +37,7 @@ export class MetadataMutationService {
       return this.fail(nameValidationError);
     }
 
-    const restricted = this.validateRepositoryAccess(input.target);
+    const restricted = this.validateEditAccess(input.target);
     if (restricted) {
       return this.fail(restricted);
     }
@@ -85,6 +86,25 @@ export class MetadataMutationService {
       warnings: result.warnings,
       errors: [],
     };
+  }
+
+  /**
+   * Единая проверка права на добавление: сначала режим поддержки
+   * (`SupportMode.Locked` — объект/конфигурация на поддержке с запретом
+   * редактирования), затем захват в хранилище. Повторяет семантику
+   * `V8McpServer.assertMetadataEditable`, но применяется и к add-пути, который
+   * прежде проверял только хранилище (общая точка для UI и MCP add).
+   */
+  private validateEditAccess(target: AddMetadataTarget): string | null {
+    const supportProbePath = target.kind === 'root'
+      ? path.join(target.configRoot, 'Configuration.xml')
+      : target.ownerObjectXmlPath;
+    if (this.services.supportService?.getSupportMode(supportProbePath) === SupportMode.Locked) {
+      return target.kind === 'root'
+        ? 'Добавление запрещено: конфигурация находится на поддержке с запретом редактирования.'
+        : 'Добавление запрещено: объект находится на поддержке с запретом редактирования.';
+    }
+    return this.validateRepositoryAccess(target);
   }
 
   private validateRepositoryAccess(target: AddMetadataTarget): string | null {

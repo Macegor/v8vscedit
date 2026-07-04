@@ -6,7 +6,7 @@ import { getMetaFolder, META_TYPES } from '../../domain/MetaTypes';
 import { ConfigurationXmlEditor } from './ConfigurationXmlEditor';
 import { CommandInterfaceService, type CommandInterfaceInfoResult, type CommandInterfaceValidationResult } from './CommandInterfaceService';
 import { SubsystemXmlService, type SubsystemInfo } from './SubsystemXmlService';
-import { escapeXmlText } from './XmlUtils';
+import { escapeXmlText, extractMetaDataObjectVersion } from './XmlUtils';
 
 const DEFAULT_FORMAT_VERSION = '2.18';
 const IDENTIFIER_RE = /^[A-Za-zА-Яа-яЁё_][A-Za-z0-9А-Яа-яЁё_]*$/;
@@ -517,7 +517,7 @@ function detectFormatVersion(configRoot: string): string {
   if (!fs.existsSync(configXmlPath)) {
     return DEFAULT_FORMAT_VERSION;
   }
-  return /<MetaDataObject\b[^>]*version="([^"]+)"/.exec(fs.readFileSync(configXmlPath, 'utf-8'))?.[1] ?? DEFAULT_FORMAT_VERSION;
+  return extractMetaDataObjectVersion(fs.readFileSync(configXmlPath, 'utf-8')) ?? DEFAULT_FORMAT_VERSION;
 }
 
 function extractSimpleTagText(xml: string, tagName: string): string {

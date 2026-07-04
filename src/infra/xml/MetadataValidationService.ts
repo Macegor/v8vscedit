@@ -3,7 +3,7 @@ import * as path from 'path';
 import { META_TYPES, type MetaKind } from '../../domain/MetaTypes';
 import type { MetaChild } from '../../domain/MetaObject';
 import { ObjectXmlReader } from './ObjectXmlReader';
-import { extractMainChildObjectsInnerXml, findChildElementsFullXmlInBlock } from './XmlUtils';
+import { escapeRegExp, extractMainChildObjectsInnerXml, findChildElementsFullXmlInBlock } from './XmlUtils';
 import { resolveMetadataObjectPath } from './MetadataInfoService';
 
 export type MetadataValidationSeverity = 'error' | 'warning' | 'info';
@@ -277,10 +277,6 @@ function isUuid(value: string): boolean {
 function extractRootUuid(xml: string, kind: string): string | undefined {
   const match = new RegExp(`<${escapeRegExp(kind)}\\b[^>]*\\buuid=(["'])([^"']+)\\1`, 'i').exec(xml);
   return match?.[2];
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 export function collectRawChildTagNames(xml: string): readonly string[] {

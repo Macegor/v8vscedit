@@ -9,6 +9,15 @@ export type TypeAwarePropertyOwnerKind =
   | 'Constant'
   | 'CommonAttribute';
 
+/**
+ * Тип регистра-владельца измерения/ресурса. Набор допустимых свойств поля и их
+ * значения по умолчанию зависят от типа регистра: платформа 1С отклоняет загрузку
+ * при свойстве, не входящем в состав объекта (напр. `UseInTotals` у измерения ИР,
+ * `Balance` у ресурса ИР), и при недопустимом значении перечисления (`Auto` у
+ * `QuickChoice`/`CreateOnInput` ресурса ИР).
+ */
+export type RegisterOwnerKind = 'InformationRegister' | 'AccumulationRegister';
+
 type FieldTypeCategory =
   | 'string'
   | 'number'
@@ -80,6 +89,15 @@ const DIMENSION_ORDER = ['DenyIncompleteValues', 'Master', 'MainFilter', 'TypeRe
 const RESOURCE_ORDER = ['Balance', 'AccountingFlag'] as const;
 const ADDRESSING_ORDER = ['AddressingDimension'] as const;
 
+// Ролевые свойства измерения зависят от типа регистра (эталоны example/2.20
+// InformationRegisters/AccumulationRegisters): у ИР — Master/MainFilter/
+// DenyIncompleteValues/TypeReductionMode; у РН — DenyIncompleteValues/UseInTotals.
+const IR_DIMENSION_ROLE = ['DenyIncompleteValues', 'Master', 'MainFilter', 'TypeReductionMode'] as const;
+const ACCUM_DIMENSION_ROLE = ['DenyIncompleteValues', 'UseInTotals'] as const;
+// Общие свойства, которые регистр накопления НЕ хранит у полей (в отличие от
+// реквизита объекта): свойства заполнения и история данных.
+const ACCUM_FIELD_DROP_KEYS = ['FillFromFillingValue', 'FillValue', 'DataHistory'] as const;
+
 const DEFAULT_VALUES: Readonly<Record<string, string>> = {
   PasswordMode: 'false',
   ToolTip: '',
@@ -124,15 +142,21 @@ const CONTROLLED_PROPERTY_KEY_SET: ReadonlySet<string> = new Set(CONTROLLED_PROP
 export function buildTypedFieldPropertyBlocks(
   kind: TypeAwarePropertyOwnerKind,
   typeInnerXml: string,
-  indent: string
+  indent: string,
+  registerKind?: RegisterOwnerKind
 ): string[] {
-  return getTypedFieldPropertyKeys(kind, typeInnerXml)
-    .map((key) => buildDefaultPropertyBlock(key, indent));
+  const defaults = getFieldDefaultValues(kind, registerKind);
+  return getTypedFieldPropertyKeys(kind, typeInnerXml, registerKind)
+    .map((key) => buildDefaultPropertyBlock(key, indent, defaults));
 }
 
 /** Возвращает ключи свойств typed field для выбранного типа без базовых `Name/Synonym/Comment/Type`. */
-export function getTypedFieldPropertyKeys(kind: TypeAwarePropertyOwnerKind, typeInnerXml: string): string[] {
-  return getAllowedPropertyKeys(kind, detectFieldTypeCategories(typeInnerXml));
+export function getTypedFieldPropertyKeys(
+  kind: TypeAwarePropertyOwnerKind,
+  typeInnerXml: string,
+  registerKind?: RegisterOwnerKind
+): string[] {
+  return getAllowedPropertyKeys(kind, detectFieldTypeCategories(typeInnerXml), registerKind);
 }
 
 /** Проверяет, управляется ли свойство составом `<Type>` и должно ли скрываться для неподходящего типа. */
@@ -214,7 +238,11 @@ function shouldPreserveEmptyFormattingProperty(block: { key: string; xml: string
   return (block.key === 'Format' || block.key === 'EditFormat') && /\/>\s*$/.test(block.xml);
 }
 
-function getAllowedPropertyKeys(kind: TypeAwarePropertyOwnerKind, categories: ReadonlySet<FieldTypeCategory>): string[] {
+function getAllowedPropertyKeys(
+  kind: TypeAwarePropertyOwnerKind,
+  categories: ReadonlySet<FieldTypeCategory>,
+  registerKind?: RegisterOwnerKind
+): string[] {
   const keys: string[] = [];
   appendUnique(keys, COMMON_ORDER);
 
@@ -235,16 +263,83 @@ function getAllowedPropertyKeys(kind: TypeAwarePropertyOwnerKind, categories: Re
     appendUnique(keys, CHOICE_ORDER);
   }
   if (kind === 'Dimension') {
-    appendUnique(keys, DIMENSION_ORDER);
+    appendUnique(keys, getDimensionRoleKeys(registerKind));
   }
   if (kind === 'Resource') {
-    appendUnique(keys, RESOURCE_ORDER);
+    appendUnique(keys, getResourceRoleKeys(registerKind));
   }
   if (kind === 'AddressingAttribute') {
     appendUnique(keys, ADDRESSING_ORDER);
   }
 
-  return sortByControlledOrder(keys);
+  // Колонка ТЧ (сериализуется как <Attribute> внутри TabularSection) не входит
+  // в наполнение объекта, поэтому свойств заполнения у неё нет. Платформа 1С их
+  // не принимает: «Свойство FillFromFillingValue/FillValue не входит в состав
+  // объекта метаданных Attribute».
+  const withoutColumnFill = kind === 'Column'
+    ? keys.filter((key) => key !== 'FillFromFillingValue' && key !== 'FillValue')
+    : keys;
+
+  return sortByControlledOrder(dropRegisterOmittedKeys(withoutColumnFill, kind, registerKind));
+}
+
+/** Ролевые свойства измерения: зависят от типа регистра, вне регистра — совместимый полный набор. */
+function getDimensionRoleKeys(registerKind?: RegisterOwnerKind): readonly string[] {
+  if (registerKind === 'InformationRegister') {
+    return IR_DIMENSION_ROLE;
+  }
+  if (registerKind === 'AccumulationRegister') {
+    return ACCUM_DIMENSION_ROLE;
+  }
+  return DIMENSION_ORDER;
+}
+
+/** Ролевые свойства ресурса: у регистров с известным типом их нет (Balance/AccountingFlag опущены). */
+function getResourceRoleKeys(registerKind?: RegisterOwnerKind): readonly string[] {
+  if (registerKind === 'InformationRegister' || registerKind === 'AccumulationRegister') {
+    return [];
+  }
+  return RESOURCE_ORDER;
+}
+
+/** Убирает у полей регистра накопления общие свойства, которые платформа для него не хранит. */
+function dropRegisterOmittedKeys(
+  keys: string[],
+  kind: TypeAwarePropertyOwnerKind,
+  registerKind?: RegisterOwnerKind
+): string[] {
+  if (registerKind !== 'AccumulationRegister' || (kind !== 'Dimension' && kind !== 'Resource')) {
+    return keys;
+  }
+  const drop = new Set<string>(ACCUM_FIELD_DROP_KEYS);
+  if (kind === 'Resource') {
+    drop.add('Indexing');
+  }
+  return keys.filter((key) => !drop.has(key));
+}
+
+/**
+ * Значения по умолчанию с учётом контекста. Поля регистра генерируются со
+ * строковым типом (небором для выбора), у которого `QuickChoice`/`CreateOnInput`
+ * не могут быть `Auto` — платформа: «Неверное значение перечисления - Auto». В
+ * эталоне у нессылочных полей регистра это `DontUse`/`Use` (у ссылочных — `Auto`,
+ * но генератор ссылочные поля по умолчанию не создаёт).
+ */
+function getFieldDefaultValues(
+  kind: TypeAwarePropertyOwnerKind,
+  registerKind?: RegisterOwnerKind
+): Readonly<Record<string, string>> {
+  if ((kind === 'Dimension' || kind === 'Resource') && registerKind) {
+    const overrides: Record<string, string> = { ...DEFAULT_VALUES, QuickChoice: 'DontUse', CreateOnInput: 'Use' };
+    // У измерения регистра `TypeReductionMode` для нессылочного типа — не `Auto`,
+    // а `TransformValues` (эталон: string/decimal-измерения ИР). `Auto` платформа
+    // отклоняет: «Неверное значение перечисления - Auto».
+    if (kind === 'Dimension') {
+      overrides.TypeReductionMode = 'TransformValues';
+    }
+    return overrides;
+  }
+  return DEFAULT_VALUES;
 }
 
 function appendUnique(target: string[], values: readonly string[]): void {
@@ -308,8 +403,12 @@ function normalizeRawType(value: string): string {
   return value.trim().replace(/^d\d+p\d+:/, '').replace(/^cfg:/, '');
 }
 
-function buildDefaultPropertyBlock(key: string, indent: string): string {
-  const value = DEFAULT_VALUES[key] ?? '';
+function buildDefaultPropertyBlock(
+  key: string,
+  indent: string,
+  defaults: Readonly<Record<string, string>> = DEFAULT_VALUES
+): string {
+  const value = defaults[key] ?? '';
   if (value === 'nil') {
     return `${indent}<${key} xsi:nil="true"/>`;
   }

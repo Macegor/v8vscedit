@@ -3,7 +3,7 @@ import * as path from 'path';
 import { getMetaFolder, type MetaKind } from '../../domain/MetaTypes';
 import { getObjectLocationFromXml } from '../fs/ObjectLocation';
 import { ObjectXmlReader } from './ObjectXmlReader';
-import { escapeXmlText, writeTextFilePreservingBomAndEol } from './XmlUtils';
+import { escapeRegExp, escapeXmlText, writeTextFilePreservingBomAndEol } from './XmlUtils';
 
 type PropertyValueKind = 'string' | 'boolean' | 'localizedString' | 'metadataReferenceList' | 'metadataFieldList';
 type RootPropertyKind = 'scalar' | 'localized' | 'reference' | 'boolean' | 'multiEnum';
@@ -495,8 +495,4 @@ export class ConfigurationXmlEditor {
 
 function isValidMetadataName(value: string): boolean {
   return /^[\p{L}][\p{L}\p{Nd}_]*$/u.test(value);
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

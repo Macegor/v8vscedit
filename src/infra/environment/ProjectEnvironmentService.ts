@@ -9,11 +9,16 @@ import {
   InfoBaseRegistryService,
   type RegisteredInfoBase,
 } from './InfoBaseRegistryService';
+import type { ProjectSecretStorage } from './ProjectSecretStorage';
 
 export interface ProjectLaunchSettings {
   readonly ibConnection: string;
   readonly dbUser: string;
-  readonly dbPassword: string;
+  /**
+   * Признак того, что пароль подключения к базе сохранён в `ProjectSecretStorage`.
+   * Сам пароль в снапшот (уходящий в webview) не попадает — вместо него флаг.
+   */
+  readonly dbPasswordSet: boolean;
   readonly platformPath: string;
   readonly v8Version: string;
 }
@@ -54,15 +59,34 @@ const DEFAULT_ENV = {
 /**
  * Готовит снимок окружения запуска и сохраняет выбранную базу/платформу в `env.json`.
  */
+/**
+ * Внешние системные сканеры (реестр баз 1С и установленные платформы). Вынесены
+ * в конструктор, чтобы модульные тесты подставляли детерминированные фейки:
+ * реального системного списка баз/платформ в тест-хосте нет, а сам скан — дорог.
+ * Продакшен-значения по умолчанию сохраняют прежнее поведение.
+ */
+export interface ProjectEnvironmentScanners {
+  readonly scanInfoBases?: () => InfoBaseRegistryScanResult;
+  readonly scanPlatforms?: () => InstalledOnecPlatform[];
+}
+
 export class ProjectEnvironmentService {
-  private readonly infoBaseRegistry = new InfoBaseRegistryService();
   private registryCache: InfoBaseRegistryScanResult | undefined;
   private platformsCache: InstalledOnecPlatform[] | undefined;
+  private readonly scanInfoBases: () => InfoBaseRegistryScanResult;
+  private readonly scanPlatforms: () => InstalledOnecPlatform[];
 
-  constructor(private readonly workspaceRoot: string) {}
+  constructor(
+    private readonly workspaceRoot: string,
+    private readonly secrets: ProjectSecretStorage,
+    scanners: ProjectEnvironmentScanners = {}
+  ) {
+    this.scanInfoBases = scanners.scanInfoBases ?? (() => new InfoBaseRegistryService().scan());
+    this.scanPlatforms = scanners.scanPlatforms ?? scanInstalledOnecPlatforms;
+  }
 
-  getInitialSnapshot(): ProjectEnvironmentSnapshot {
-    const settings = this.readSettings();
+  async getInitialSnapshot(): Promise<ProjectEnvironmentSnapshot> {
+    const settings = await this.readSettings();
     return {
       envPath: this.getEnvPath(),
       settings,
@@ -73,9 +97,9 @@ export class ProjectEnvironmentService {
     };
   }
 
-  getSnapshot(forceRefresh = false): ProjectEnvironmentSnapshot {
+  async getSnapshot(forceRefresh = false): Promise<ProjectEnvironmentSnapshot> {
     const registry = this.getRegistry(forceRefresh);
-    const settings = this.readSettings();
+    const settings = await this.readSettings();
     const platforms = ensureCurrentPlatformInList(this.getPlatforms(forceRefresh), settings.platformPath);
     return {
       envPath: this.getEnvPath(),
@@ -87,7 +111,7 @@ export class ProjectEnvironmentService {
     };
   }
 
-  save(input: SaveProjectEnvironmentInput): ProjectEnvironmentSnapshot {
+  async save(input: SaveProjectEnvironmentInput): Promise<ProjectEnvironmentSnapshot> {
     let registry = this.getRegistry(false);
     let selectedBase = registry.bases.find((base) => base.id === input.baseId);
     if (!selectedBase) {
@@ -109,13 +133,21 @@ export class ProjectEnvironmentService {
     defaults['--v8version'] = selectedPlatform?.version ?? '';
     defaults['--ibconnection'] = selectedBase.connection;
     defaults['--db-user'] = input.dbUser;
-    defaults['--db-pwd'] = input.dbPassword;
+    // Пароль никогда не пишется в env.json: значение уходит в SecretStorage,
+    // а в файле остаётся пустая строка (совместимость со схемой vanessa-runner).
+    defaults['--db-pwd'] = '';
     env.default = defaults;
     this.writeEnv(env);
 
+    // Пустой ввод пароля означает «не менять» — существующий секрет сохраняем,
+    // поэтому setDbPassword вызываем только при непустом значении.
+    if (input.dbPassword.trim()) {
+      await this.secrets.setDbPassword(input.dbPassword);
+    }
+
     return {
       envPath: this.getEnvPath(),
-      settings: this.readSettings(),
+      settings: await this.readSettings(),
       platforms: ensureCurrentPlatformInList(platforms, input.platformPath),
       bases: registry.bases,
       sources: registry.sources,
@@ -128,7 +160,7 @@ export class ProjectEnvironmentService {
       return this.registryCache;
     }
 
-    this.registryCache = this.infoBaseRegistry.scan();
+    this.registryCache = this.scanInfoBases();
     return this.registryCache;
   }
 
@@ -137,7 +169,7 @@ export class ProjectEnvironmentService {
       return this.platformsCache;
     }
 
-    this.platformsCache = scanInstalledOnecPlatforms();
+    this.platformsCache = this.scanPlatforms();
     return this.platformsCache;
   }
 
@@ -145,15 +177,35 @@ export class ProjectEnvironmentService {
     return path.join(this.workspaceRoot, 'env.json');
   }
 
-  private readSettings(): ProjectLaunchSettings {
+  private async readSettings(): Promise<ProjectLaunchSettings> {
+    await this.migrateLegacyDbPassword();
     const defaults = getDefaultSection(this.readEnv());
     return {
       ibConnection: asString(defaults['--ibconnection']),
       dbUser: asString(defaults['--db-user']),
-      dbPassword: asString(defaults['--db-pwd']),
+      dbPasswordSet: await this.secrets.hasDbPassword(),
       platformPath: asString(defaults['--path']),
       v8Version: asString(defaults['--v8version']),
     };
+  }
+
+  /**
+   * Переносит legacy-пароль из открытого `env.json` в SecretStorage и затирает
+   * его в файле. Срабатывает при первом обращении к снапшоту для конфигураций,
+   * ещё не пересохранённых через новый `save`.
+   */
+  private async migrateLegacyDbPassword(): Promise<void> {
+    const env = this.readEnv();
+    const defaults = getDefaultSection(env);
+    const legacy = asString(defaults['--db-pwd']).trim();
+    if (!legacy) {
+      return;
+    }
+
+    await this.secrets.setDbPassword(legacy);
+    defaults['--db-pwd'] = '';
+    env.default = defaults;
+    this.writeEnv(env);
   }
 
   private readEnv(): Record<string, unknown> {

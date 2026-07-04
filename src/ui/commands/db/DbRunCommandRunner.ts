@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { spawn, type ChildProcess } from 'child_process';
 import { launchInteractiveDesignerWithAgentPause } from '../../../infra/agent';
+import { resolveDbPassword, type ProjectSecretStorage } from '../../../infra/environment';
 import { normalizeInfoBasePath, resolveV8ExecutablePath, resolveV8PathHintFromVersion } from '../../../infra/process';
 import { getAgentOperationServiceForInteractiveDesigner, isAgentConfigurationOperationMode } from '../ext/ExtensionCommandRunner';
 
@@ -28,11 +29,12 @@ interface DbRunOptions {
 export async function runDbClientFromWorkspace(
   workspaceFolder: vscode.WorkspaceFolder,
   outputChannel: vscode.OutputChannel,
+  secrets: ProjectSecretStorage,
   options: DbRunOptions
 ): Promise<void> {
   try {
     const settingsPath = resolveSettingsPath(workspaceFolder.uri.fsPath);
-    const connection = resolveConnectionFromSettings(settingsPath);
+    const connection = await resolveConnectionFromSettings(settingsPath, secrets);
     const v8Path = resolveV8ExecutablePath(connection.v8Path ?? '');
     const args = buildLaunchArguments(options, connection);
     const agentService = options.mode === 'DESIGNER' && isAgentConfigurationOperationMode()
@@ -128,7 +130,10 @@ function resolveSettingsPath(workspaceRoot: string): string {
   return found;
 }
 
-function resolveConnectionFromSettings(settingsPath: string): DbRunConnectionParams {
+async function resolveConnectionFromSettings(
+  settingsPath: string,
+  secrets: ProjectSecretStorage
+): Promise<DbRunConnectionParams> {
   const raw = fs.readFileSync(settingsPath, 'utf-8');
   const parsed = JSON.parse(raw) as {
     default?: Record<string, unknown>;
@@ -142,7 +147,7 @@ function resolveConnectionFromSettings(settingsPath: string): DbRunConnectionPar
 
   const connection = parseIbConnection(ibConnectionRaw);
   connection.userName = asString(defaults['--db-user']) ?? '';
-  connection.password = asString(defaults['--db-pwd']) ?? '';
+  connection.password = await resolveDbPassword(secrets, asString(defaults['--db-pwd']) ?? '');
   connection.v8Path = resolveV8PathFromSettings(defaults);
   return connection;
 }

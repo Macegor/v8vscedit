@@ -5,7 +5,7 @@ import * as path from 'path';
 import { findConfigurations } from '../../infra/fs/ConfigLocator';
 
 /** Путь к папке с примерами конфигурации */
-const EXAMPLE_PATH = path.resolve(__dirname, '../../../example');
+const EXAMPLE_PATH = path.resolve(__dirname, '../../../example/2.20');
 
 suite('ConfigFinder', () => {
   test('Находит конфигурацию cf в example/cf', () => {
@@ -19,7 +19,7 @@ suite('ConfigFinder', () => {
     const entries = findConfigurations(EXAMPLE_PATH);
     const cfe = entries.find((e) => e.kind === 'cfe');
     if (!cfe) {
-      // example/src/cfe сейчас может быть пустым — тест применим лишь когда в выгрузке есть CFE.
+      // example/2.21/src/cfe сейчас может быть пустым — тест применим лишь когда в выгрузке есть CFE.
       this.skip();
     }
   });

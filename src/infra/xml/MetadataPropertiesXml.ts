@@ -1,4 +1,4 @@
-import { extractSimpleTag } from './XmlUtils';
+import { escapeRegExp, extractSimpleTag } from './XmlUtils';
 
 export interface LocalizedStringXmlValue {
   presentation: string;
@@ -223,9 +223,6 @@ export function extractMobileFunctionalityUseItems(innerXml: string): { function
   }));
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 /** Индекс начала `</tagName>` для блока, начинающегося с innerStart. */
 function findClosingTagIndex(xml: string, innerStart: number, tagName: string): number {

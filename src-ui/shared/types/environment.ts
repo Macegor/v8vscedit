@@ -3,7 +3,8 @@ import type { InstalledOnecPlatform } from './platform';
 export interface ProjectLaunchSettings {
   readonly ibConnection: string;
   readonly dbUser: string;
-  readonly dbPassword: string;
+  /** Пароль в webview не передаётся — только признак того, что он задан. */
+  readonly dbPasswordSet: boolean;
   readonly platformPath: string;
   readonly v8Version: string;
 }

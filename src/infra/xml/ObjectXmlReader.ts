@@ -7,11 +7,12 @@ import {
 } from '../../domain/StandardAttribute';
 import {
   escapeXmlText,
-  extractChildMetaElementXml,
-  extractColumnXmlFromTabularSection,
-  extractSimpleTag,
   extractStandardAttributeXml,
+  extractSimpleTag,
   extractSynonym,
+  findChildMetaElementRange,
+  findColumnRangeInTabularSection,
+  hasRealChange,
   writeTextFilePreservingBomAndEol,
 } from './XmlUtils';
 import { normalizeTypedFieldPropertiesAfterTypeChange } from './TypedFieldPropertyRules';
@@ -258,29 +259,36 @@ export class ObjectXmlReader {
     }
 
     const normalizedType = indentTypeInner(options.typeInnerXml);
-    const targetXml = (() => {
-      if (options.targetKind !== 'Column') {
-        return isRootTypeTargetKind(options.targetKind)
-          ? xml
-          : extractChildMetaElementXml(xml, options.targetKind, options.targetName);
+    // Локатор целевого блока: для корневых типов — весь XML, иначе — диапазон
+    // конкретного дочернего узла (депт-аварный, устраняет подмену одноимённых блоков).
+    const targetRange = (() => {
+      if (isRootTypeTargetKind(options.targetKind)) {
+        return { start: 0, end: xml.length };
       }
-      if (!options.tabularSectionName) {
-        return null;
+      if (options.targetKind === 'Column') {
+        if (!options.tabularSectionName) {
+          return null;
+        }
+        return findColumnRangeInTabularSection(xml, options.tabularSectionName, options.targetName);
       }
-      return extractColumnXmlFromTabularSection(xml, options.tabularSectionName, options.targetName);
+      return findChildMetaElementRange(xml, options.targetKind, options.targetName);
     })();
 
-    if (!targetXml) {
+    if (!targetRange) {
       return false;
     }
 
+    const targetXml = xml.slice(targetRange.start, targetRange.end);
     const updatedTarget = updateTypeInElement(targetXml, normalizedType, options.propertyName ?? 'Type');
     if (updatedTarget === targetXml) {
       return false;
     }
 
-    const updatedXml = xml.replace(targetXml, () => updatedTarget);
-    if (updatedXml === xml) {
+    const updatedXml = xml.slice(0, targetRange.start) + updatedTarget + xml.slice(targetRange.end);
+    // EOL-нечувствительное сравнение: вставленный блок собран с «голыми» \n, а файл
+    // может быть в CRLF — побайтовое `=== xml` тогда ложно считает файл изменившимся
+    // на каждом идемпотентном вызове (см. hasRealChange).
+    if (!hasRealChange(xml, updatedXml)) {
       return false;
     }
 
@@ -306,33 +314,47 @@ export class ObjectXmlReader {
       return false;
     }
 
-    let targetXml: string | null;
-    if (options.targetKind === 'Self') {
-      targetXml = xml;
-    } else if (options.targetKind === 'Column') {
-      if (!options.tabularSectionName) {
-        return false;
+    // Целевой блок адресуется диапазоном {start,end} в исходном XML, а не текстовым
+    // совпадением: одноимённые колонки в разных ТЧ (или совпадающие Type-блоки)
+    // не должны подменять друг друга. StandardAttribute локатора-диапазона не имеет
+    // (лежит внутри StandardAttributes и уникален по атрибуту name), поэтому для него
+    // сохраняется адресная замена по извлечённому значению.
+    const targetRange = ((): { start: number; end: number } | null => {
+      if (options.targetKind === 'Self') {
+        return { start: 0, end: xml.length };
       }
-      targetXml = extractColumnXmlFromTabularSection(xml, options.tabularSectionName, options.targetName);
-    } else if (options.targetKind === 'StandardAttribute') {
-      targetXml = extractStandardAttributeXml(xml, options.targetName, options.tabularSectionName);
-    } else {
-      targetXml = extractChildMetaElementXml(xml, options.targetKind, options.targetName);
-    }
+      if (options.targetKind === 'Column') {
+        if (!options.tabularSectionName) {
+          return null;
+        }
+        return findColumnRangeInTabularSection(xml, options.tabularSectionName, options.targetName);
+      }
+      if (options.targetKind === 'StandardAttribute') {
+        const standardXml = extractStandardAttributeXml(xml, options.targetName, options.tabularSectionName);
+        if (!standardXml) {
+          return null;
+        }
+        const start = xml.indexOf(standardXml);
+        return start >= 0 ? { start, end: start + standardXml.length } : null;
+      }
+      return findChildMetaElementRange(xml, options.targetKind, options.targetName);
+    })();
 
-    if (!targetXml) {
+    if (!targetRange) {
       return false;
     }
 
+    const targetXml = xml.slice(targetRange.start, targetRange.end);
     const updatedTarget = updatePropertyInElement(targetXml, options.propertyKey, options.valueKind, options.value);
     if (updatedTarget === targetXml) {
       return false;
     }
 
-    const updatedXml = options.targetKind === 'Self'
-      ? updatedTarget
-      : xml.replace(targetXml, () => updatedTarget);
-    if (updatedXml === xml) {
+    const updatedXml = xml.slice(0, targetRange.start) + updatedTarget + xml.slice(targetRange.end);
+    // EOL-нечувствительное сравнение (см. hasRealChange): buildPropertyValueBlock
+    // собирает вставляемый блок через .join('\n'), поэтому на CRLF-файле побайтовое
+    // сравнение давало бы ложный «изменён» при идемпотентной вставке.
+    if (!hasRealChange(xml, updatedXml)) {
       return false;
     }
     writeTextFilePreservingBomAndEol(xmlPath, xml, updatedXml);

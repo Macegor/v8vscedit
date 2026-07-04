@@ -15,6 +15,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { ConfigXmlReader } from './ConfigXmlReader';
+import { extractFirstBalancedBlock } from './MetadataPropertiesXml';
 import {
   BASE_TYPES,
   REF_KIND_MAP,
@@ -420,5 +421,28 @@ export function resolveConfigurationXml(sourceXmlPath: string | undefined): stri
       return null;
     }
     current = parent;
+  }
+}
+
+/**
+ * Читает исходный блок `<Type>` определяемого типа `DefinedTypes/<name>.xml`
+ * относительно каталога `Configuration.xml` и возвращает его внутренний XML.
+ *
+ * Чистый файловый доступ без vscode — вынесен из
+ * `EventSubscriptionPropertyService` (панель свойств), чтобы UI занимался только
+ * композицией. Защита от циклов раскрытия DefinedType остаётся на вызывающей
+ * стороне (`seenDefinedTypes`): функция выполняет ровно одно чтение и возвращает
+ * inner своего `<Type>`, даже если тот содержит self-reference.
+ */
+export function readDefinedTypeInnerXml(configXmlPath: string, definedTypeName: string): string | null {
+  const definedTypeXmlPath = path.join(path.dirname(configXmlPath), 'DefinedTypes', `${definedTypeName}.xml`);
+  if (!fs.existsSync(definedTypeXmlPath)) {
+    return null;
+  }
+  try {
+    const xml = fs.readFileSync(definedTypeXmlPath, 'utf-8');
+    return extractFirstBalancedBlock(xml, 'Type');
+  } catch {
+    return null;
   }
 }
