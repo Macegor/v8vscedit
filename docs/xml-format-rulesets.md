@@ -72,8 +72,12 @@
 
 - namespace вспомогательных файлов (формы, роли, макеты, схемы СКД, графсхемы);
 - наборы и порядок свойств корневых объектов по видам метаданных
-  (`buildRootProperties` / `buildCatalogProperties`, `PropertySchema`). Позиция
-  вставки `<StandardAttributes>`/`<StandardTabularSections>` пока задаётся прямо
+  (`buildRootProperties` / `buildCatalogProperties` в
+  `infra/xml/creator/rootObjectBuilders.ts`, см. также
+  [architecture.md](./architecture.md#декомпозиция-god-классов-на-тонкий-фасад--подмодули)
+  про раскладку `MetadataXmlCreator` на фасад + `infra/xml/creator/*`; свойства —
+  `PropertySchema`). Позиция вставки
+  `<StandardAttributes>`/`<StandardTabularSections>` пока задаётся прямо
   в `build*`-функциях (сами блоки уже принадлежат ruleset);
 - `<StandardAttributes>` табличных частей (реквизит `LineNumber`) при добавлении
   ТЧ через `addChildElement` — на данный момент не генерируется.
