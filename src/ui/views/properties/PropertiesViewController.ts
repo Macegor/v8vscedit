@@ -97,7 +97,8 @@ export class PropertiesViewController {
     private readonly supportService?: SupportInfoService,
     private readonly repositoryService?: RepositoryService,
     private readonly onAfterRename?: (configRoot: string, oldXmlPath: string, newXmlPath: string) => void,
-    private readonly onAfterSubsystemMembershipSave?: () => void
+    private readonly onAfterSubsystemMembershipSave?: () => void,
+    private readonly outputChannel?: vscode.OutputChannel
   ) {}
 
   setActiveNode(node: MetadataNode): void {
@@ -159,10 +160,16 @@ export class PropertiesViewController {
 
   /** Обрабатывает изменение простого свойства из Vue-приложения. */
   handlePropertyChange(controlId: string, value: unknown): void {
-    void this.handleWebviewMessage({
+    // handleWebviewMessage — async и пробрасывает ошибку записи (например EISDIR при
+    // повреждённом xmlPath) дальше; без .catch это станет unhandledRejection.
+    this.handleWebviewMessage({
       type: 'propertyChanged' as const,
       key: controlId,
       value: value as string | boolean | string[] | undefined,
+    }).catch((err: unknown) => {
+      this.outputChannel?.appendLine(
+        `[properties][error] не удалось применить изменение свойства «${controlId}»: ${err instanceof Error ? err.message : String(err)}`
+      );
     });
   }
 

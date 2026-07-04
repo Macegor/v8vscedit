@@ -4,8 +4,9 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { decode } from 'iconv-lite';
 import type { RepositoryBinding, RepositoryNodeRef, RepositoryService, RepositoryTarget } from '../../../infra/repository/RepositoryService';
+import { resolveDbPassword, type ProjectSecretStorage } from '../../../infra/environment';
 import {
-  decodeProcessOutput,
+  describeProcessInterruption,
   normalizeInfoBasePath,
   pickMostReadableText,
   resolveV8ExecutablePath,
@@ -38,19 +39,27 @@ interface RepositoryCliRunOptions {
 
 let statusBarItem: vscode.StatusBarItem | undefined;
 let clearStatusTimer: NodeJS.Timeout | undefined;
+// Счётчик активных операций хранилища: параллельные операции делят один статус-бар,
+// поэтому скрывать его по таймеру можно только когда завершилась последняя (count → 0).
+let activeOperationCount = 0;
 
 export interface RepositoryCliServices {
   workspaceFolder: vscode.WorkspaceFolder;
   outputChannel: vscode.OutputChannel;
   repositoryService: RepositoryService;
+  projectSecretStorage: ProjectSecretStorage;
 }
 
 export async function runRepositoryCliCommand(
   options: RepositoryCliRunOptions,
   services: RepositoryCliServices
 ): Promise<boolean> {
-  const connection = resolveDatabaseConnection(services.repositoryService.getEnvJsonPath());
-  const binding = options.bindingOverride ?? services.repositoryService.loadBinding(options.target);
+  const connection = await resolveDatabaseConnection(
+    services.repositoryService.getEnvJsonPath(),
+    services.projectSecretStorage
+  );
+  const binding = options.bindingOverride
+    ?? await services.repositoryService.resolveBindingForCommand(options.target);
   if (!binding) {
     throw new Error(`Для "${options.target.displayName}" не настроено подключение к хранилищу в env.json.`);
   }
@@ -59,7 +68,7 @@ export async function runRepositoryCliCommand(
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v8repo_'));
   const outFile = path.join(tempDir, `${options.command}.log`);
 
-  setOperationStatus(options.progressTitle, options.progressStartMessage, true);
+  beginRepositoryOperationStatus(options.progressTitle, options.progressStartMessage);
 
   try {
     const designerArgs: string[] = ['DESIGNER'];
@@ -76,30 +85,48 @@ export async function runRepositoryCliCommand(
 
     const stdoutChunks: string[] = [];
     const stderrChunks: string[] = [];
-    const result = await runProcess({
-      command: v8Path,
-      args: designerArgs,
-      cwd: services.workspaceFolder.uri.fsPath,
-      shell: false,
-      onStdout: (chunk) => {
-        const text = decodeProcessOutput(chunk).trim();
-        if (!text) {
-          return;
-        }
-        stdoutChunks.push(text);
-        services.outputChannel.appendLine(`[repository][stdout] ${text}`);
-        setOperationStatus(options.progressTitle, trimStatusMessage(text), true);
+    // Прогресс-нотификация с кнопкой отмены для прерывания зависшего конфигуратора.
+    // Статус-бар не переписываем — withProgress добавлен только ради отмены.
+    const result = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: options.progressTitle,
+        cancellable: true,
       },
-      onStderr: (chunk) => {
-        const text = decodeProcessOutput(chunk).trim();
-        if (!text) {
-          return;
-        }
-        stderrChunks.push(text);
-        services.outputChannel.appendLine(`[repository][stderr] ${text}`);
-        setOperationStatus(options.progressTitle, trimStatusMessage(`stderr: ${text}`), true);
-      },
-    });
+      (_progress, token) => runProcess({
+        command: v8Path,
+        args: designerArgs,
+        cwd: services.workspaceFolder.uri.fsPath,
+        shell: false,
+        cancellationToken: token,
+        onStdout: (text) => {
+          const line = text.trim();
+          if (!line) {
+            return;
+          }
+          stdoutChunks.push(line);
+          services.outputChannel.appendLine(`[repository][stdout] ${line}`);
+          updateRepositoryOperationStatus(options.progressTitle, trimStatusMessage(line));
+        },
+        onStderr: (text) => {
+          const line = text.trim();
+          if (!line) {
+            return;
+          }
+          stderrChunks.push(line);
+          services.outputChannel.appendLine(`[repository][stderr] ${line}`);
+          updateRepositoryOperationStatus(options.progressTitle, trimStatusMessage(`stderr: ${line}`));
+        },
+      })
+    );
+
+    const interruption = describeProcessInterruption(result);
+    if (interruption) {
+      services.outputChannel.appendLine(`[repository] ${interruption}`);
+      endRepositoryOperationStatus(options.progressTitle, 'прервано');
+      void vscode.window.showInformationMessage(`${options.progressTitle}: ${interruption}`);
+      return false;
+    }
 
     const logContent = readLogFileContent(outFile);
     if (result.exitCode !== 0) {
@@ -127,7 +154,7 @@ export async function runRepositoryCliCommand(
     }
 
     services.outputChannel.appendLine(`[repository] Завершено: ${commandAsText}`);
-    setOperationStatus(options.progressTitle, 'завершено', false);
+    endRepositoryOperationStatus(options.progressTitle, 'завершено');
     if (options.showSuccessMessage !== false) {
       void vscode.window.showInformationMessage(options.successMessage);
     }
@@ -135,7 +162,7 @@ export async function runRepositoryCliCommand(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     services.outputChannel.appendLine(`[repository][error] ${message}`);
-    setOperationStatus(options.progressTitle, 'ошибка', false);
+    endRepositoryOperationStatus(options.progressTitle, 'ошибка');
     await vscode.window.showErrorMessage(`${options.errorTitle}\n${message}`);
     return false;
   } finally {
@@ -532,7 +559,10 @@ function decodeLogFile(data: Buffer): string {
   return pickMostReadableText([cp866Text, cp1251Text, utf8Text]);
 }
 
-function resolveDatabaseConnection(settingsPath: string): ConnectionParams {
+async function resolveDatabaseConnection(
+  settingsPath: string,
+  secrets: ProjectSecretStorage
+): Promise<ConnectionParams> {
   if (!fs.existsSync(settingsPath)) {
     throw new Error(`Не найден env.json для подключения к базе: ${settingsPath}`);
   }
@@ -549,7 +579,7 @@ function resolveDatabaseConnection(settingsPath: string): ConnectionParams {
 
   const connection = parseIbConnection(ibConnectionRaw);
   connection.userName = asString(defaults['--db-user']) ?? '';
-  connection.password = asString(defaults['--db-pwd']) ?? '';
+  connection.password = await resolveDbPassword(secrets, asString(defaults['--db-pwd']) ?? '');
   connection.v8Path = resolveV8PathFromSettings(defaults);
   return connection;
 }
@@ -617,27 +647,91 @@ function extractFailureReason(details: string[], exitCode: number): string {
   return filtered.at(-1) ?? lines.at(-1) ?? `команда завершилась с кодом ${String(exitCode)}`;
 }
 
-function setOperationStatus(title: string, message: string, running: boolean): void {
-  if (!statusBarItem) {
-    statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 95);
-    statusBarItem.name = '1С: хранилище конфигурации';
+/**
+ * Компат-обёртка: `running=true` — граница старта операции (begin), `running=false` —
+ * терминал (end). Промежуточные обновления текста прогресса должны идти через
+ * {@link updateRepositoryOperationStatus}, иначе счётчик активных операций растёт на
+ * каждом прогресс-сообщении и статус-бар перестаёт скрываться (регресс M9).
+ */
+export function setRepositoryOperationStatus(title: string, message: string, running: boolean): void {
+  if (running) {
+    beginRepositoryOperationStatus(title, message);
+  } else {
+    endRepositoryOperationStatus(title, message);
   }
-  if (clearStatusTimer) {
-    clearTimeout(clearStatusTimer);
-    clearStatusTimer = undefined;
-  }
+}
+
+/** Начало операции хранилища: инкремент счётчика + спиннер-текст. */
+export function beginRepositoryOperationStatus(title: string, message: string): void {
+  ensureRepositoryStatusItem();
+  cancelRepositoryHideTimer();
+  activeOperationCount++;
+  showRepositorySpinnerStatus(title, message);
+}
+
+/** Обновление текста прогресса без изменения счётчика активных операций. */
+export function updateRepositoryOperationStatus(title: string, message: string): void {
+  ensureRepositoryStatusItem();
+  cancelRepositoryHideTimer();
+  showRepositorySpinnerStatus(title, message);
+}
+
+/** Терминал операции хранилища: декремент счётчика; при нуле — таймер скрытия. */
+export function endRepositoryOperationStatus(title: string, message: string): void {
+  ensureRepositoryStatusItem();
+  cancelRepositoryHideTimer();
+  activeOperationCount = Math.max(0, activeOperationCount - 1);
 
   const text = `${title}: ${message}`;
-  statusBarItem.text = running
-    ? `$(sync~spin) ${trimStatusMessage(text)}`
-    : `$(check) ${trimStatusMessage(text)}`;
-  statusBarItem.tooltip = text;
-  statusBarItem.show();
+  if (statusBarItem) {
+    statusBarItem.text = `$(check) ${trimStatusMessage(text)}`;
+    statusBarItem.tooltip = text;
+    statusBarItem.show();
+  }
 
-  if (!running) {
+  // Скрываем статус только когда завершилась последняя активная операция хранилища.
+  if (activeOperationCount === 0) {
     clearStatusTimer = setTimeout(() => {
       statusBarItem?.hide();
       clearStatusTimer = undefined;
     }, 5_000);
   }
+}
+
+function ensureRepositoryStatusItem(): void {
+  if (!statusBarItem) {
+    statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 95);
+    statusBarItem.name = '1С: хранилище конфигурации';
+  }
+}
+
+function cancelRepositoryHideTimer(): void {
+  if (clearStatusTimer) {
+    clearTimeout(clearStatusTimer);
+    clearStatusTimer = undefined;
+  }
+}
+
+function showRepositorySpinnerStatus(title: string, message: string): void {
+  const text = `${title}: ${message}`;
+  if (statusBarItem) {
+    statusBarItem.text = `$(sync~spin) ${trimStatusMessage(text)}`;
+    statusBarItem.tooltip = text;
+    statusBarItem.show();
+  }
+}
+
+/**
+ * Освобождает лениво созданный статус-бар хранилища на остановке расширения.
+ * Статус-бар не попадает в context.subscriptions, поэтому его нужно диспозить явно
+ * (симметрично disposeCachedAgentOperationServices для ExtensionCommandRunner).
+ */
+export function disposeRepositoryCommandStatusBar(): void {
+  if (clearStatusTimer) {
+    clearTimeout(clearStatusTimer);
+    clearStatusTimer = undefined;
+  }
+  statusBarItem?.dispose();
+  statusBarItem = undefined;
+  activeOperationCount = 0;
 }

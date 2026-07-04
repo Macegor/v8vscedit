@@ -2,6 +2,24 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { RepositoryService, type RepositoryTarget } from '../../infra/repository/RepositoryService';
+import { ProjectSecretStorage } from '../../infra/environment/ProjectSecretStorage';
+import type { SecretStore } from '../../infra/ai/AiSecretStorage';
+
+/** Фейковый SecretStore на Map — структурный контракт vscode.SecretStorage. */
+function createFakeSecretStore(): SecretStore {
+  const map = new Map<string, string>();
+  return {
+    get: (key: string) => Promise.resolve(map.get(key)),
+    store: (key: string, value: string) => {
+      map.set(key, value);
+      return Promise.resolve();
+    },
+    delete: (key: string) => {
+      map.delete(key);
+      return Promise.resolve();
+    },
+  };
+}
 
 const EXAMPLE_ROOT = path.resolve(__dirname, '../../../example/2.20');
 const EXAMPLE_CF = path.join(EXAMPLE_ROOT, 'src', 'cf');
@@ -15,7 +33,7 @@ suite('RepositoryService', () => {
   const statePath = path.join(EXAMPLE_ROOT, '.v8vscedit', 'repository', 'state.json');
 
   setup(() => {
-    service = new RepositoryService(EXAMPLE_ROOT);
+    service = new RepositoryService(EXAMPLE_ROOT, new ProjectSecretStorage(createFakeSecretStore(), EXAMPLE_ROOT));
     envBackup = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf-8') : undefined;
     stateBackup = fs.existsSync(statePath) ? fs.readFileSync(statePath, 'utf-8') : undefined;
   });
@@ -25,7 +43,7 @@ suite('RepositoryService', () => {
     restoreFile(statePath, stateBackup);
   });
 
-  test('Запрещает редактирование незахваченного модуля объекта при активном подключении к хранилищу', function () {
+  test('Запрещает редактирование незахваченного модуля объекта при активном подключении к хранилищу', async function () {
     const target_ = findFirstCatalogWithModule();
     if (!target_) {
       this.skip();
@@ -35,7 +53,7 @@ suite('RepositoryService', () => {
 
     assert.ok(target, 'Не удалось определить цель хранилища для примера.');
 
-    service.saveBinding(target, {
+    await service.saveBinding(target, {
       repoPath: '\\\\repo\\storage',
       repoUser: 'tester',
       repoPassword: 'secret',
@@ -55,7 +73,7 @@ suite('RepositoryService', () => {
     assert.strictEqual(service.isEditRestricted(modulePath), false);
   });
 
-  test('Для модуля формы использует захват корневого объекта', function () {
+  test('Для модуля формы использует захват корневого объекта', async function () {
     const target_ = findFirstCatalogWithForm();
     if (!target_) {
       this.skip();
@@ -65,7 +83,7 @@ suite('RepositoryService', () => {
 
     assert.ok(target, 'Не удалось определить цель хранилища для примера.');
 
-    service.saveBinding(target, {
+    await service.saveBinding(target, {
       repoPath: '\\\\repo\\storage',
       repoUser: 'tester',
       repoPassword: 'secret',
@@ -77,13 +95,13 @@ suite('RepositoryService', () => {
     service.setLocked(target, [`Справочник.${objectName}`], true);
     assert.strictEqual(service.isEditRestricted(formModulePath), false);
   });
-  test('Для создания корневых объектов требуется захват корня конфигурации', () => {
+  test('Для создания корневых объектов требуется захват корня конфигурации', async () => {
     const configXmlPath = path.join(EXAMPLE_CF, 'Configuration.xml');
     const target = service.resolveTargetByConfigRoot(EXAMPLE_CF);
 
     assert.ok(target, 'Не удалось определить цель хранилища для корня конфигурации.');
 
-    service.saveBinding(target, {
+    await service.saveBinding(target, {
       repoPath: '\\\\repo\\storage',
       repoUser: 'tester',
       repoPassword: 'secret',
@@ -131,24 +149,24 @@ suite('RepositoryService', () => {
     displayName: 'Тест',
   };
 
-  test('Пустой env.json не роняет чтение привязки', () => {
+  test('Пустой env.json не роняет чтение привязки', async () => {
     fs.writeFileSync(envPath, '   \n', 'utf-8');
     // Свежий сервис, чтобы исключить попадание в кэш предыдущего чтения.
-    const fresh = new RepositoryService(EXAMPLE_ROOT);
+    const fresh = new RepositoryService(EXAMPLE_ROOT, new ProjectSecretStorage(createFakeSecretStore(), EXAMPLE_ROOT));
     assert.doesNotThrow(() => fresh.hasBinding(sampleTarget));
-    assert.strictEqual(fresh.loadBinding(sampleTarget), null);
+    assert.strictEqual(await fresh.loadBinding(sampleTarget), null);
   });
 
-  test('Битый env.json даёт внятную ошибку', () => {
+  test('Битый env.json даёт внятную ошибку', async () => {
     fs.writeFileSync(envPath, '{ не json', 'utf-8');
-    const fresh = new RepositoryService(EXAMPLE_ROOT);
-    assert.throws(() => fresh.loadBinding(sampleTarget), /env\.json повреждён/);
+    const fresh = new RepositoryService(EXAMPLE_ROOT, new ProjectSecretStorage(createFakeSecretStore(), EXAMPLE_ROOT));
+    await assert.rejects(() => fresh.loadBinding(sampleTarget), /env\.json повреждён/);
   });
 
-  test('env.json не-объект трактуется как повреждённый', () => {
+  test('env.json не-объект трактуется как повреждённый', async () => {
     fs.writeFileSync(envPath, '[1,2,3]', 'utf-8');
-    const fresh = new RepositoryService(EXAMPLE_ROOT);
-    assert.throws(() => fresh.loadBinding(sampleTarget), /ожидался объект/);
+    const fresh = new RepositoryService(EXAMPLE_ROOT, new ProjectSecretStorage(createFakeSecretStore(), EXAMPLE_ROOT));
+    await assert.rejects(() => fresh.loadBinding(sampleTarget), /ожидался объект/);
   });
 
   test('findConfigRoot — invalidateConfigRootCache сбрасывает кэш', () => {

@@ -48,7 +48,15 @@
       </label>
       <label>
         Пароль
-        <input id="dbPassword" v-model="dbPassword" type="password" autocomplete="off" spellcheck="false" :disabled="isDisabled">
+        <input
+          id="dbPassword"
+          v-model="dbPassword"
+          type="password"
+          autocomplete="off"
+          spellcheck="false"
+          :disabled="isDisabled"
+          :placeholder="dbPasswordSet ? 'Пароль задан (оставьте пустым, чтобы не менять)' : 'Пароль'"
+        >
       </label>
     </section>
 
@@ -85,7 +93,9 @@ const state = ref<ProjectEnvironmentSnapshot>(props.initialState);
 const platformPath = ref(state.value.settings.platformPath || '');
 const baseId = ref(findSelectedBaseId(state.value));
 const dbUser = ref(state.value.settings.dbUser || '');
-const dbPassword = ref(state.value.settings.dbPassword || '');
+// Пароль не преднаполняем: он в SecretStorage и в webview не приходит.
+const dbPassword = ref('');
+const dbPasswordSet = ref(state.value.settings.dbPasswordSet ?? false);
 const saving = ref(false);
 const loading = ref(false);
 const status = reactive<{ kind: HostStatusKind; message: string }>({ kind: 'loading', message: 'Загружаю списки баз и платформ...' });
@@ -136,7 +146,9 @@ function applyState(nextState: ProjectEnvironmentSnapshot): void {
   platformPath.value = nextState.settings.platformPath || '';
   baseId.value = findSelectedBaseId(nextState);
   dbUser.value = nextState.settings.dbUser || '';
-  dbPassword.value = nextState.settings.dbPassword || '';
+  // Пароль не преднаполняем; после сохранения обновляем только признак «задан».
+  dbPassword.value = '';
+  dbPasswordSet.value = nextState.settings.dbPasswordSet ?? false;
 }
 
 function setStatus(kind: HostStatusKind, message: string): void {

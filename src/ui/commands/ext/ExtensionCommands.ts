@@ -8,11 +8,13 @@ import type { CommandServices, NodeArg } from '../_shared';
 import {
   type ConfigurationImportHooks,
   type ConfigurationProgressHooks,
+  beginConfigurationOperationStatus,
+  endConfigurationOperationStatus,
   extractExtensionTarget,
   runCompileExtension,
   runDecompileExtension,
   runDecompileMainConfiguration,
-  setConfigurationOperationStatus,
+  updateConfigurationOperationStatus,
   runUpdateMainConfiguration,
   runUpdateExtension,
 } from './ExtensionCommandRunner';
@@ -61,7 +63,7 @@ export function registerExtensionCommands(
 
       isUpdatingConfigurations = true;
       await vscode.commands.executeCommand('setContext', 'v8vscedit.isUpdatingConfigurations', true);
-      setConfigurationProgress(services, 'Импорт конфигураций', 'подготовка', true);
+      beginConfigurationProgress(services, 'Импорт конфигураций', 'подготовка');
       await yieldToUi();
       const completedRootPaths: string[] = [];
       try {
@@ -131,7 +133,7 @@ export function registerExtensionCommands(
 
       isUpdatingConfigurations = true;
       await vscode.commands.executeCommand('setContext', 'v8vscedit.isUpdatingConfigurations', true);
-      setConfigurationProgress(services, 'Обновление конфигураций', 'проверка изменений', true);
+      beginConfigurationProgress(services, 'Обновление конфигураций', 'проверка изменений');
       await yieldToUi();
       const completedRootPaths: string[] = [];
       try {
@@ -619,22 +621,37 @@ function showConfigurationCommandError(
   });
 }
 
+/**
+ * Начало операции с конфигурацией: единственная точка инкремента счётчика активных
+ * операций статус-бара. Парная точка — {@link clearConfigurationProgress} в finally.
+ */
+function beginConfigurationProgress(services: CommandServices, title: string, message: string): void {
+  beginConfigurationOperationStatus(title, message);
+  services.setTreeProcessingState({ active: true, title, message });
+}
+
+/**
+ * Промежуточное обновление текста прогресса. Счётчик активных операций НЕ трогается —
+ * иначе он рос бы на каждом прогресс-сообщении и статус-бар переставал скрываться
+ * (регресс M9). Терминальные текстовые сообщения ('завершено'/'ошибка'/…) тоже идут
+ * сюда как текст; фактический декремент выполняет clearConfigurationProgress в finally.
+ */
 function setConfigurationProgress(
   services: CommandServices,
   title: string,
   message: string,
   running: boolean
 ): void {
-  setConfigurationOperationStatus(title, message, running);
-  if (running) {
-    services.setTreeProcessingState({ active: true, title, message });
-    return;
-  }
-
-  services.setTreeProcessingState({ active: false });
+  updateConfigurationOperationStatus(title, message);
+  services.setTreeProcessingState(running ? { active: true, title, message } : { active: false });
 }
 
+/**
+ * Завершение операции: единственная точка декремента счётчика активных операций
+ * (парная к beginConfigurationProgress). Вызывается из finally каждой команды.
+ */
 function clearConfigurationProgress(services: CommandServices): void {
+  endConfigurationOperationStatus();
   services.setTreeProcessingState({ active: false });
 }
 
@@ -896,7 +913,7 @@ async function runExclusiveConfigurationOperation(
 
   isUpdatingConfigurations = true;
   await vscode.commands.executeCommand('setContext', 'v8vscedit.isUpdatingConfigurations', true);
-  setConfigurationProgress(options.services, options.title, options.startMessage, true);
+  beginConfigurationProgress(options.services, options.title, options.startMessage);
   await yieldToUi();
   let failureHookCalled = false;
   const runAfterFailure = async (): Promise<void> => {

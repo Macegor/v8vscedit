@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { XMLValidator } from 'fast-xml-parser';
-import { escapeXmlAttribute, escapeXmlText, writeTextFilePreservingBomAndEol } from './XmlUtils';
+import { escapeRegExp, escapeXmlAttribute, escapeXmlText, unescapeXml, writeTextFilePreservingBomAndEol } from './XmlUtils';
 
 const CI_NS = 'http://v8.1c.ru/8.3/xcf/extrnprops';
 const XR_NS = 'http://v8.1c.ru/8.3/xcf/readable';
@@ -605,12 +605,4 @@ function paginate(lines: readonly string[], limit?: number, offset?: number): st
     return [...sliced, '', `[ОБРЕЗАНО] Показано ${String(sliced.length)} из ${String(lines.length)} строк.`];
   }
   return sliced;
-}
-
-function unescapeXml(value: string): string {
-  return value.replace(/&quot;/g, '"').replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

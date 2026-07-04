@@ -8,6 +8,30 @@ import type { FormatRuleset } from './FormatRuleset';
  */
 export const DEFAULT_FORMAT_VERSION = '2.18';
 
+/**
+ * Версия формата, которую пишут генераторы выгрузки «с нуля»
+ * (ConfigurationScaffoldService, ExternalObjectService — cf/cfe/epf/erf-init).
+ * Это отдельная константа, а не производная от `resolveFormatRuleset`: при
+ * создании выгрузки с чистого листа определять версию из конфигурации нечем,
+ * поэтому scaffold фиксирует её явно. Значение исторически «2.17» — менять
+ * его нельзя без пересборки эталонов генераторов.
+ */
+export const SCAFFOLD_FORMAT_VERSION = '2.17';
+
+/**
+ * Версии формата, известные проекту как валидные. Отдельный от
+ * `SUPPORTED_FORMATS` набор: последний отвечает за выбор ruleset генерации
+ * (и намеренно не содержит 2.17, чтобы scaffold-выгрузка резолвилась на
+ * baseline). Здесь же перечислены версии, которые валидатор внешнего объекта
+ * считает «обычными» и не помечает предупреждением.
+ */
+const KNOWN_FORMAT_VERSIONS: ReadonlySet<string> = new Set(['2.17', '2.18', '2.20', '2.21']);
+
+/** true для версии формата, известной проекту (см. `KNOWN_FORMAT_VERSIONS`). */
+export function isKnownFormatVersion(version: string): boolean {
+  return KNOWN_FORMAT_VERSIONS.has(version);
+}
+
 /** Все зарегистрированные ruleset'ы по их id. */
 const RULESETS = new Map<string, FormatRuleset>([
   [BASELINE_RULESET.id, BASELINE_RULESET],

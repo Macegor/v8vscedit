@@ -2,6 +2,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { MetaKind } from '../../domain/MetaTypes';
+import type { ProjectSecretStorage } from '../environment/ProjectSecretStorage';
 import { escapeXmlAttribute as escapeXml, parseConfigXml, parseObjectXml } from '../xml';
 
 export interface RepositoryBinding {
@@ -9,6 +10,15 @@ export interface RepositoryBinding {
   repoUser: string;
   /** Пароль используется только в памяти для текущего запуска команды; в `env.json` не сохраняется. */
   repoPassword: string;
+}
+
+/**
+ * Привязка хранилища, как она отдаётся наружу (в webview) после чтения из
+ * `env.json`. Пароль сюда не попадает — он хранится в `ProjectSecretStorage`.
+ */
+export interface StoredRepositoryBinding {
+  repoPath: string;
+  repoUser: string;
 }
 
 export interface RepositoryTarget {
@@ -149,7 +159,10 @@ export class RepositoryService {
   private envCache: CachedFileValue<Record<string, unknown>> | undefined;
   private stateCache: CachedFileValue<RepositoryStateFile> | undefined;
 
-  constructor(private readonly workspaceRoot: string) {}
+  constructor(
+    private readonly workspaceRoot: string,
+    private readonly secrets: ProjectSecretStorage
+  ) {}
 
   /**
    * Сбрасывает кэш `findConfigRoot`. Вызывается при изменении набора
@@ -209,38 +222,26 @@ export class RepositoryService {
     return target;
   }
 
-  loadBinding(target: RepositoryTarget): RepositoryBinding | null {
-    const env = this.readEnvFile();
-    const defaults = this.getDefaultSection(env);
-    if (target.configKind === 'cfe') {
-      const extensionSection = this.getExtensionSection(defaults);
-      const extensionName = target.extensionName ?? '';
-      const item = extensionSection[extensionName] as Record<string, unknown> | undefined;
-      const repoPath = this.readString(item?.['repo-path']);
-      if (!repoPath) {
-        return null;
-      }
-
-      return {
-        repoPath,
-        repoUser: this.readString(item?.['repo-user']) ?? '',
-        repoPassword: this.readString(item?.['repo-pwd']) ?? '',
-      };
-    }
-
-    const repoPath = this.readString(defaults['--repo-path']);
-    if (!repoPath) {
+  /**
+   * Читает привязку хранилища для отдачи наружу (webview) и, если в `env.json`
+   * остался legacy-пароль (`--repo-pwd`/`repo-pwd`), мигрирует его в
+   * `ProjectSecretStorage` и затирает в файле. Пароль в результат не попадает.
+   */
+  async loadBinding(target: RepositoryTarget): Promise<StoredRepositoryBinding | null> {
+    const raw = this.readBindingRaw(target);
+    if (!raw) {
       return null;
     }
 
-    return {
-      repoPath,
-      repoUser: this.readString(defaults['--repo-user']) ?? '',
-      repoPassword: this.readString(defaults['--repo-pwd']) ?? '',
-    };
+    if (raw.legacyPassword.trim()) {
+      await this.secrets.setRepoPassword(this.buildScopeKey(target), raw.legacyPassword);
+      this.eraseLegacyRepoPassword(target);
+    }
+
+    return { repoPath: raw.repoPath, repoUser: raw.repoUser };
   }
 
-  saveBinding(target: RepositoryTarget, binding: RepositoryBinding): void {
+  async saveBinding(target: RepositoryTarget, binding: RepositoryBinding): Promise<void> {
     const env = this.readEnvFile();
     const defaults = this.getDefaultSection(env);
     if (target.configKind === 'cfe') {
@@ -259,13 +260,18 @@ export class RepositoryService {
 
     env.default = defaults;
     this.writeEnvFile(env);
+    // Пароль хранилища уходит в SecretStorage; непустой ввод обновляет секрет,
+    // пустой — трактуется как удаление (внутри setRepoPassword).
+    if (binding.repoPassword.trim()) {
+      await this.secrets.setRepoPassword(this.buildScopeKey(target), binding.repoPassword);
+    }
     this.saveScopeState(target, {
       connected: true,
       lockedFullNames: [],
     });
   }
 
-  clearBinding(target: RepositoryTarget): void {
+  async clearBinding(target: RepositoryTarget): Promise<void> {
     const env = this.readEnvFile();
     const defaults = this.getDefaultSection(env);
     if (target.configKind === 'cfe') {
@@ -281,11 +287,93 @@ export class RepositoryService {
     }
     env.default = defaults;
     this.writeEnvFile(env);
+    await this.secrets.setRepoPassword(this.buildScopeKey(target), '');
     this.clearScopeState(target);
   }
 
+  /**
+   * Возвращает `true`, если для цели сохранён пароль хранилища в SecretStorage.
+   */
+  async hasStoredRepoPassword(target: RepositoryTarget): Promise<boolean> {
+    return this.secrets.hasRepoPassword(this.buildScopeKey(target));
+  }
+
+  /**
+   * Полная привязка (с паролем из SecretStorage) для запуска команды 1С.
+   * Пароль остаётся только в памяти процесса и в `env.json` не пишется.
+   */
+  async resolveBindingForCommand(target: RepositoryTarget): Promise<RepositoryBinding | null> {
+    const stored = await this.loadBinding(target);
+    if (!stored) {
+      return null;
+    }
+    const repoPassword = await this.secrets.getRepoPassword(this.buildScopeKey(target));
+    return {
+      repoPath: stored.repoPath,
+      repoUser: stored.repoUser,
+      repoPassword: repoPassword ?? '',
+    };
+  }
+
   hasBinding(target: RepositoryTarget): boolean {
-    return this.loadBinding(target) !== null;
+    return this.readBindingRaw(target) !== null;
+  }
+
+  /**
+   * Синхронное чтение привязки из `env.json` без обращения к SecretStorage.
+   * Отдаёт repoPath/repoUser и оставшийся legacy-пароль (если есть) — нужен для
+   * проверок наличия привязки (hot path) и последующей асинхронной миграции.
+   */
+  private readBindingRaw(
+    target: RepositoryTarget
+  ): { repoPath: string; repoUser: string; legacyPassword: string } | null {
+    const env = this.readEnvFile();
+    const defaults = this.getDefaultSection(env);
+    if (target.configKind === 'cfe') {
+      const extensionSection = this.getRawExtensionSection(defaults);
+      const extensionName = target.extensionName ?? '';
+      const item = extensionSection[extensionName] as Record<string, unknown> | undefined;
+      const repoPath = this.readString(item?.['repo-path']);
+      if (!repoPath) {
+        return null;
+      }
+
+      return {
+        repoPath,
+        repoUser: this.readString(item?.['repo-user']) ?? '',
+        legacyPassword: this.readString(item?.['repo-pwd']) ?? '',
+      };
+    }
+
+    const repoPath = this.readString(defaults['--repo-path']);
+    if (!repoPath) {
+      return null;
+    }
+
+    return {
+      repoPath,
+      repoUser: this.readString(defaults['--repo-user']) ?? '',
+      legacyPassword: this.readString(defaults['--repo-pwd']) ?? '',
+    };
+  }
+
+  private eraseLegacyRepoPassword(target: RepositoryTarget): void {
+    const env = this.readEnvFile();
+    const defaults = this.getDefaultSection(env);
+    if (target.configKind === 'cfe') {
+      const extensionName = target.extensionName ?? '';
+      const rawSection = defaults.extension;
+      if (rawSection && typeof rawSection === 'object' && !Array.isArray(rawSection)) {
+        const item = (rawSection as Record<string, unknown>)[extensionName];
+        if (item && typeof item === 'object' && !Array.isArray(item)) {
+          delete (item as Record<string, unknown>)['repo-pwd'];
+        }
+      }
+    } else {
+      delete defaults['--repo-pwd'];
+    }
+    env.default = defaults;
+    this.writeEnvFile(env);
   }
 
   isConnected(target: RepositoryTarget): boolean {
@@ -602,6 +690,26 @@ export class RepositoryService {
         'repo-path': this.readString(item['repo-path']) ?? '',
         'repo-user': this.readString(item['repo-user']) ?? '',
       };
+    }
+    return result;
+  }
+
+  /**
+   * Сырое чтение секции расширений с сохранением `repo-pwd` — нужно для
+   * миграции legacy-пароля (обычный `getExtensionSection` пароль отбрасывает).
+   */
+  private getRawExtensionSection(
+    defaults: Record<string, unknown>
+  ): Record<string, Record<string, unknown>> {
+    const raw = defaults.extension;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return {};
+    }
+    const result: Record<string, Record<string, unknown>> = {};
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        result[key] = value as Record<string, unknown>;
+      }
     }
     return result;
   }

@@ -1,6 +1,7 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import { SCAFFOLD_FORMAT_VERSION } from './format/formatRegistry';
 import { escapeXmlAttribute as escapeXml, extractSimpleTag, writeTextFilePreservingBomAndEol } from './XmlUtils';
 
 export interface CreateConfigurationOptions {
@@ -146,7 +147,7 @@ function buildConfigurationXml(options: {
   readonly compatibilityMode: string;
 }): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
-<MetaDataObject ${XMLNS} version="2.17">
+<MetaDataObject ${XMLNS} version="${SCAFFOLD_FORMAT_VERSION}">
 \t<Configuration uuid="${newUuid()}">
 \t\t<InternalInfo>
 ${buildContainedObjects()}\t\t</InternalInfo>
@@ -205,7 +206,7 @@ function buildExtensionXml(options: {
     : '';
   const roleChildXml = options.roleName ? `\r\n\t\t\t<Role>${escapeXml(options.roleName)}</Role>` : '';
   return `<?xml version="1.0" encoding="UTF-8"?>
-<MetaDataObject ${XMLNS} version="2.17">
+<MetaDataObject ${XMLNS} version="${SCAFFOLD_FORMAT_VERSION}">
 \t<Configuration uuid="${newUuid()}">
 \t\t<InternalInfo>
 ${buildContainedObjects()}\t\t</InternalInfo>
@@ -244,7 +245,7 @@ function buildLanguageXml(options: { readonly adopted: boolean; readonly extende
     : `\t\t\t<Synonym>${buildLocalizedItems('Русский')}</Synonym>
 \t\t\t<Comment/>`;
   return `<?xml version="1.0" encoding="UTF-8"?>
-<MetaDataObject ${XMLNS} version="2.17">
+<MetaDataObject ${XMLNS} version="${SCAFFOLD_FORMAT_VERSION}">
 \t<Language uuid="${newUuid()}">
 \t\t${options.adopted ? '<InternalInfo/>\n\t\t' : ''}<Properties>
 \t\t\t<Name>Русский</Name>
@@ -257,7 +258,7 @@ ${adoptedProperties}
 
 function buildRoleXml(roleName: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
-<MetaDataObject ${XMLNS} version="2.17">
+<MetaDataObject ${XMLNS} version="${SCAFFOLD_FORMAT_VERSION}">
 \t<Role uuid="${newUuid()}">
 \t\t<Properties>
 \t\t\t<Name>${escapeXml(roleName)}</Name>

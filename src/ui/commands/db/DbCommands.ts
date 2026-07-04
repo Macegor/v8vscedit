@@ -9,7 +9,7 @@ export function registerDbCommands(
 ): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('v8vscedit.configureEnvironment', () => {
-      services.projectEnvironmentViewProvider.show();
+      void services.projectEnvironmentViewProvider.show();
     }),
 
     vscode.commands.registerCommand('v8vscedit.runThinClient', async () => {
@@ -18,11 +18,11 @@ export function registerDbCommands(
         return;
       }
 
-      await runDbClientFromWorkspace(services.workspaceFolder, services.outputChannel, { mode: 'ENTERPRISE' });
+      await runDbClientFromWorkspace(services.workspaceFolder, services.outputChannel, services.projectSecretStorage, { mode: 'ENTERPRISE' });
     }),
 
     vscode.commands.registerCommand('v8vscedit.runConfigurator', async () => {
-      await runDbClientFromWorkspace(services.workspaceFolder, services.outputChannel, { mode: 'DESIGNER' });
+      await runDbClientFromWorkspace(services.workspaceFolder, services.outputChannel, services.projectSecretStorage, { mode: 'DESIGNER' });
     })
   );
 }

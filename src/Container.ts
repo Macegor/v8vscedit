@@ -50,7 +50,7 @@ import { registerSupportWatcher } from './ui/support/SupportWatcher';
 import { RepositoryCommitViewProvider } from './ui/views/RepositoryCommitViewProvider';
 import { RepositoryConnectionViewProvider } from './ui/views/RepositoryConnectionViewProvider';
 import { updateMetadataCacheAfterRename } from './infra/cache/MetadataCache';
-import { BslAnalyzerConfigService, ProjectEnvironmentService } from './infra/environment';
+import { BslAnalyzerConfigService, ProjectEnvironmentService, ProjectSecretStorage } from './infra/environment';
 import { ProjectEnvironmentViewProvider } from './ui/views/environment/ProjectEnvironmentViewProvider';
 import { StandaloneServerViewProvider } from './ui/views/standalone/StandaloneServerViewProvider';
 import { TypeRegistryService } from './ui/views/properties/TypeRegistryService';
@@ -62,7 +62,8 @@ import { V8McpServer } from './ui/mcp/V8McpServer';
 import { BslAnalyzerMcpService } from './ui/mcp/BslAnalyzerMcpService';
 import { AiMcpViewProvider } from './ui/views/ai/AiMcpViewProvider';
 import { AiSecretStorage } from './infra/ai/AiSecretStorage';
-import { disposeCachedAgentOperationServices } from './ui/commands/ext/ExtensionCommandRunner';
+import { disposeCachedAgentOperationServices, setProjectSecretStorage } from './ui/commands/ext/ExtensionCommandRunner';
+import { disposeRepositoryCommandStatusBar } from './ui/commands/repository/RepositoryCommandRunner';
 
 /**
  * Композиционный корень расширения. Собирает зависимости в одном месте,
@@ -80,6 +81,7 @@ export class Container {
   readonly decorationProvider: SupportDecorationProvider;
   readonly treeProvider: MetadataTreeProvider;
   readonly subsystemEditorViewProvider: SubsystemEditorViewProvider;
+  readonly projectSecretStorage: ProjectSecretStorage;
   readonly repositoryService: RepositoryService;
   readonly gitMetadataStatusService: GitMetadataStatusService;
   readonly gitMetadataDecorationProvider: GitMetadataDecorationProvider;
@@ -140,9 +142,13 @@ export class Container {
     this.outputChannel.appendLine('[init] Расширение активировано');
 
     this.supportService = new SupportInfoService(this.outputChannel);
-    this.repositoryService = new RepositoryService(workspaceFolder.uri.fsPath);
+    this.projectSecretStorage = new ProjectSecretStorage(context.secrets, workspaceFolder.uri.fsPath);
+    // ExtensionCommandRunner запускает 1С из множества функций и читает пароль БД
+    // только через внедрённое хранилище секретов (env.json больше не хранит пароль).
+    setProjectSecretStorage(this.projectSecretStorage);
+    this.repositoryService = new RepositoryService(workspaceFolder.uri.fsPath, this.projectSecretStorage);
     this.bslAnalyzerConfigService = new BslAnalyzerConfigService(workspaceFolder.uri.fsPath);
-    this.projectEnvironmentService = new ProjectEnvironmentService(workspaceFolder.uri.fsPath);
+    this.projectEnvironmentService = new ProjectEnvironmentService(workspaceFolder.uri.fsPath, this.projectSecretStorage);
     this.standaloneServerService = new StandaloneServerService(workspaceFolder.uri.fsPath, this.outputChannel);
     this.gitMetadataStatusService = new GitMetadataStatusService(workspaceFolder.uri.fsPath);
     this.gitMetadataDecorationProvider = new GitMetadataDecorationProvider(this.gitMetadataStatusService);
@@ -196,7 +202,8 @@ export class Container {
       this.supportService,
       this.repositoryService,
       (configRoot, oldXmlPath, newXmlPath) => this.handleAfterRename(configRoot, oldXmlPath, newXmlPath),
-      () => this.treeProvider.refresh()
+      () => this.treeProvider.refresh(),
+      this.outputChannel
     );
 
     this.subsystemEditorViewProvider = new SubsystemEditorViewProvider(
@@ -339,6 +346,9 @@ export class Container {
   }
 
   async deactivate(): Promise<void> {
+    // Статус-бар хранилища создаётся лениво и не попадает в subscriptions —
+    // диспозим его явно, наравне с disposeCachedAgentOperationServices.
+    disposeRepositoryCommandStatusBar();
     await Promise.allSettled([
       this.mcpServer.stop(),
       this.bslAnalyzerMcpService.stopAll(),
@@ -422,6 +432,7 @@ export class Container {
       outputChannel: this.outputChannel,
       supportService: this.supportService,
       repositoryService: this.repositoryService,
+      projectSecretStorage: this.projectSecretStorage,
       repositoryConnectionViewProvider: this.repositoryConnectionViewProvider,
       repositoryCommitViewProvider: this.repositoryCommitViewProvider,
       bslAnalyzerConfigService: this.bslAnalyzerConfigService,
@@ -789,7 +800,17 @@ export class Container {
           return;
         }
         if (event.affectsConfiguration('v8vscedit.mcp')) {
-          void this.mcpServer.stop().then(() => this.startMcpServer());
+          this.mcpServer
+            .stop()
+            .then(() => this.startMcpServer())
+            .catch((error: unknown) => {
+              // Интеграционный путь, без unit-арнеса: при ошибке stop НЕ рестартуем
+              // сервер, чтобы не словить двойной bind порта — только логируем.
+              /* c8 ignore next 3 */
+              this.outputChannel.appendLine(
+                `[mcp][error] не удалось перезапустить MCP-сервер: ${error instanceof Error ? error.message : String(error)}`
+              );
+            });
         }
         if (event.affectsConfiguration('v8vscedit.aiMcp')) {
           this.startBslAnalyzerMcpServers();

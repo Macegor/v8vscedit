@@ -13,7 +13,9 @@ const mode = ref<ConnectionMode>(props.initialState?.mode ?? 'connect');
 const target = ref(props.initialState?.target ?? '');
 const repoPath = ref(props.initialState?.initialBinding?.repoPath ?? '');
 const repoUser = ref(props.initialState?.initialBinding?.repoUser ?? '');
-const repoPassword = ref(props.initialState?.initialBinding?.repoPassword ?? '');
+// Пароль не преднаполняем: он хранится в SecretStorage и в webview не приходит.
+const repoPassword = ref('');
+const repoPasswordSet = ref(props.initialState?.initialBinding?.repoPasswordSet ?? false);
 const loading = ref(false);
 const error = ref('');
 
@@ -142,7 +144,7 @@ onUnmounted(() => {
         class="field-input"
         type="password"
         v-model="repoPassword"
-        placeholder="Пароль"
+        :placeholder="repoPasswordSet ? 'Пароль задан (оставьте пустым, чтобы не менять)' : 'Пароль'"
         :disabled="loading"
       />
     </div>

@@ -1,7 +1,13 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { escapeXmlAttribute as escapeXml, writeTextFilePreservingBomAndEol } from './XmlUtils';
+import { isKnownFormatVersion, SCAFFOLD_FORMAT_VERSION } from './format/formatRegistry';
+import {
+  escapeRegExp,
+  escapeXmlAttribute as escapeXml,
+  extractMainChildObjectsInnerXml,
+  writeTextFilePreservingBomAndEol,
+} from './XmlUtils';
 
 export interface AddHelpOptions {
   readonly objectPath: string;
@@ -300,7 +306,7 @@ export class ExternalObjectService {
     } else {
       reportOk(`1. Root structure: MetaDataObject/${type}, version ${version || '(empty)'}`);
     }
-    if (version && !['2.17', '2.18', '2.20', '2.21'].includes(version)) {
+    if (version && !isKnownFormatVersion(version)) {
       reportWarn(`1. Необычная версия MetaDataObject: ${version}.`);
     }
 
@@ -324,7 +330,10 @@ export class ExternalObjectService {
       }
     }
 
-    const childObjects = extractBlock(xml, 'ChildObjects') ?? '';
+    // Депт-аварное извлечение верхнеуровневого <ChildObjects>: non-greedy regex
+    // останавливался на закрытии ВНУТРЕННЕГО <ChildObjects> колонок ТЧ и обрезал
+    // верхний срез до Form, из-за чего валидатор терял TabularSection/Form (см. M1).
+    const childObjects = extractMainChildObjectsInnerXml(xml) ?? '';
     const children = parseChildObjects(childObjects);
     if (canContinue()) {
       validateChildObjects(children, reportError, reportWarn, reportOk);
@@ -681,7 +690,7 @@ function buildExternalObjectXml(options: {
 
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    `<MetaDataObject ${XMLNS} version="2.17">`,
+    `<MetaDataObject ${XMLNS} version="${SCAFFOLD_FORMAT_VERSION}">`,
     `\t<${options.type} uuid="${newUuid()}">`,
     '\t\t<InternalInfo>',
     '\t\t\t<xr:ContainedObject>',
@@ -716,7 +725,7 @@ function buildExternalObjectXml(options: {
 function buildTemplateDescriptorXml(name: string): string {
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    `<MetaDataObject ${XMLNS} version="2.17">`,
+    `<MetaDataObject ${XMLNS} version="${SCAFFOLD_FORMAT_VERSION}">`,
     `\t<Template uuid="${newUuid()}">`,
     '\t\t<Properties>',
     `\t\t\t<Name>${escapeXml(name)}</Name>`,
@@ -1157,8 +1166,4 @@ function escapeHtml(value: string): string {
 
 function escapeBslString(value: string): string {
   return value.replace(/"/g, '""').replace(/'/g, "''");
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

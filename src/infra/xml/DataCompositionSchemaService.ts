@@ -1,7 +1,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { XMLValidator } from 'fast-xml-parser';
-import { escapeXmlText, writeTextFilePreservingBomAndEol } from './XmlUtils';
+import {
+  escapeRegExp,
+  escapeXmlText,
+  findDirectElementRanges,
+  findNestingAwareElementRange,
+  unescapeXml,
+  writeTextFilePreservingBomAndEol,
+} from './XmlUtils';
 
 const SCHEMA_NS = 'http://v8.1c.ru/8.1/data-composition-system/schema';
 
@@ -561,11 +568,7 @@ function applyEdit(xml: string, operation: SkdEditOperation, value: string, opti
         warnings.push('rename-parameter ожидает формат OldName => NewName.');
         return xml;
       }
-      const oldName = match[1].trim();
-      const newName = escapeXmlText(match[2].trim());
-      return xml
-        .replace(new RegExp(`>${escapeRegExp(oldName)}<`, 'g'), () => `>${newName}<`)
-        .replace(new RegExp(`&amp;${escapeRegExp(oldName)}\\b`, 'g'), () => `&amp;${newName}`);
+      return renameParameter(xml, match[1].trim(), match[2].trim());
     }
     case 'remove-field':
       return editFirstDataSet(xml, options.dataSet, (block) => removeElementByChildText(block, 'field', 'dataPath', value.trim()));
@@ -722,6 +725,52 @@ function reorderParameters(xml: string, value: string, warnings: string[]): stri
   }
   const sortedXml = sorted.join('\n');
   return next.replace('</DataCompositionSchema>', () => `${sortedXml}\n</DataCompositionSchema>`);
+}
+
+/**
+ * Прицельно переименовывает параметр СКД: меняет ТОЛЬКО `<name>` в целевом
+ * `<parameter>`-блоке и текстовые ссылки на параметр (`&amp;Имя` в запросах/выражениях).
+ * НЕ трогает `<dataPath>`/`<field>` набора данных и значения фильтров, даже если их
+ * текст совпадает с именем параметра (это ссылки на поля результата, а не на параметр).
+ */
+function renameParameter(xml: string, oldName: string, newName: string): string {
+  const escapedNew = escapeXmlText(newName);
+  // Параметры лежат прямыми детьми <DataCompositionSchema>. Ищем диапазон корня,
+  // затем прямые <parameter> внутри него: это отсекает вложенные <parameter>
+  // из dataSetLink/filter, которые не являются определением параметра схемы.
+  const rootRange = findNestingAwareElementRange(xml, 'DataCompositionSchema');
+  if (!rootRange) {
+    return xml;
+  }
+  const rootInner = xml.slice(rootRange.openEnd, rootRange.closeStart);
+  const paramRanges = findDirectElementRanges(rootInner, 'parameter');
+  let inner = rootInner;
+  // Идём с конца, чтобы подстановка не смещала ранее вычисленные диапазоны.
+  for (let i = paramRanges.length - 1; i >= 0; i--) {
+    const range = paramRanges[i];
+    const block = inner.slice(range.start, range.end);
+    const nameRange = findNestingAwareElementRange(block, 'name');
+    if (!nameRange) {
+      continue;
+    }
+    if (block.slice(nameRange.openEnd, nameRange.closeStart).trim() !== oldName) {
+      continue;
+    }
+    const nextBlock =
+      block.slice(0, nameRange.openEnd) + escapedNew + block.slice(nameRange.closeStart);
+    inner = inner.slice(0, range.start) + nextBlock + inner.slice(range.end);
+  }
+  const result = xml.slice(0, rootRange.openEnd) + inner + xml.slice(rootRange.closeStart);
+  // Ссылки на параметр в запросах/выражениях: маркер `&` (в XML — `&amp;`).
+  // Границу имени задаём Unicode-aware lookahead'ом: JS `\b` работает по [A-Za-z0-9_]
+  // и НЕ распознаёт конец кириллического имени (доминирующий случай 1С), поэтому
+  // `&Товар` иначе не переименовывался бы. `(?![\p{L}\p{N}_])` совпадает, когда
+  // следующий символ не является буквой/цифрой/подчёркиванием любого алфавита —
+  // это не даёт задеть `&ТоварДва` при переименовании `&Товар`.
+  return result.replace(
+    new RegExp(`&amp;${escapeRegExp(oldName)}(?![\\p{L}\\p{N}_])`, 'gu'),
+    () => `&amp;${escapedNew}`
+  );
 }
 
 function parseSchema(xml: string): Omit<SkdInfoResult, 'templatePath' | 'lines'> {
@@ -1055,12 +1104,4 @@ function limitErrors(issues: readonly SkdValidationIssue[], maxErrors: number): 
     }
   }
   return result;
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function unescapeXml(value: string): string {
-  return value.replace(/&quot;/g, '"').replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
 }

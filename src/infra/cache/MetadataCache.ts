@@ -49,12 +49,24 @@ export type MetadataCacheAddTarget =
     tabularSectionName?: string;
   };
 
+/**
+ * Отпечаток состояния ФС на момент сохранения снимка.
+ * Используется для инвалидации кэша при любом внешнем изменении выгрузки
+ * (правка Configuration.xml или изменение состава корневого каталога),
+ * которое произошло в обход перехваченных операций добавления/переименования.
+ */
+export interface MetadataCacheFingerprint {
+  configurationXml: { mtimeMs: number; size: number };
+  rootDir: { mtimeMs: number };
+}
+
 export interface MetadataCacheSnapshot {
-  schemaVersion: 13;
+  schemaVersion: 14;
   scopeKey: string;
   generatedAt: string;
   rootPath: string;
   configKind: 'cf' | 'cfe';
+  fingerprint: MetadataCacheFingerprint;
   root: MetadataCacheNode;
 }
 
@@ -64,10 +76,12 @@ export interface MetadataCacheUpdateResult {
 }
 
 const METADATA_CACHE_DIR = path.join('.v8vscedit', 'meta');
-const CACHE_SCHEMA_VERSION = 13;
+const CACHE_SCHEMA_VERSION = 14;
 
 /**
  * Строит полный снимок дерева метаданных без ленивых загрузчиков, чтобы UI мог восстановить дерево из JSON.
+ * Отпечаток ФС при первичной сборке проставляется заглушкой и пересчитывается в saveMetadataCache
+ * из snapshot.rootPath — единая точка гарантирует актуальность отпечатка после любых мутаций.
  */
 export function buildMetadataCacheSnapshot(scopeKey: string, entry: ConfigEntry): MetadataCacheSnapshot {
   const info = parseConfigXml(path.join(entry.rootPath, 'Configuration.xml'));
@@ -77,14 +91,71 @@ export function buildMetadataCacheSnapshot(scopeKey: string, entry: ConfigEntry)
     generatedAt: new Date().toISOString(),
     rootPath: entry.rootPath,
     configKind: entry.kind,
+    fingerprint: computeFingerprint(entry.rootPath),
     root: buildConfigNode(entry, info),
   };
+}
+
+/**
+ * Вычисляет отпечаток ФС по корню выгрузки: mtime+size у Configuration.xml и mtime корневого каталога.
+ * Отсутствие Configuration.xml трактуется как «нулевой» отпечаток — он не совпадёт ни с одним реальным
+ * снимком, поэтому кэш будет инвалидирован при загрузке.
+ */
+function computeFingerprint(rootPath: string): MetadataCacheFingerprint {
+  const configXmlPath = path.join(rootPath, 'Configuration.xml');
+  const configStat = statSafe(configXmlPath);
+  const rootStat = statSafe(rootPath);
+  return {
+    configurationXml: {
+      mtimeMs: configStat?.mtimeMs ?? 0,
+      size: configStat?.size ?? -1,
+    },
+    rootDir: {
+      mtimeMs: rootStat?.mtimeMs ?? 0,
+    },
+  };
+}
+
+function statSafe(targetPath: string): fs.Stats | null {
+  try {
+    return fs.statSync(targetPath);
+  } catch {
+    return null;
+  }
+}
+
+/** Глубоко-частичный вид отпечатка: читается из JSON старого/чужого формата, где полей может не быть. */
+interface PartialFingerprint {
+  configurationXml?: { mtimeMs?: number; size?: number };
+  rootDir?: { mtimeMs?: number };
+}
+
+function fingerprintMatches(saved: PartialFingerprint | undefined, current: MetadataCacheFingerprint): boolean {
+  return (
+    saved?.configurationXml?.mtimeMs === current.configurationXml.mtimeMs &&
+    saved.configurationXml.size === current.configurationXml.size &&
+    saved.rootDir?.mtimeMs === current.rootDir.mtimeMs
+  );
 }
 
 export function saveMetadataCache(projectRoot: string, snapshot: MetadataCacheSnapshot): void {
   const filePath = getMetadataCacheFilePath(projectRoot, snapshot.scopeKey);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(snapshot), 'utf-8');
+  // Отпечаток пересчитываем здесь, в единой точке, уже ПОСЛЕ того как мутации ФС применены
+  // (объект добавлен/переименован/удалён), чтобы updateMetadataCacheAfter* писали актуальное состояние.
+  const persisted: MetadataCacheSnapshot = { ...snapshot, fingerprint: computeFingerprint(snapshot.rootPath) };
+  // Пишем во временный файл рядом и атомарно подменяем целевой через rename,
+  // чтобы прерывание записи не оставило битый JSON в кэше (образец — HashCache.saveHashCache).
+  const tempPath = `${filePath}.${String(process.pid)}.${String(Date.now())}.tmp`;
+  try {
+    fs.writeFileSync(tempPath, JSON.stringify(persisted), 'utf-8');
+    fs.renameSync(tempPath, filePath);
+  } catch (error) {
+    fs.rmSync(tempPath, { force: true });
+    throw error;
+  }
+  // Держим переданный снимок согласованным с тем, что записано на диск.
+  snapshot.fingerprint = persisted.fingerprint;
 }
 
 export function loadMetadataCache(projectRoot: string, scopeKey: string): MetadataCacheSnapshot | null {
@@ -96,6 +167,12 @@ export function loadMetadataCache(projectRoot: string, scopeKey: string): Metada
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as Partial<MetadataCacheSnapshot>;
     if (parsed.schemaVersion !== CACHE_SCHEMA_VERSION || parsed.scopeKey !== scopeKey || !parsed.root) {
+      return null;
+    }
+    // Свежесть: отпечаток снимка обязан совпасть с текущим состоянием ФС выгрузки,
+    // иначе кэш устарел (внешняя правка Configuration.xml или изменение состава каталога).
+    const current = computeFingerprint(typeof parsed.rootPath === 'string' ? parsed.rootPath : '');
+    if (!fingerprintMatches(parsed.fingerprint, current)) {
       return null;
     }
     return parsed as MetadataCacheSnapshot;
@@ -216,28 +293,52 @@ export function updateMetadataCacheForChangedFiles(
     return { snapshot, updatedPartially: false };
   }
 
-  let changed = false;
+  // Несколько relatedFiles одной пары (Object.xml + Ext/ObjectModule.bsl) резолвятся в ОДИН
+  // и тот же узел дерева. Дедуплицируем по идентичности узла, чтобы не задваивать перестройку
+  // и не бить splice'ом по устаревшим индексам соседей.
+  const targetsByNode = new Map<MetadataCacheNode, { parent: MetadataCacheNode; node: MetadataCacheNode }>();
   for (const filePath of relatedFiles) {
     if (path.extname(filePath).toLowerCase() !== '.xml') {
       continue;
     }
 
     const target = findObjectNodeByChangedPath(cached.root, filePath);
-    if (!target) {
+    if (!target || targetsByNode.has(target.node)) {
       continue;
     }
-
-    const refreshed = rebuildObjectNodeFromXml(entry, info, target.node);
-    if (refreshed) {
-      target.parent.children[target.index] = refreshed;
-    } else {
-      target.parent.children.splice(target.index, 1);
-    }
-    changed = true;
+    targetsByNode.set(target.node, { parent: target.parent, node: target.node });
   }
 
-  if (!changed) {
+  if (targetsByNode.size === 0) {
     return null;
+  }
+
+  // Разделяем операции: перестройка узла заменяет его на месте; удаление — вырезает из родителя.
+  // Удаления собираем по родителю и применяем по убыванию индекса за один проход, чтобы
+  // индексы соседних удаляемых узлов не смещались.
+  // Каждый targetNode получен как parent.children[index] в findObjectNodeByChangedPath,
+  // а перестройка заменяет узел на месте (длина массива не меняется), поэтому indexOf
+  // гарантированно ≥ 0 — дополнительные guard'ы и флаг "было ли изменение" не нужны:
+  // непустой targetsByNode уже гарантирует ≥1 перестройку или удаление.
+  const removalsByParent = new Map<MetadataCacheNode, MetadataCacheNode[]>();
+  for (const { parent, node: targetNode } of targetsByNode.values()) {
+    const refreshed = rebuildObjectNodeFromXml(entry, info, targetNode);
+    if (refreshed) {
+      parent.children[parent.children.indexOf(targetNode)] = refreshed;
+      continue;
+    }
+    const removals = removalsByParent.get(parent) ?? [];
+    removals.push(targetNode);
+    removalsByParent.set(parent, removals);
+  }
+
+  for (const [parent, nodesToRemove] of removalsByParent) {
+    const indices = nodesToRemove
+      .map((removed) => parent.children.indexOf(removed))
+      .sort((left, right) => right - left);
+    for (const index of indices) {
+      parent.children.splice(index, 1);
+    }
   }
 
   cached.generatedAt = new Date().toISOString();

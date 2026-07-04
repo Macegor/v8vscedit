@@ -1,6 +1,9 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import { parseConfigXml } from '../../../infra/xml';
+import {
+  parseConfigXml,
+  readDefinedTypeInnerXml,
+  resolveConfigurationXml,
+  stripXmlTags,
+} from '../../../infra/xml';
 import { getPropertyTitle } from './PropertyPresentationRegistry';
 import {
   extractFirstBalancedBlock,
@@ -131,11 +134,11 @@ export function buildEventSubscriptionProperties(
     extractTopLevelPropertiesChildren(`<Properties>${propertiesInner}</Properties>`).map((child) => [child.tag, child.inner])
   );
   const sourceType = parseMetadataType(childrenByTag.get('Source') ?? '');
-  const event = stripXmlText(childrenByTag.get('Event') ?? '');
-  const handler = stripXmlText(childrenByTag.get('Handler') ?? childrenByTag.get('ProcedureName') ?? '');
+  const event = stripXmlTags(childrenByTag.get('Event') ?? '');
+  const handler = stripXmlTags(childrenByTag.get('Handler') ?? childrenByTag.get('ProcedureName') ?? '');
   const result: ObjectPropertiesCollection = [];
 
-  const name = stripXmlText(childrenByTag.get('Name') ?? '');
+  const name = stripXmlTags(childrenByTag.get('Name') ?? '');
   if (name || childrenByTag.has('Name')) {
     result.push({
       key: 'Name',
@@ -192,7 +195,7 @@ export function buildEventSubscriptionProperties(
   });
 
   if (childrenByTag.has('SuppressObject')) {
-    const suppressObject = stripXmlText(childrenByTag.get('SuppressObject') ?? '');
+    const suppressObject = stripXmlTags(childrenByTag.get('SuppressObject') ?? '');
     result.push({
       key: 'SuppressObject',
       title: propertyTitle('SuppressObject'),
@@ -298,38 +301,11 @@ function readDefinedTypeSourceValue(
   if (!configXml) {
     return null;
   }
-  const definedTypeXmlPath = path.join(path.dirname(configXml), 'DefinedTypes', `${name}.xml`);
-  if (!fs.existsSync(definedTypeXmlPath)) {
+  const inner = readDefinedTypeInnerXml(configXml, name);
+  if (inner === null) {
     return null;
   }
-  try {
-    const xml = fs.readFileSync(definedTypeXmlPath, 'utf-8');
-    return parseMetadataType(extractFirstBalancedBlock(xml, 'Type') ?? '');
-  } catch {
-    return null;
-  }
-}
-
-function resolveConfigurationXml(sourceXmlPath: string | undefined): string | null {
-  if (!sourceXmlPath) {
-    return null;
-  }
-  let current = path.dirname(sourceXmlPath);
-  for (;;) {
-    const cfg = path.join(current, 'Configuration.xml');
-    if (fs.existsSync(cfg)) {
-      return cfg;
-    }
-    const parent = path.dirname(current);
-    if (parent === current) {
-      return null;
-    }
-    current = parent;
-  }
-}
-
-function stripXmlText(inner: string): string {
-  return inner.replace(/<[^>]+>/g, '').trim();
+  return parseMetadataType(inner);
 }
 
 function toEventOption(value: string): EnumPropertyOption {
@@ -354,8 +330,10 @@ export function buildEventSourceItemsFromConfiguration(sourceXmlPath: string | u
   title: string;
   items: MetadataTypeItem[];
 }[] {
+  // resolveConfigurationXml возвращает путь только к реально существующему файлу,
+  // поэтому дополнительная fs-проверка не нужна (весь FS-доступ — в infra).
   const configXml = resolveConfigurationXml(sourceXmlPath);
-  if (!configXml || !fs.existsSync(configXml)) {
+  if (!configXml) {
     return [];
   }
   try {

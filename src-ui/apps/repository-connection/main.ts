@@ -14,11 +14,12 @@ export interface RepositoryConnectionState {
   readonly initialBinding: RepositoryBindingDto | null;
 }
 
-/** DTO ранее сохранённых параметров подключения */
+/** DTO ранее сохранённых параметров подключения (без пароля) */
 export interface RepositoryBindingDto {
   readonly repoPath: string;
   readonly repoUser: string;
-  readonly repoPassword: string;
+  /** Пароль в форму не преднаполняется — только признак того, что он задан. */
+  readonly repoPasswordSet: boolean;
 }
 
 const initialState = loadInitialState<RepositoryConnectionState>('repository-connection');

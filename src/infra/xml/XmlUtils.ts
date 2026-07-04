@@ -182,7 +182,12 @@ export function findDirectElementRanges(xml: string, tagName: string): { start: 
   return ranges;
 }
 
-function escapeRegExp(value: string): string {
+/**
+ * Экранирует спецсимволы regexp в литеральной строке.
+ * Канонический хелпер: ранее по проекту были рассыпаны побайтно идентичные
+ * локальные копии (MetadataXmlCreator, MetadataXmlRemover, CfeBorrowService и др.).
+ */
+export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
@@ -224,6 +229,37 @@ export function extractMainChildObjectsInnerXml(xml: string): string | null {
   return extractNestingAwareBlock(xml, 'ChildObjects');
 }
 
+interface DirectChildWithName {
+  readonly range: { start: number; end: number };
+  readonly childXml: string;
+  readonly child: XmlElementNode;
+  /** Узел `<Name>` дочернего элемента; `null`, если тег отсутствует. */
+  readonly nameNode: XmlElementNode | null;
+}
+
+/**
+ * Общий каркас для локаторов прямых дочерних элементов: для каждого прямого
+ * (нужной вложенности) диапазона `childTag` в блоке возвращает срез, разобранный
+ * узел и его `<Name>`. Отдаёт данные, не принимая за вызывающего решение о
+ * фильтрации по имени/наличию тега — конкретное поведение остаётся в функциях.
+ */
+function* iterateDirectChildrenWithName(block: string, childTag: string): Iterable<DirectChildWithName> {
+  for (const range of findDirectElementRanges(block, childTag)) {
+    const childXml = block.slice(range.start, range.end);
+    const children = getWrappedRootChildren(childXml);
+    const child = findDirectChildren(children, childTag).at(0);
+    // findDirectElementRanges отдаёт диапазон именно элемента childTag, поэтому
+    // повторный разбор childXml всегда содержит его — ветка недостижима, но
+    // нужна для сужения типа (.at(0) → T | undefined) без non-null assertion.
+    /* c8 ignore next 3 */
+    if (!child) {
+      continue;
+    }
+    const nameNode = findFirstElement(getElementChildren(child), 'Name');
+    yield { range, childXml, child, nameNode };
+  }
+}
+
 /**
  * Находит в фрагменте XML полный узел дочернего элемента по тегу и имени.
  */
@@ -232,14 +268,7 @@ export function findChildElementFullXmlInBlock(
   childTag: string,
   elementName: string
 ): string | null {
-  for (const range of findDirectElementRanges(block, childTag)) {
-    const childXml = block.slice(range.start, range.end);
-    const children = getWrappedRootChildren(childXml);
-    const child = findDirectChildren(children, childTag).at(0);
-    if (!child) {
-      continue;
-    }
-    const nameNode = findFirstElement(getElementChildren(child), 'Name');
+  for (const { childXml, nameNode } of iterateDirectChildrenWithName(block, childTag)) {
     if (!nameNode) {
       continue;
     }
@@ -251,24 +280,91 @@ export function findChildElementFullXmlInBlock(
   return null;
 }
 
+/**
+ * Возвращает диапазон {start,end} прямого дочернего узла по тегу и имени
+ * ОТНОСИТЕЛЬНО переданного блока (не абсолютный в исходном XML).
+ * Учитывает вложенность через findDirectElementRanges, поэтому не «перепрыгивает»
+ * закрывающий тег внутреннего одноимённого контейнера.
+ */
+export function findChildElementRangeInBlock(
+  block: string,
+  childTag: string,
+  elementName: string
+): { start: number; end: number } | null {
+  for (const { range, nameNode } of iterateDirectChildrenWithName(block, childTag)) {
+    if (!nameNode) {
+      continue;
+    }
+    if (collectText(getElementChildren(nameNode)) === elementName) {
+      return range;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Возвращает абсолютный диапазон {start,end} дочернего объекта из главного
+ * `<ChildObjects>` в полном XML объекта. Депт-аварный локатор-двойник
+ * {@link extractChildMetaElementXml}: нужен мутаторам, чтобы заменять блок
+ * по индексу, а не по текстовому совпадению (устраняет подмену одноимённых блоков).
+ */
+export function findChildMetaElementRange(
+  xml: string,
+  childTag: string,
+  elementName: string
+): { start: number; end: number } | null {
+  const mainRange = findFirstElementRange(xml, 'ChildObjects');
+  if (!mainRange) {
+    return null;
+  }
+  const block = xml.slice(mainRange.openEnd, mainRange.closeStart);
+  const inner = findChildElementRangeInBlock(block, childTag, elementName);
+  if (!inner) {
+    return null;
+  }
+  return { start: mainRange.openEnd + inner.start, end: mainRange.openEnd + inner.end };
+}
+
+/**
+ * Возвращает абсолютный диапазон {start,end} колонки табличной части по имени ТЧ
+ * и колонки в полном XML объекта. Двойник {@link extractColumnXmlFromTabularSection}.
+ */
+export function findColumnRangeInTabularSection(
+  objectXml: string,
+  sectionName: string,
+  columnName: string
+): { start: number; end: number } | null {
+  const sectionRange = findChildMetaElementRange(objectXml, 'TabularSection', sectionName);
+  if (!sectionRange) {
+    return null;
+  }
+  const sectionXml = objectXml.slice(sectionRange.start, sectionRange.end);
+  const childObjectsRange = findFirstElementRange(sectionXml, 'ChildObjects');
+  if (!childObjectsRange) {
+    return null;
+  }
+  const childObjectsInner = sectionXml.slice(childObjectsRange.openEnd, childObjectsRange.closeStart);
+  const columnRange = findChildElementRangeInBlock(childObjectsInner, 'Attribute', columnName);
+  if (!columnRange) {
+    return null;
+  }
+  const base = sectionRange.start + childObjectsRange.openEnd;
+  return { start: base + columnRange.start, end: base + columnRange.end };
+}
+
 /** Проверяет наличие прямого дочернего элемента по имени или текстовой ссылке. */
 export function hasDirectChildElementNameInBlock(
   block: string,
   childTag: string,
   elementName: string
 ): boolean {
-  for (const range of findDirectElementRanges(block, childTag)) {
-    const childXml = block.slice(range.start, range.end);
-    const children = getWrappedRootChildren(childXml);
-    const child = findDirectChildren(children, childTag).at(0);
-    if (!child) {
-      continue;
-    }
-    const childChildren = getElementChildren(child);
-    const nameNode = findFirstElement(childChildren, 'Name');
+  for (const { child, nameNode } of iterateDirectChildrenWithName(block, childTag)) {
+    // Fallback: при отсутствии <Name> имя берётся из всего текста узла —
+    // поведение сохранено относительно исходной реализации.
     const name = nameNode
       ? collectText(getElementChildren(nameNode))
-      : collectText(childChildren);
+      : collectText(getElementChildren(child));
     if (name.trim() === elementName) {
       return true;
     }
@@ -282,14 +378,7 @@ export function findChildElementsFullXmlInBlock(
   childTag: string
 ): { name: string; xml: string }[] {
   const result: { name: string; xml: string }[] = [];
-  for (const range of findDirectElementRanges(block, childTag)) {
-    const childXml = block.slice(range.start, range.end);
-    const children = getWrappedRootChildren(childXml);
-    const child = findDirectChildren(children, childTag).at(0);
-    if (!child) {
-      continue;
-    }
-    const nameNode = findFirstElement(getElementChildren(child), 'Name');
+  for (const { childXml, nameNode } of iterateDirectChildrenWithName(block, childTag)) {
     if (!nameNode) {
       continue;
     }
@@ -480,6 +569,49 @@ export function escapeXmlAttribute(value: string): string {
   return escapeXmlText(value).replace(/"/g, '&quot;');
 }
 
+/**
+ * Собирает локализованный XML-блок (`<tag><v8:item><v8:lang>ru…`).
+ * Канонический хелпер: ранее две расходящиеся копии — в FormShared (всегда полный
+ * блок) и в MetadataXmlCreator (для пустого текста отдавал самозакрывающийся
+ * `<tag/>`). Флаг `emptyAsSelfClosing` сохраняет обе стратегии без изменения байтов.
+ */
+export function buildLocalizedTag(
+  indent: string,
+  tag: string,
+  text: string,
+  options?: { emptyAsSelfClosing?: boolean }
+): string {
+  if (options?.emptyAsSelfClosing && !text) {
+    return `${indent}<${tag}/>`;
+  }
+  return [
+    `${indent}<${tag}>`,
+    `${indent}\t<v8:item>`,
+    `${indent}\t\t<v8:lang>ru</v8:lang>`,
+    `${indent}\t\t<v8:content>${escapeXmlAttribute(text)}</v8:content>`,
+    `${indent}\t</v8:item>`,
+    `${indent}</${tag}>`,
+  ].join('\n');
+}
+
+/**
+ * Декодирует 5 предопределённых XML-сущностей и числовую форму апострофа `&#39;`.
+ * Канонический хелпер: ранее по проекту были рассыпаны идентичные локальные копии
+ * (DataCompositionSchemaService, SubsystemXmlService, CommandInterfaceService,
+ * MxlTemplateService), причём часть из них не декодировала `&apos;`/`&#39;`.
+ * `&amp;` декодируется ПОСЛЕДНИМ: иначе буквальный текст `&amp;lt;` (в исходном XML
+ * это литерал `&lt;`) ошибочно превратился бы в `<` из-за повторного прохода.
+ */
+export function unescapeXml(value: string): string {
+  return value
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
 function extractRootObjectElementXml(fullXml: string): string | null {
   const rootMatch = /<MetaDataObject[^>]*>\s*<([A-Za-z][A-Za-z0-9]*)\b/.exec(fullXml);
   const rootTag = rootMatch?.[1];
@@ -506,6 +638,30 @@ export function extractColumnsXmlFromTabularSection(
   }
 
   return findChildElementsFullXmlInBlock(childObjectsInner, 'Attribute');
+}
+
+/**
+ * Сравнивает XML «до» и «после» мутации без учёта стиля переводов строк.
+ *
+ * Мутаторы собирают вставляемые блоки с «голыми» `\n` (через `.join('\n')`),
+ * тогда как исходный файл может быть в CRLF. Побайтовое `updated === original`
+ * тогда ложно считает файл изменившимся на каждом идемпотентном вызове. Нормализуем
+ * оба варианта к `\n` перед сравнением: реальное содержательное отличие детектится,
+ * различие только в EOL-стиле — нет (запись всё равно вернёт исходный EOL через
+ * {@link writeTextFilePreservingBomAndEol}).
+ */
+export function hasRealChange(original: string, updated: string): boolean {
+  const normalize = (value: string): string => value.replace(/\r\n|\r|\n/g, '\n');
+  return normalize(original) !== normalize(updated);
+}
+
+/**
+ * Убирает все XML-теги из фрагмента, оставляя только текст (с обрезкой пробелов).
+ * Канонический хелпер (перенесён из приватного `stripXmlText`
+ * EventSubscriptionPropertyService): текстовая утилита без vscode — место в infra.
+ */
+export function stripXmlTags(inner: string): string {
+  return inner.replace(/<[^>]+>/g, '').trim();
 }
 
 /** Записывает XML, сохраняя BOM и преобладающий стиль переводов строк исходного файла. */

@@ -514,7 +514,8 @@ export class V8McpServer implements vscode.Disposable {
         const outputPath = resolveTemplateXmlByCanonical(paths, args.path, args.configuration);
         // args.definition имеет тип any (z.any()); сервис нормализует данные внутри.
         const result = this.services.mxlTemplateService.compile({ ...args, outputPath });
-        this.afterMutation([...result.changedFiles]);
+        // Сервис бросает исключение при провале (перехват в wrap); дошли сюда — успех.
+        this.afterMutationIfSucceeded(result.changedFiles);
         return result;
       })
     );
@@ -604,7 +605,8 @@ export class V8McpServer implements vscode.Disposable {
         this.assertNodeEditable(paths.resolveNode(args.path, args.configuration));
         const outputPath = resolveTemplateXmlByCanonical(paths, args.path, args.configuration);
         const result = this.services.dataCompositionSchemaService.compile({ ...args, outputPath });
-        this.afterMutation([...result.changedFiles]);
+        // Сервис бросает исключение при провале (перехват в wrap); дошли сюда — успех.
+        this.afterMutationIfSucceeded(result.changedFiles);
         return result;
       })
     );
@@ -666,7 +668,8 @@ export class V8McpServer implements vscode.Disposable {
         this.assertNodeEditable(paths.resolveNode(canonical, configuration));
         const templatePath = resolveTemplateXmlByCanonical(paths, canonical, configuration);
         const result = this.services.dataCompositionSchemaService.edit({ ...rest, templatePath });
-        this.afterMutation([...result.changedFiles]);
+        // Сервис бросает исключение при провале (перехват в wrap); дошли сюда — успех.
+        this.afterMutationIfSucceeded(result.changedFiles);
         return result;
       })
     );
@@ -694,7 +697,8 @@ export class V8McpServer implements vscode.Disposable {
         this.assertNodeEditable(paths.resolveNode(canonical, configuration));
         const objectPath = resolveObjectXmlByCanonical(paths, canonical, configuration);
         const result = this.services.externalObjectService.addHelp({ ...rest, objectPath });
-        this.afterMutation([...result.changedFiles]);
+        // Сервис бросает исключение при провале (перехват в wrap); дошли сюда — успех.
+        this.afterMutationIfSucceeded(result.changedFiles);
         return result;
       })
     );
@@ -715,7 +719,8 @@ export class V8McpServer implements vscode.Disposable {
       },
       (args) => this.wrap(() => {
         const result = this.services.externalObjectService.createExternalDataProcessor(args);
-        this.afterMutation([...result.changedFiles]);
+        // Сервис бросает исключение при провале (перехват в wrap); дошли сюда — успех.
+        this.afterMutationIfSucceeded(result.changedFiles);
         return result;
       })
     );
@@ -737,7 +742,8 @@ export class V8McpServer implements vscode.Disposable {
       },
       (args) => this.wrap(() => {
         const result = this.services.externalObjectService.createExternalReport(args);
-        this.afterMutation([...result.changedFiles]);
+        // Сервис бросает исключение при провале (перехват в wrap); дошли сюда — успех.
+        this.afterMutationIfSucceeded(result.changedFiles);
         return result;
       })
     );
@@ -772,7 +778,8 @@ export class V8McpServer implements vscode.Disposable {
       },
       (args) => this.wrap(() => {
         const result = this.services.externalObjectService.initBspRegistration(args);
-        this.afterMutation([...result.changedFiles]);
+        // Сервис бросает исключение при провале (перехват в wrap); дошли сюда — успех.
+        this.afterMutationIfSucceeded(result.changedFiles);
         return result;
       })
     );
@@ -795,7 +802,8 @@ export class V8McpServer implements vscode.Disposable {
       },
       (args) => this.wrap(() => {
         const result = this.services.externalObjectService.addBspCommand(args);
-        this.afterMutation([...result.changedFiles]);
+        // Сервис бросает исключение при провале (перехват в wrap); дошли сюда — успех.
+        this.afterMutationIfSucceeded(result.changedFiles);
         return result;
       })
     );
@@ -876,7 +884,8 @@ export class V8McpServer implements vscode.Disposable {
         }
         this.assertNodeEditable(owner);
         const result = this.services.formToolsService.addForm({ ...rest, objectPath, formName: name });
-        this.afterMutation([...result.changedFiles]);
+        // Сервис бросает исключение при провале (перехват в wrap); дошли сюда — успех.
+        this.afterMutationIfSucceeded(result.changedFiles);
         return result;
       })
     );
@@ -908,7 +917,8 @@ export class V8McpServer implements vscode.Disposable {
           objectPath: node.metaContext.ownerObjectXmlPath,
           formName: node.textLabel,
         });
-        this.afterMutation([...result.changedFiles]);
+        // Сервис бросает исключение при провале (перехват в wrap); дошли сюда — успех.
+        this.afterMutationIfSucceeded(result.changedFiles);
         return result;
       })
     );
@@ -936,7 +946,8 @@ export class V8McpServer implements vscode.Disposable {
         this.assertNodeEditable(paths.resolveNode(canonical, configuration));
         const outputPath = resolveFormXmlByCanonical(paths, canonical, configuration);
         const result = this.services.formToolsService.compile({ ...rest, outputPath });
-        this.afterMutation([...result.changedFiles]);
+        // Сервис бросает исключение при провале (перехват в wrap); дошли сюда — успех.
+        this.afterMutationIfSucceeded(result.changedFiles);
         return result;
       })
     );
@@ -963,7 +974,8 @@ export class V8McpServer implements vscode.Disposable {
         this.assertNodeEditable(paths.resolveNode(args.path, args.configuration));
         const formPath = resolveFormXmlByCanonical(paths, args.path, args.configuration);
         const result = this.services.formToolsService.edit({ ...args, formPath });
-        this.afterMutation([...result.changedFiles]);
+        // Сервис бросает исключение при провале (перехват в wrap); дошли сюда — успех.
+        this.afterMutationIfSucceeded(result.changedFiles);
         return result;
       })
     );
@@ -1013,7 +1025,8 @@ export class V8McpServer implements vscode.Disposable {
           parentPath: subsystemParentPath,
           definition,
         });
-        this.afterMutation([...result.changedFiles]);
+        // Сервис бросает исключение при провале (перехват в wrap); дошли сюда — успех.
+        this.afterMutationIfSucceeded(result.changedFiles);
         return result;
       })
     );
@@ -1045,7 +1058,8 @@ export class V8McpServer implements vscode.Disposable {
           add: resolveSubsystemContentRefs(paths, add ?? [], configuration),
           remove: resolveSubsystemContentRefs(paths, remove ?? [], configuration),
         });
-        this.afterMutation(result.changedFiles);
+        // Сервис бросает исключение при провале (перехват в wrap); дошли сюда — успех.
+        this.afterMutationIfSucceeded(result.changedFiles);
         return result;
       })
     );
@@ -1073,7 +1087,8 @@ export class V8McpServer implements vscode.Disposable {
         this.assertNodeEditable(paths.resolveNode(canonical, configuration));
         const ciPath = resolveCommandInterfaceXmlByCanonical(paths, canonical, configuration);
         const result = this.services.commandInterfaceService.edit({ ...rest, ciPath });
-        this.afterMutation([...result.changedFiles]);
+        // Сервис бросает исключение при провале (перехват в wrap); дошли сюда — успех.
+        this.afterMutationIfSucceeded(result.changedFiles);
         return result;
       })
     );
@@ -1174,7 +1189,9 @@ export class V8McpServer implements vscode.Disposable {
         const canonicalParent = parentPath ?? 'Конфигурация';
         const outputDir = resolveConfigurationRootDirByCanonical(paths, canonicalParent, configuration);
         const result = this.services.roleRightsService.compile({ outputDir, definition });
-        this.afterMutation([...result.changedFiles]);
+        // RoleCompileResult без булева success — сервис бросает исключение при провале
+        // (перехват в wrap); дошли сюда — успех.
+        this.afterMutationIfSucceeded(result.changedFiles);
         return result;
       })
     );
@@ -1202,7 +1219,7 @@ export class V8McpServer implements vscode.Disposable {
         this.assertNodeEditable(paths.resolveNode(canonical, configuration));
         const rightsPath = resolveRoleXmlByCanonical(paths, canonical, configuration);
         const result = this.services.roleRightsService.edit({ rightsPath, operations });
-        this.afterMutation([...result.changedFiles]);
+        this.afterMutationIfSucceeded(result.changedFiles, result.success);
         return result;
       })
     );
@@ -1247,7 +1264,7 @@ export class V8McpServer implements vscode.Disposable {
       ({ path: canonical, configuration, role }) => this.wrap(() => {
         const configPath = resolveConfigurationXmlByCanonical(paths, canonical, configuration);
         const result = this.services.roleRightsService.addDefaultRole({ configPath, role });
-        this.afterMutation([...result.changedFiles]);
+        this.afterMutationIfSucceeded(result.changedFiles, result.success);
         return result;
       })
     );
@@ -1273,7 +1290,7 @@ export class V8McpServer implements vscode.Disposable {
       ({ path: canonical, configuration, role }) => this.wrap(() => {
         const configPath = resolveConfigurationXmlByCanonical(paths, canonical, configuration);
         const result = this.services.roleRightsService.removeDefaultRole({ configPath, role });
-        this.afterMutation([...result.changedFiles]);
+        this.afterMutationIfSucceeded(result.changedFiles, result.success);
         return result;
       })
     );
@@ -1299,7 +1316,7 @@ export class V8McpServer implements vscode.Disposable {
       ({ path: canonical, configuration, roles }) => this.wrap(() => {
         const configPath = resolveConfigurationXmlByCanonical(paths, canonical, configuration);
         const result = this.services.roleRightsService.setDefaultRoles({ configPath, roles });
-        this.afterMutation([...result.changedFiles]);
+        this.afterMutationIfSucceeded(result.changedFiles, result.success);
         return result;
       })
     );
@@ -1323,7 +1340,8 @@ export class V8McpServer implements vscode.Disposable {
       },
       (args) => this.wrap(() => {
         const result = this.services.configurationScaffoldService.createConfiguration(args);
-        this.afterMutation([...result.changedFiles]);
+        // Сервис бросает исключение при провале (перехват в wrap); дошли сюда — успех.
+        this.afterMutationIfSucceeded(result.changedFiles);
         return result;
       })
     );
@@ -1351,7 +1369,8 @@ export class V8McpServer implements vscode.Disposable {
       },
       (args) => this.wrap(() => {
         const result = this.services.configurationScaffoldService.createExtension(args);
-        this.afterMutation([...result.changedFiles]);
+        // Сервис бросает исключение при провале (перехват в wrap); дошли сюда — успех.
+        this.afterMutationIfSucceeded(result.changedFiles);
         return result;
       })
     );
@@ -1402,7 +1421,7 @@ export class V8McpServer implements vscode.Disposable {
         const node = paths.resolveNode(canonical, configuration);
         this.assertNodeEditable(node);
         const result = properties.setProperty(node, propertyKey, value);
-        this.afterMutation(result.changedFiles);
+        this.afterMutationIfSucceeded(result.changedFiles, result.success);
         return result;
       })
     );
@@ -1436,7 +1455,9 @@ export class V8McpServer implements vscode.Disposable {
         this.assertNodeEditable(node);
         const totalRequested = Object.keys(propertiesInput).length;
         const result = properties.setProperties(node, propertiesInput);
-        this.afterMutation(result.changedFiles);
+        // McpSetPropertiesResult не несёт булева success: успех выражается наличием
+        // реально применённых правок — сервис кладёт в changedFiles только их.
+        this.afterMutationIfSucceeded(result.changedFiles);
         return {
           path: resolved.canonical,
           totalRequested,
@@ -1500,7 +1521,7 @@ export class V8McpServer implements vscode.Disposable {
         const node = paths.resolveNode(canonical, configuration);
         this.assertNodeEditable(node);
         const result = properties.setType(node, propertyKey ?? 'Type', normalizeSetTypeToolInput(typeInput));
-        this.afterMutation(result.changedFiles);
+        this.afterMutationIfSucceeded(result.changedFiles, result.success);
         return result;
       })
     );
@@ -1527,7 +1548,7 @@ export class V8McpServer implements vscode.Disposable {
         const node = paths.resolveNode(canonical, configuration);
         this.assertNodeEditable(node);
         const result = properties.rename(node, newName);
-        this.afterMutation(result.changedFiles);
+        this.afterMutationIfSucceeded(result.changedFiles, result.success);
         return result;
       })
     );
@@ -1538,7 +1559,10 @@ export class V8McpServer implements vscode.Disposable {
     registerAllAddTools(server, {
       paths,
       mutations,
-      afterMutation: (changedFiles) => this.afterMutation([...changedFiles]),
+      // registerAllAddTools вызывает этот колбэк только при result.success (см.
+      // if(result.success) в McpAddToolsRegistration) — success уже проверен на
+      // стороне вызывающего, поэтому шлюз гейтит лишь по непустому списку файлов.
+      afterMutation: (changedFiles) => this.afterMutationIfSucceeded(changedFiles),
       wrapAsync: (fn) => this.wrapAsync(fn),
     });
 
@@ -1581,7 +1605,7 @@ export class V8McpServer implements vscode.Disposable {
               keepFiles,
             });
         if (result.success) {
-          this.afterMutation(result.changedFiles);
+          this.afterMutationIfSucceeded(result.changedFiles, result.success);
           this.services.dynamicPanelController.handleMetadataRemoved(node);
           this.services.subsystemEditorViewProvider.handleMetadataRemoved();
         }
@@ -1613,7 +1637,9 @@ export class V8McpServer implements vscode.Disposable {
           : childTag && childName
             ? this.services.cfeBorrowService.borrowChild(configRoot, extensionRoot, typeName, objectName, childTag, childName)
             : this.services.cfeBorrowService.borrowObject(configRoot, extensionRoot, typeName, objectName);
-        this.afterMutation(result.files);
+        // CfeBorrowService сигналит провал исключением (перехват в wrap), а при
+        // alreadyBorrowed возвращает пустой files — гейт по списку изменённых файлов.
+        this.afterMutationIfSucceeded(result.files);
         return result;
       })
     );
@@ -1642,7 +1668,8 @@ export class V8McpServer implements vscode.Disposable {
       ({ path: canonical, ...rest }) => this.wrap(() => {
         const modulePath = canonicalToLegacyModulePath(canonical);
         const result = this.services.cfePatchMethodService.addMethodInterceptor({ ...rest, modulePath });
-        this.afterMutation([...result.changedFiles]);
+        // Сервис бросает исключение при провале (перехват в wrap); дошли сюда — успех.
+        this.afterMutationIfSucceeded(result.changedFiles);
         return result;
       })
     );
@@ -1924,6 +1951,26 @@ export class V8McpServer implements vscode.Disposable {
       this.services.treeProvider.refresh();
     }
     this.services.refreshActionsView();
+  }
+
+  /**
+   * Единый guarded-шлюз post-mutation (Волна 5b, M8). Гейт по факту успеха
+   * мутации: если результат помечен неуспешным (`succeeded === false`),
+   * конфигурация НЕ помечается изменённой и дерево НЕ рефрешится — иначе при
+   * частичном провале UI зря считал бы конфигурацию грязной. Формы результата,
+   * не несущие явного `success` (сервис сигналит провал исключением внутри
+   * `wrap`/`wrapAsync`), проходят с `succeeded=true`, а фактический гейт для них
+   * даёт пустой список изменённых файлов (см. `afterMutation`).
+   */
+  private afterMutationIfSucceeded(changedFiles: readonly string[] | undefined, succeeded = true): void {
+    if (!succeeded) {
+      return;
+    }
+    const files = changedFiles ?? [];
+    if (files.length === 0) {
+      return;
+    }
+    this.afterMutation([...files]);
   }
 }
 

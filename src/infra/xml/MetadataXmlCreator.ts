@@ -9,7 +9,10 @@ import { DEFAULT_FORMAT_VERSION, resolveFormatRuleset } from './format/formatReg
 import type { FormatRuleset } from './format/FormatRuleset';
 import type { RegisterOwnerKind } from './TypedFieldPropertyRules';
 import {
+  buildLocalizedTag as buildLocalizedTagShared,
+  escapeRegExp,
   escapeXmlAttribute as escapeXml,
+  findChildMetaElementRange,
   findDirectElementRanges,
   findNestingAwareElementRange,
   hasDirectChildElementNameInBlock,
@@ -1255,10 +1258,11 @@ function insertChildFragment(inner: string, fragment: string, indent: string): s
   return `${trimmedRight}\n${fragment}\n${parentIndent}`;
 }
 
-function findNamedChildBlock(xml: string, tag: string, name: string): { start: number; end: number } | null {
-  const re = new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?<Name>${escapeRegExp(name)}<\\/Name>[\\s\\S]*?<\\/${tag}>`, 'g');
-  const match = re.exec(xml);
-  return match ? { start: match.index, end: match.index + match[0].length } : null;
+function findNamedChildBlock(xml: string, tag: ChildTag, name: string): { start: number; end: number } | null {
+  // Депт-аварный поиск дочернего блока по тегу и <Name> из верхнеуровневого
+  // <ChildObjects>: non-greedy regex мог «перепрыгнуть» закрывающий тег первой
+  // секции и подменить одноимённый узел из другой ТЧ (см. M1).
+  return findChildMetaElementRange(xml, tag, name);
 }
 
 function hasChildName(inner: string, tag: string, name: string): boolean {
@@ -1453,18 +1457,9 @@ function ensureEmptyFile(filePath: string): void {
   }
 }
 
+// В создании метаданных пустой синоним сериализуется как самозакрывающийся <tag/>.
 function buildLocalizedTag(indent: string, tag: string, text: string): string {
-  if (!text) {
-    return `${indent}<${tag}/>`;
-  }
-  return [
-    `${indent}<${tag}>`,
-    `${indent}\t<v8:item>`,
-    `${indent}\t\t<v8:lang>ru</v8:lang>`,
-    `${indent}\t\t<v8:content>${escapeXml(text)}</v8:content>`,
-    `${indent}\t</v8:item>`,
-    `${indent}</${tag}>`,
-  ].join('\n');
+  return buildLocalizedTagShared(indent, tag, text, { emptyAsSelfClosing: true });
 }
 
 function buildEmptyRightsXml(formatVersion: string): string {
@@ -1716,8 +1711,4 @@ function ok(changedFiles: string[]): EditResult {
 
 function fail(message: string): EditResult {
   return { success: false, changed: false, changedFiles: [], warnings: [], errors: [message] };
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
