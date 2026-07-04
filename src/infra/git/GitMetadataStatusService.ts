@@ -8,6 +8,7 @@ import {
   extractChildMetaElementsXml,
   extractColumnXmlFromTabularSection,
   extractColumnsXmlFromTabularSection,
+  extractMethodXmlFromUrlTemplate,
 } from '../xml/XmlUtils';
 
 export type MetadataGitDecorationStatus = 'added' | 'modified' | 'deleted';
@@ -18,6 +19,8 @@ export interface MetadataGitDecorationTarget {
   childKind: MetaKind | ChildTag | 'Column';
   name?: string;
   tabularSectionName?: string;
+  /** Имя URL-шаблона-контейнера для метода HTTP-сервиса (аналог tabularSectionName у Column). */
+  urlTemplateName?: string;
   paths?: string[];
 }
 
@@ -351,6 +354,12 @@ export class GitMetadataStatusService {
     if (target.childKind === 'Column') {
       return target.tabularSectionName
         ? extractColumnXmlFromTabularSection(xml, target.tabularSectionName, target.name)
+        : null;
+    }
+
+    if (target.childKind === 'Method') {
+      return target.urlTemplateName
+        ? extractMethodXmlFromUrlTemplate(xml, target.urlTemplateName, target.name)
         : null;
     }
 

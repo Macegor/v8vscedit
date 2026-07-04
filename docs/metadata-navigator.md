@@ -111,6 +111,37 @@ interface NodeDescriptor {
 | `Dimension` | `Dimension` | Измерения | `Dimension` |
 | `Resource` | `Resource` | Ресурсы | `Resource` |
 | `EnumValue` | `EnumValue` | Значения | `EnumValue` |
+| `URLTemplate` | `URLTemplate` | URL-шаблоны | `URLTemplate` |
+| `Method` | `Method` | Методы | `Method` |
+
+### Контейнерные дочерние узлы: ТЧ→Колонка и HTTPСервис→URLШаблон→Метод
+
+У части дочерних типов есть собственные вложенные листья — контейнерный узел
+хранит список своих детей, а не только простое значение. Первый прецедент —
+табличная часть с колонками, второй — HTTP-сервис с трёхуровневой
+вложенностью `HTTPService → URLTemplate → Method`: `URLTemplate` — контейнер
+(со своими свойствами `Template`), `Method` — его лист (`HTTPMethod`,
+`Handler`).
+
+Оба прецедента переиспользуют один и тот же слот `MetaChild.columns`
+(`domain/MetaObject.ts`): для ТЧ там лежат колонки (`Attribute`), для
+`URLTemplate` — методы (`Method`). Узел дерева для контейнера строится
+**симметрично в двух источниках**:
+- `infra/cache/MetadataCache.ts` — `buildTabularSectionNode`/`buildUrlTemplateNode`,
+  фактический источник дерева основного UI (webview `UniversalPanelViewProvider`);
+- `ui/tree/nodeBuilders/metaObjectTreeBuilder.ts` — те же билдеры для нативного
+  `TreeView` и панели свойств.
+
+Имя родителя-контейнера при обращении к листу передаётся отдельным
+параллельным полем контекста — `tabularSectionName` у колонки, `urlTemplateName`
+у метода (`ui/tree/TreeNodeModel.ts`, `domain/CanonicalNames.ts`). Это
+осознанное дублирование одного и того же смыслового слота под разные
+контейнеры, а не переименование существующего поля и не новый параллельный
+реестр типов (см. запрет №2 в `CLAUDE.md`).
+
+Полный канон путей `HTTPСервисы.X.URLШаблон.T[.Метод.M]` и состав
+MCP-инструментов `v8vscedit_add_url_template`/`v8vscedit_add_method` — в
+[mcp-paths.md](./mcp-paths.md).
 
 ## Команды навигатора (CommandRegistry)
 

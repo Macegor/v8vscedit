@@ -4,6 +4,7 @@ import type { MetadataNode, NodeKind } from '../TreeNode';
 import {
   extractChildMetaElementXml,
   extractColumnXmlFromTabularSection,
+  extractMethodXmlFromUrlTemplate,
   ensureStandardAttributeXml,
   extractStandardAttributeXml,
 } from '../../../infra/xml';
@@ -13,10 +14,12 @@ import {
   buildCommandProperties,
   buildEnumValueProperties,
   buildFormLikeProperties,
+  buildHttpMethodProperties,
   buildStandardAttributeProperties,
   buildTabularSectionProperties,
   buildTemplateMetaProperties,
   buildTypedFieldProperties,
+  buildUrlTemplateProperties,
 } from '../../views/properties/PropertyBuilder';
 import {
   readInheritedObjectXmlForBorrowed,
@@ -37,6 +40,8 @@ const SUPPORTED_CHILD_KINDS = new Set<NodeKind>([
   'Command',
   'Template',
   'EnumValue',
+  'URLTemplate',
+  'Method',
 ]);
 
 /**
@@ -68,6 +73,7 @@ export const structuredMetaChildHandler: ObjectHandler = {
     const { nodeKind } = node;
     const label = node.textLabel;
     const tsName = node.metaContext.tabularSectionName;
+    const urlTemplateName = node.metaContext.urlTemplateName;
 
     try {
       switch (nodeKind) {
@@ -166,6 +172,29 @@ export const structuredMetaChildHandler: ObjectHandler = {
             return notFoundProps('Файл макета не найден');
           }
           return buildTemplateMetaProperties(readXmlOrEmpty(tplPath), readXmlOrEmpty(inheritedTplPath));
+        }
+        case 'URLTemplate': {
+          const localXml = extractChildMetaElementXml(objectXml, 'URLTemplate', label);
+          const inheritedXml = inheritedObjectXml
+            ? extractChildMetaElementXml(inheritedObjectXml, 'URLTemplate', label)
+            : null;
+          if (!localXml && !inheritedXml) {
+            return [];
+          }
+          return buildUrlTemplateProperties(localXml ?? '', inheritedXml);
+        }
+        case 'Method': {
+          if (!urlTemplateName) {
+            return [];
+          }
+          const localXml = extractMethodXmlFromUrlTemplate(objectXml, urlTemplateName, label);
+          const inheritedXml = inheritedObjectXml
+            ? extractMethodXmlFromUrlTemplate(inheritedObjectXml, urlTemplateName, label)
+            : null;
+          if (!localXml && !inheritedXml) {
+            return [];
+          }
+          return buildHttpMethodProperties(localXml ?? '', inheritedXml);
         }
         default:
           return [];

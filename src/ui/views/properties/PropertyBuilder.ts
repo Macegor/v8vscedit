@@ -50,9 +50,11 @@ import {
   CONFIGURATION_PROPERTY_KEYS,
   ENUM_VALUE_PROPERTY_KEYS,
   FORM_PROPERTY_KEYS,
+  HTTP_METHOD_PROPERTY_KEYS,
   STANDARD_ATTRIBUTE_PROPERTY_KEYS,
   TABULAR_SECTION_PROPERTY_KEYS,
   TEMPLATE_META_PROPERTY_KEYS,
+  URL_TEMPLATE_PROPERTY_KEYS,
   applyCatalogPropertySections,
   applyDocumentPropertySections,
   getRootPropertyKeyOrder,
@@ -632,6 +634,22 @@ export function buildEnumValueProperties(elementFullXml: string, inheritedElemen
 /** Свойства макета по файлу описания в каталоге Templates */
 export function buildTemplateMetaProperties(elementFullXml: string, inheritedElementFullXml?: string | null): ObjectPropertiesCollection {
   return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, TEMPLATE_META_PROPERTY_KEYS, {
+    includeExtraKeys: true,
+    showMissingKeys: true,
+  });
+}
+
+/** Свойства URL-шаблона HTTP-сервиса (Name/Synonym/Comment/Template) */
+export function buildUrlTemplateProperties(elementFullXml: string, inheritedElementFullXml?: string | null): ObjectPropertiesCollection {
+  return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, URL_TEMPLATE_PROPERTY_KEYS, {
+    includeExtraKeys: true,
+    showMissingKeys: true,
+  });
+}
+
+/** Свойства метода URL-шаблона HTTP-сервиса (Name/Synonym/Comment/HTTPMethod/Handler) */
+export function buildHttpMethodProperties(elementFullXml: string, inheritedElementFullXml?: string | null): ObjectPropertiesCollection {
+  return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, HTTP_METHOD_PROPERTY_KEYS, {
     includeExtraKeys: true,
     showMissingKeys: true,
   });

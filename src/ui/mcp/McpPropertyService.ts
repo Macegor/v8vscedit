@@ -272,6 +272,7 @@ export class McpPropertyService {
       targetKind: target.targetKind,
       targetName: target.targetName,
       tabularSectionName: target.tabularSectionName,
+      urlTemplateName: target.urlTemplateName,
       propertyKey: property.key,
       valueKind,
       value: typeof normalized === 'string' ? this.toCanonicalObjectPropertyInput(property.key, normalized) : normalized,

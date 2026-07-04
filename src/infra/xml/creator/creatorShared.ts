@@ -36,6 +36,8 @@ export interface AddChildMetadataOptions {
   childTag: ChildTag | 'Column';
   name: string;
   tabularSectionName?: string;
+  /** Имя URL-шаблона-контейнера при добавлении метода HTTP-сервиса (аналог `tabularSectionName`). */
+  urlTemplateName?: string;
   templateType?: TemplateType;
 }
 

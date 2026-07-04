@@ -11,6 +11,7 @@ import { buildNode } from '../nodes/_base';
 import { getNodeDescriptor } from '../nodes/index';
 import type { NodeDescriptor } from '../nodes/_types';
 import { type ChildTag, CHILD_TAG_CONFIG } from '../../../domain/ChildTag';
+import { getMetaType } from '../../../domain/MetaTypes';
 import { type MetaChild, parseObjectXml, resolveObjectXmlPath } from '../../../infra/xml';
 import { getObjectLocationFromXml } from '../../../infra/fs/MetaPathResolver';
 import { buildRootMetaObjectProperties } from '../../views/properties/PropertyBuilder';
@@ -76,7 +77,12 @@ export function buildStructuredObjectTreeNodes(ctx: HandlerContext, nodeKind: No
       const allowed = new Set<string>(plannedChildTags);
       const byTag = groupMetaChildren(objectInfo?.children ?? [], allowed);
 
-      const groupNodes = buildGroupNodes(xmlPath, byTag, plannedChildTags, nodeKind);
+      // flatChildren: единственный дочерний тег висит прямо на узле объекта, без
+      // промежуточной группы (HTTP-сервис → URL-шаблоны как в конфигураторе).
+      const flatten = getMetaType(nodeKind).flatChildren === true && plannedChildTags.length === 1;
+      const childNodes = flatten
+        ? buildLeavesForTag(xmlPath, plannedChildTags[0], byTag.get(plannedChildTags[0]) ?? [], nodeKind)
+        : buildGroupNodes(xmlPath, byTag, plannedChildTags, nodeKind);
       const hasStructure = plannedChildTags.length > 0;
 
       const node = buildNode(descriptor, {
@@ -86,8 +92,11 @@ export function buildStructuredObjectTreeNodes(ctx: HandlerContext, nodeKind: No
           ? vscode.TreeItemCollapsibleState.Collapsed
           : vscode.TreeItemCollapsibleState.None,
         xmlPath,
-        childrenLoader: hasStructure ? () => groupNodes : undefined,
+        childrenLoader: hasStructure ? () => childNodes : undefined,
         ownershipTag,
+        addMetadataTarget: flatten
+          ? { kind: 'child', ownerObjectXmlPath: xmlPath, childTag: plannedChildTags[0] }
+          : undefined,
       });
 
       if (objectInfo?.synonym) {
@@ -206,6 +215,10 @@ export function buildLeavesForTag(
     return items.map((ts) => buildTabularSectionNode(objectXmlPath, ts, rootMetaKind));
   }
 
+  if (tag === 'URLTemplate') {
+    return items.map((template) => buildUrlTemplateNode(objectXmlPath, template, rootMetaKind));
+  }
+
   const leafDesc = requireNodeDescriptor(CHILD_TAG_CONFIG[tag].kind);
 
   return items.map((item) => {
@@ -253,6 +266,63 @@ export function buildTabularSectionNode(objectXmlPath: string, ts: MetaChild, ro
     node.tooltip = ts.synonym;
   }
   return node;
+}
+
+/**
+ * URL-шаблон HTTP-сервиса: при наличии методов раскрывается до узлов Method.
+ * Контейнерный узел, симметричный {@link buildTabularSectionNode} (ТЧ→Колонка).
+ */
+export function buildUrlTemplateNode(objectXmlPath: string, template: MetaChild, rootMetaKind: NodeKind): MetadataNode {
+  const desc = requireNodeDescriptor('URLTemplate');
+  const methods = template.columns ?? [];
+  const hasMethods = methods.length > 0;
+  const metaContext: MetaTreeNodeContext = { rootMetaKind, ownerObjectXmlPath: objectXmlPath };
+
+  const node = buildNode(desc, {
+    label: template.name,
+    kind: 'URLTemplate',
+    collapsibleState: hasMethods ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
+    xmlPath: objectXmlPath,
+    childrenLoader: hasMethods ? () => buildMethodNodes(objectXmlPath, methods, template.name, rootMetaKind) : undefined,
+    ownershipTag: undefined,
+    metaContext,
+  });
+
+  if (template.synonym) {
+    node.tooltip = template.synonym;
+  }
+  return node;
+}
+
+/** Методы URL-шаблона HTTP-сервиса */
+export function buildMethodNodes(
+  objectXmlPath: string,
+  methods: MetaChild[],
+  urlTemplateName: string,
+  rootMetaKind: NodeKind
+): MetadataNode[] {
+  const desc = requireNodeDescriptor('Method');
+  const metaContext: MetaTreeNodeContext = {
+    rootMetaKind,
+    urlTemplateName,
+    ownerObjectXmlPath: objectXmlPath,
+  };
+
+  return methods.map((method) => {
+    const node = buildNode(desc, {
+      label: method.name,
+      kind: 'Method',
+      collapsibleState: vscode.TreeItemCollapsibleState.None,
+      xmlPath: objectXmlPath,
+      childrenLoader: undefined,
+      ownershipTag: undefined,
+      metaContext,
+    });
+    if (method.synonym) {
+      node.tooltip = method.synonym;
+    }
+    return node;
+  });
 }
 
 /** Колонки табличной части */

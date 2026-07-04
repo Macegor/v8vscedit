@@ -670,6 +670,12 @@ export const ENUM_VALUE_PROPERTY_KEYS: string[] = ['Name', 'Synonym', 'Comment',
 
 export const TEMPLATE_META_PROPERTY_KEYS: string[] = ['Name', 'Synonym', 'Comment', 'TemplateType'];
 
+/** Канонический порядок свойств URL-шаблона HTTP-сервиса */
+export const URL_TEMPLATE_PROPERTY_KEYS: string[] = ['Name', 'Synonym', 'Comment', 'Template'];
+
+/** Канонический порядок свойств метода URL-шаблона HTTP-сервиса */
+export const HTTP_METHOD_PROPERTY_KEYS: string[] = ['Name', 'Synonym', 'Comment', 'HTTPMethod', 'Handler'];
+
 /** Канонический порядок свойств корня Configuration.xml */
 export const CONFIGURATION_PROPERTY_KEYS: string[] = [
   'ObjectBelonging',

@@ -23,6 +23,8 @@ export interface RemoveChildMetadataOptions {
   childTag: ChildTag | 'Column';
   name: string;
   tabularSectionName?: string;
+  /** Имя URL-шаблона-контейнера при удалении метода HTTP-сервиса (аналог `tabularSectionName`). */
+  urlTemplateName?: string;
   keepFiles?: boolean;
 }
 
@@ -148,7 +150,9 @@ export class MetadataXmlRemover {
     const xml = fs.readFileSync(options.ownerObjectXmlPath, 'utf-8');
     const nextXml = options.childTag === 'Column'
       ? removeColumnFromTabularSectionXml(xml, options.tabularSectionName, options.name)
-      : removeNamedChildFromObjectXml(xml, options.childTag, options.name);
+      : options.childTag === 'Method'
+        ? removeMethodFromUrlTemplateXml(xml, options.urlTemplateName, options.name)
+        : removeNamedChildFromObjectXml(xml, options.childTag, options.name);
     if (!nextXml.changed) {
       return fail(nextXml.error);
     }
@@ -332,6 +336,27 @@ function removeColumnFromTabularSectionXml(
   }
   const nextSectionXml = removeRangeWithLine(sectionXml, column.start, column.end);
   return { changed: true, xml: `${xml.slice(0, section.start)}${nextSectionXml}${xml.slice(section.end)}` };
+}
+
+function removeMethodFromUrlTemplateXml(
+  xml: string,
+  urlTemplateName: string | undefined,
+  methodName: string
+): { changed: true; xml: string } | { changed: false; error: string } {
+  if (!urlTemplateName) {
+    return { changed: false, error: 'Не указан URL-шаблон для удаления метода.' };
+  }
+  const template = findNamedChildBlock(xml, 'URLTemplate', urlTemplateName);
+  if (!template) {
+    return { changed: false, error: `URL-шаблон "${urlTemplateName}" не найден.` };
+  }
+  const templateXml = xml.slice(template.start, template.end);
+  const method = findNamedChildBlock(templateXml, 'Method', methodName);
+  if (!method) {
+    return { changed: false, error: `Метод "${methodName}" не найден.` };
+  }
+  const nextTemplateXml = removeRangeWithLine(templateXml, method.start, method.end);
+  return { changed: true, xml: `${xml.slice(0, template.start)}${nextTemplateXml}${xml.slice(template.end)}` };
 }
 
 function findNamedChildBlock(xml: string, tag: string, name: string): { start: number; end: number } | null {

@@ -25,6 +25,7 @@ export interface MetadataCacheNode {
   metaContext?: {
     rootMetaKind: MetaKind;
     tabularSectionName?: string;
+    urlTemplateName?: string;
     standardAttributeName?: string;
     ownerObjectXmlPath?: string;
   };
@@ -47,6 +48,7 @@ export type MetadataCacheAddTarget =
     ownerObjectXmlPath: string;
     childTag: ChildTag | 'Column';
     tabularSectionName?: string;
+    urlTemplateName?: string;
   };
 
 /**
@@ -61,7 +63,7 @@ export interface MetadataCacheFingerprint {
 }
 
 export interface MetadataCacheSnapshot {
-  schemaVersion: 14;
+  schemaVersion: 17;
   scopeKey: string;
   generatedAt: string;
   rootPath: string;
@@ -76,7 +78,7 @@ export interface MetadataCacheUpdateResult {
 }
 
 const METADATA_CACHE_DIR = path.join('.v8vscedit', 'meta');
-const CACHE_SCHEMA_VERSION = 14;
+const CACHE_SCHEMA_VERSION = 17;
 
 /**
  * Строит полный снимок дерева метаданных без ленивых загрузчиков, чтобы UI мог восстановить дерево из JSON.
@@ -489,9 +491,6 @@ function buildObjectNode(
   const objectInfo = parseObjectXml(xmlPath);
   const label = objectInfo?.name ?? name;
   const ownershipTag = getOwnershipTag(entry, info, label);
-  const children = childTags.length > 0
-    ? buildStructuredChildren(xmlPath, type, objectInfo?.children ?? [], childTags)
-    : [];
 
   return node({
     type,
@@ -503,9 +502,43 @@ function buildObjectNode(
     tooltip: objectInfo?.synonym ?? undefined,
     ownershipTag,
     canRemoveMetadata: true,
+    addMetadataTarget: flatChildAddTarget(xmlPath, type, childTags),
     singleClickAction: resolveObjectSingleClickAction(type, xmlPath),
-    children,
+    children: buildObjectChildNodes(xmlPath, type, objectInfo?.children ?? [], childTags),
   });
+}
+
+/**
+ * Строит дочерние узлы объекта с учётом flatChildren: единственный дочерний тег
+ * висит прямо на узле объекта, без промежуточной группы (HTTP-сервис → URL-шаблоны
+ * как в конфигураторе). Иначе — обычные группы по тегам.
+ * Единая точка для полной сборки и инкрементального обновления кэша.
+ */
+function buildObjectChildNodes(
+  objectXmlPath: string,
+  type: MetaKind,
+  objectChildren: MetaChild[],
+  childTags: readonly ChildTag[]
+): MetadataCacheNode[] {
+  if (childTags.length === 0) {
+    return [];
+  }
+  if (getMetaType(type).flatChildren === true && childTags.length === 1) {
+    return buildLeavesForTag(objectXmlPath, type, childTags[0], objectChildren.filter((c) => c.tag === childTags[0]));
+  }
+  return buildStructuredChildren(objectXmlPath, type, objectChildren, childTags);
+}
+
+/** Цель добавления для flatChildren-объекта — кнопка «Добавить» на самом узле объекта. */
+function flatChildAddTarget(
+  objectXmlPath: string,
+  type: MetaKind,
+  childTags: readonly ChildTag[]
+): MetadataCacheAddTarget | undefined {
+  if (getMetaType(type).flatChildren === true && childTags.length === 1) {
+    return { kind: 'child', ownerObjectXmlPath: objectXmlPath, childTag: childTags[0] };
+  }
+  return undefined;
 }
 
 function resolveObjectSingleClickAction(type: MetaKind, xmlPath: string): MetadataCacheSingleClickAction | undefined {
@@ -564,6 +597,10 @@ function buildLeavesForTag(
 ): MetadataCacheNode[] {
   if (tag === 'TabularSection') {
     return items.map((item) => buildTabularSectionNode(objectXmlPath, rootMetaKind, item));
+  }
+
+  if (tag === 'URLTemplate') {
+    return items.map((item) => buildUrlTemplateNode(objectXmlPath, rootMetaKind, item));
   }
 
   const type = CHILD_TAG_CONFIG[tag].kind as MetaKind;
@@ -655,6 +692,65 @@ function buildTabularSectionNode(
       metaContext: {
         rootMetaKind,
         tabularSectionName: item.name,
+        ownerObjectXmlPath: objectXmlPath,
+      },
+      canRemoveMetadata: true,
+      children: [],
+    })),
+  });
+}
+
+/**
+ * URL-шаблон HTTP-сервиса — контейнерный узел, симметричный
+ * {@link buildTabularSectionNode} (ТЧ→Колонка). Вложенные `Method` строятся
+ * прямыми детьми (как колонки), с `urlTemplateName` в контексте для адресации
+ * при редактировании/удалении.
+ */
+function buildUrlTemplateNode(
+  objectXmlPath: string,
+  rootMetaKind: MetaKind,
+  item: MetaChild
+): MetadataCacheNode {
+  const methods = item.columns ?? [];
+  return node({
+    type: 'URLTemplate',
+    name: item.name,
+    label: item.name,
+    xmlPath: objectXmlPath,
+    gitDecorationTarget: {
+      kind: 'child',
+      ownerXmlPath: objectXmlPath,
+      childKind: 'URLTemplate',
+      name: item.name,
+    },
+    tooltip: item.synonym || undefined,
+    metaContext: {
+      rootMetaKind,
+      ownerObjectXmlPath: objectXmlPath,
+    },
+    addMetadataTarget: {
+      kind: 'child',
+      ownerObjectXmlPath: objectXmlPath,
+      childTag: 'Method',
+      urlTemplateName: item.name,
+    },
+    canRemoveMetadata: true,
+    children: methods.map((method) => node({
+      type: 'Method',
+      name: method.name,
+      label: method.name,
+      xmlPath: objectXmlPath,
+      gitDecorationTarget: {
+        kind: 'child',
+        ownerXmlPath: objectXmlPath,
+        childKind: 'Method',
+        name: method.name,
+        urlTemplateName: item.name,
+      },
+      tooltip: method.synonym || undefined,
+      metaContext: {
+        rootMetaKind,
+        urlTemplateName: item.name,
         ownerObjectXmlPath: objectXmlPath,
       },
       canRemoveMetadata: true,
@@ -871,7 +967,10 @@ function updateChildObjectCache(snapshot: MetadataCacheSnapshot, ownerObjectXmlP
   const objectInfo = parseObjectXml(ownerObjectXmlPath);
   const childTags = getMetaType(ownerNode.type).childTags ?? [];
   ownerNode.tooltip = objectInfo?.synonym ?? undefined;
-  ownerNode.children = buildStructuredChildren(ownerObjectXmlPath, ownerNode.type, objectInfo?.children ?? [], childTags);
+  // flatChildren-aware: иначе после добавления/удаления дочернего элемента у плоского
+  // объекта (HTTP-сервис) при инкрементальном обновлении снова возникала бы группа.
+  ownerNode.children = buildObjectChildNodes(ownerObjectXmlPath, ownerNode.type, objectInfo?.children ?? [], childTags);
+  ownerNode.addMetadataTarget = flatChildAddTarget(ownerObjectXmlPath, ownerNode.type, childTags) ?? ownerNode.addMetadataTarget;
   return true;
 }
 
@@ -901,9 +1000,8 @@ function rebuildObjectNodeFromXml(
     tooltip: objectInfo.synonym || undefined,
     ownershipTag: getOwnershipTag(entry, info, label),
     canRemoveMetadata: existing.canRemoveMetadata,
-    children: childTags.length > 0
-      ? buildStructuredChildren(existing.xmlPath, existing.type, objectInfo.children, childTags)
-      : [],
+    addMetadataTarget: flatChildAddTarget(existing.xmlPath, existing.type, childTags),
+    children: buildObjectChildNodes(existing.xmlPath, existing.type, objectInfo.children, childTags),
   });
 }
 

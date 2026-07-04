@@ -548,6 +548,8 @@ suite('CanonicalNames — MetaTypes/ChildTag расширены полями к�
       Dimension: 'Измерение',
       Resource: 'Ресурс',
       EnumValue: 'ЗначениеПеречисления',
+      URLTemplate: 'URLШаблон',
+      Method: 'Метод',
     };
     for (const tag of Object.keys(expected) as ChildTag[]) {
       assert.strictEqual(CHILD_TAG_CONFIG[tag].pathSegment, expected[tag], `pathSegment для ${tag}`);

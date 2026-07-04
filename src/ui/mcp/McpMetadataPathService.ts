@@ -399,6 +399,26 @@ export class McpMetadataPathService {
         );
       }
 
+      // Метод HTTP-сервиса: цель — child с childTag='Method' и urlTemplateName.
+      if (parsed.urlTemplateName !== undefined) {
+        const templateNode = this.findUrlTemplate(owner, parsed.urlTemplateName);
+        if (!templateNode) {
+          throw new Error(
+            `URL-шаблон "${parsed.urlTemplateName}" не найден в объекте «${owner.textLabel}».`,
+          );
+        }
+        return {
+          target: {
+            kind: 'child',
+            ownerObjectXmlPath: owner.xmlPath,
+            childTag: 'Method',
+            urlTemplateName: parsed.urlTemplateName,
+          },
+          name: parsed.childName,
+          sourceNode: templateNode,
+        };
+      }
+
       // Колонка ТЧ: цель — child с childTag='Column' и tabularSectionName.
       if (parsed.tabularSectionName !== undefined) {
         const tsNode = this.findTabularSection(owner, parsed.tabularSectionName);
@@ -488,6 +508,7 @@ export class McpMetadataPathService {
         childTag: parsed.childTag,
         childName: parsed.childName,
         tabularSectionName: parsed.tabularSectionName,
+        urlTemplateName: parsed.urlTemplateName,
       });
       // Сравниваем именно построенный канонический путь — он сам нормализует
       // прямые и сегментированные дочерние формы по правилам домена.
@@ -539,6 +560,11 @@ export class McpMetadataPathService {
   }
 
   private findChildAddGroup(owner: MetadataNode, childTag: ChildTag): MetadataNode | undefined {
+    // flatChildren: у объекта без групп кнопка «Добавить» живёт на самом узле объекта.
+    const ownTarget = owner.addMetadataTarget;
+    if (ownTarget?.kind === 'child' && ownTarget.childTag === childTag) {
+      return owner;
+    }
     return owner.childrenLoader?.().find((node) => {
       const target = node.addMetadataTarget;
       return target?.kind === 'child' && target.childTag === childTag;
@@ -551,6 +577,16 @@ export class McpMetadataPathService {
         if (child.nodeKind === 'TabularSection' && child.textLabel === name) {
           return child;
         }
+      }
+    }
+    return undefined;
+  }
+
+  private findUrlTemplate(owner: MetadataNode, name: string): MetadataNode | undefined {
+    // flatChildren: URL-шаблоны висят прямо на узле HTTP-сервиса, без группы-обёртки.
+    for (const child of owner.childrenLoader?.() ?? []) {
+      if (child.nodeKind === 'URLTemplate' && child.textLabel === name) {
+        return child;
       }
     }
     return undefined;
@@ -687,6 +723,19 @@ export class McpMetadataPathService {
     rootName: string,
     result: IndexedNode[],
   ): void {
+    // flatChildren: у объекта без групп (HTTP-сервис) дочерние элементы (URL-шаблоны)
+    // висят прямо на узле объекта; childTag берём из его собственного addMetadataTarget.
+    const ownTarget = objectNode.addMetadataTarget;
+    if (ownTarget?.kind === 'child' && ownTarget.childTag !== 'Column') {
+      const childTag = ownTarget.childTag;
+      for (const child of objectNode.childrenLoader?.() ?? []) {
+        if (child.nodeKind === childTag) {
+          this.collectChildNode(root, rootKind, rootName, childTag, child, result);
+        }
+      }
+      return;
+    }
+
     for (const group of objectNode.childrenLoader?.() ?? []) {
       const target = group.addMetadataTarget;
       const childTag = (target?.kind === 'child' && target.childTag !== 'Column')
@@ -732,6 +781,24 @@ export class McpMetadataPathService {
           tabularSectionName: child.textLabel,
         });
         result.push({ node: column, root, canonicalPath: columnCanonical });
+      }
+    }
+
+    // URL-шаблон HTTP-сервиса — контейнер методов (третий уровень вложенности).
+    // Методы висят прямо на узле шаблона, как колонки в ТЧ (без группы-обёртки).
+    if (childTag === 'URLTemplate') {
+      for (const method of child.childrenLoader?.() ?? []) {
+        if (method.nodeKind !== 'Method') {
+          continue;
+        }
+        const methodCanonical = canonicalChildPath({
+          rootKind,
+          rootName,
+          childTag: 'Method',
+          childName: method.textLabel,
+          urlTemplateName: child.textLabel,
+        });
+        result.push({ node: method, root, canonicalPath: methodCanonical });
       }
     }
   }
@@ -875,6 +942,7 @@ function canonicalFromParsed(parsed: ParsedCanonicalPath): string {
         childTag: parsed.childTag,
         childName: parsed.childName,
         tabularSectionName: parsed.tabularSectionName,
+        urlTemplateName: parsed.urlTemplateName,
       });
     case 'module':
       // canonicalModulePath требует MetaKind/rootName; для модулей объекта это просто хвост.

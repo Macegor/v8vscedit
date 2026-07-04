@@ -61,6 +61,7 @@ async function removeMetadata(node: MetadataNode | undefined, services: CommandS
       childTag: toRemoveChildTag(node.nodeKind),
       name: node.textLabel,
       tabularSectionName: node.metaContext.tabularSectionName,
+      urlTemplateName: node.metaContext.urlTemplateName,
     })
     : services.metadataXmlRemover.removeRootObject({
       configRoot: getObjectLocationFromXml(node.xmlPath).configRoot,
@@ -147,7 +148,9 @@ function toRemoveChildTag(kind: string): ChildTag | 'Column' {
     kind === 'Dimension' ||
     kind === 'Resource' ||
     kind === 'EnumValue' ||
-    kind === 'Column'
+    kind === 'Column' ||
+    kind === 'URLTemplate' ||
+    kind === 'Method'
   ) {
     return kind;
   }

@@ -17,7 +17,7 @@
  *     Для каждого — имя, title, description (построчно, дословно) и набор
  *     ключей inputSchema с их опциональностью. Ровно 57 — см. `grep`/`awk`
  *     подсчёт по исходнику; ~60 из архитектурной оценки включает round-off.
- *     Отдельно вызываемые `registerAllAddTools` (45 root + 9 child = 54 tools)
+ *     Отдельно вызываемые `registerAllAddTools` (45 root + 11 child = 56 tools)
  *     сюда не входят — они уже застрахованы `mcpAddTools.test.ts` как
  *     самостоятельный декомпозированный модуль.
  *  2) Инвариант единого post-mutation пути (`suppressConfigurationReloadForFiles`
@@ -583,12 +583,12 @@ const EXPECTED_TOOLS: readonly ExpectedTool[] = [
 suite('V8McpServer.registerTools — golden-каталог перед декомпозицией (характеризационный)', () => {
   test('регистрирует ровно 57 прямых tools (без учёта registerAllAddTools)', () => {
     const { tools } = registerAllTools(createBaselineServices());
-    // registerAllAddTools добавляет ещё 45 root + 9 child = 54 tool-а поверх
+    // registerAllAddTools добавляет ещё 45 root + 11 child = 56 tool-ов поверх
     // этих 57 — их каталог отдельно застрахован mcpAddTools.test.ts. Здесь
     // фиксируем именно прямые регистрации, чтобы дробление не потеряло и не
     // задвоило ни одну из них.
-    assert.strictEqual(tools.size, EXPECTED_TOOLS.length + 54,
-      `фактический размер каталога (${String(tools.size)}) разошёлся с ожидаемым (57 прямых + 54 add-tools)`);
+    assert.strictEqual(tools.size, EXPECTED_TOOLS.length + 56,
+      `фактический размер каталога (${String(tools.size)}) разошёлся с ожидаемым (57 прямых + 56 add-tools)`);
     for (const expected of EXPECTED_TOOLS) {
       assert.ok(tools.has(expected.name), `должен быть зарегистрирован tool "${expected.name}"`);
     }

@@ -54,6 +54,7 @@ export class MetadataMutationService {
           childTag: input.target.childTag,
           name: input.name,
           tabularSectionName: input.target.tabularSectionName,
+          urlTemplateName: input.target.urlTemplateName,
           templateType: input.templateType,
         });
 

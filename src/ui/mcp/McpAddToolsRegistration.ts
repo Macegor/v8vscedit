@@ -149,6 +149,12 @@ export interface ChildAddToolDescriptor {
    * только для `v8vscedit_add_column` — отличает её от прочих дочерних tools.
    */
   readonly inTabularSection?: true;
+  /**
+   * Указатель на то, что tool работает внутри URL-шаблона HTTP-сервиса. Поле
+   * задаётся только для `v8vscedit_add_method` — аналог `inTabularSection`
+   * у `v8vscedit_add_column` (контейнер-владелец — узел `URLTemplate`).
+   */
+  readonly inUrlTemplate?: true;
 }
 
 const TYPED_OWNERS: readonly MetaKind[] = [
@@ -233,6 +239,19 @@ export const CHILD_ADD_TOOLS: readonly ChildAddToolDescriptor[] = [
     russianLabel: 'колонку табличной части',
     allowedOwnerKinds: ['TabularSection'],
     inTabularSection: true,
+  },
+  {
+    toolName: 'v8vscedit_add_url_template',
+    childTag: 'URLTemplate',
+    russianLabel: 'URL-шаблон',
+    allowedOwnerKinds: ['HTTPService'],
+  },
+  {
+    toolName: 'v8vscedit_add_method',
+    childTag: 'Method',
+    russianLabel: 'метод',
+    allowedOwnerKinds: ['URLTemplate'],
+    inUrlTemplate: true,
   },
 ];
 
@@ -370,6 +389,31 @@ export function registerAddChildTool(
             ownerObjectXmlPath: node.metaContext.ownerObjectXmlPath,
             childTag: 'Column',
             tabularSectionName: node.textLabel,
+          },
+          name,
+          templateType,
+        });
+        if (result.success) {
+          ctx.afterMutation(result.changedFiles);
+        }
+        return result;
+      }
+
+      // Метод HTTP-сервиса: узел-владелец — URL-шаблон; имя шаблона — textLabel
+      // (симметрично колонке ТЧ). Метод кладётся во вложенный <ChildObjects> шаблона.
+      if (descriptor.inUrlTemplate) {
+        if (node.nodeKind !== 'URLTemplate' || !node.metaContext?.ownerObjectXmlPath) {
+          throw new Error(
+            `Путь "${ownerPath}" должен указывать на URL-шаблон ` +
+            `(HTTPСервисы.X.URLШаблон.Y), получено ${node.nodeKind}.`,
+          );
+        }
+        const result = await ctx.mutations.addMetadata({
+          target: {
+            kind: 'child',
+            ownerObjectXmlPath: node.metaContext.ownerObjectXmlPath,
+            childTag: 'Method',
+            urlTemplateName: node.textLabel,
           },
           name,
           templateType,
