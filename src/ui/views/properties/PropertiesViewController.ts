@@ -30,9 +30,9 @@ import type {
   BasedOnXmlService,
   ConfigurationXmlEditor,
 } from '../../../infra/xml';
-import { extractChildMetaElementXml, extractColumnXmlFromTabularSection } from '../../../infra/xml';
+import { extractChildMetaElementXml } from '../../../infra/xml';
 import type { RepositoryService } from '../../../infra/repository/RepositoryService';
-import { type SupportInfoService, SupportMode } from '../../../infra/support/SupportInfoService';
+import type { SupportInfoService, SupportMode } from '../../../infra/support/SupportInfoService';
 import { getHandlerForNode } from '../../tree/nodeBuilders/index';
 import type {
   PropertyControl,
@@ -41,7 +41,6 @@ import type {
   PropertiesViewState,
 } from './_types';
 import { getObjectLocationFromXml } from '../../../infra/fs';
-import { META_TYPES } from '../../../domain/MetaTypes';
 import { getDefaultStandardAttributeIndexing } from '../../../domain/StandardAttribute';
 import type {
   SubsystemMembershipSnapshot,
@@ -60,13 +59,27 @@ import {
   toNumberOrUndefined,
 } from './PropertiesViewUtils';
 import {
-  extractUuidFromXml,
   isRootObjectNode,
   isValidMetadataName,
   resolvePropertyTarget,
   resolveTypeRegistryFilter,
   resolveTypeTarget,
 } from './PropertiesTargetResolver';
+import {
+  isEditLockedByRepository,
+  isEditLockedBySupport,
+  resolveEditLockReason,
+  resolveNodeSupportMode,
+  type PropertyEditLockDeps,
+} from './propertyEditLock';
+import {
+  flattenSubsystemMembershipTree,
+  isConfigurationRootNode,
+  isSubsystemMembershipNode,
+  resolveBasedOnKind,
+  resolveExchangePlanContentSnapshot,
+  resolveSubsystemMembershipSnapshot,
+} from './propertyNodeClassification';
 
 interface PropertiesViewControllerHost {
   refreshActiveView(): void;
@@ -977,68 +990,27 @@ export class PropertiesViewController {
   }
 
   private flattenSubsystemMembershipTree(tree: SubsystemMembershipTreeNode[]): SubsystemMembershipTreeNode[] {
-    const result: SubsystemMembershipTreeNode[] = [];
-    const walk = (nodes: SubsystemMembershipTreeNode[]): void => {
-      for (const node of nodes) {
-        result.push(node);
-        walk(node.children);
-      }
-    };
-    walk(tree);
-    return result;
+    return flattenSubsystemMembershipTree(tree);
   }
 
   private isConfigurationRootNode(node: MetadataNode): boolean {
-    return node.nodeKind === 'configuration' || node.nodeKind === 'extension';
+    return isConfigurationRootNode(node);
   }
 
   private resolveSubsystemMembershipSnapshot(node: MetadataNode): SubsystemMembershipSnapshot | null {
-    if (!this.isSubsystemMembershipNode(node) || !node.xmlPath) {
-      return null;
-    }
-    try {
-      const location = getObjectLocationFromXml(node.xmlPath);
-      return this.subsystemXmlService.readMembershipSnapshot(
-        location.configRoot,
-        `${node.nodeKind}.${node.textLabel}`
-      );
-    } catch {
-      return null;
-    }
+    return resolveSubsystemMembershipSnapshot(node, this.subsystemXmlService);
   }
 
   private resolveExchangePlanContentSnapshot(node: MetadataNode): ExchangePlanContentSnapshot | null {
-    if (node.nodeKind !== 'Catalog' || !this.isSubsystemMembershipNode(node) || !node.xmlPath) {
-      return null;
-    }
-    try {
-      const location = getObjectLocationFromXml(node.xmlPath);
-      return this.exchangePlanContentService.readObjectContentSnapshot(
-        location.configRoot,
-        `${node.nodeKind}.${node.textLabel}`
-      );
-    } catch {
-      return null;
-    }
+    return resolveExchangePlanContentSnapshot(node, this.exchangePlanContentService);
   }
 
   private isSubsystemMembershipNode(node: MetadataNode): boolean {
-    const target = resolvePropertyTarget(node);
-    if (!target || !isRootObjectNode(node, target)) {
-      return false;
-    }
-    if (node.nodeKind === 'Subsystem') {
-      return false;
-    }
-    return Boolean(META_TYPES[node.nodeKind].folder);
+    return isSubsystemMembershipNode(node);
   }
 
   private resolveBasedOnKind(node: MetadataNode): BasedOnMetaKind | null {
-    const target = resolvePropertyTarget(node);
-    if (!target || !isRootObjectNode(node, target)) {
-      return null;
-    }
-    return node.nodeKind === 'Catalog' || node.nodeKind === 'Document' ? node.nodeKind : null;
+    return resolveBasedOnKind(node);
   }
 
   private normalizeTypeValueForProperty(key: string, value: MetadataTypeValue): MetadataTypeValue {
@@ -1113,77 +1085,24 @@ export class PropertiesViewController {
     this.onAfterRename?.(location.configRoot, oldXmlPath, renamedPath);
   }
 
+  private get editLockDeps(): PropertyEditLockDeps {
+    return { supportService: this.supportService, repositoryService: this.repositoryService };
+  }
+
   private isEditLockedBySupport(node: MetadataNode): boolean {
-    if (!this.supportService) {
-      return false;
-    }
-    const lockMode = this.resolveNodeSupportMode(node);
-    return lockMode === SupportMode.Locked;
+    return isEditLockedBySupport(node, this.editLockDeps);
   }
 
   private isEditLockedByRepository(node: MetadataNode): boolean {
-    if (!this.repositoryService) {
-      return false;
-    }
-
-    const xmlPath = node.metaContext?.ownerObjectXmlPath ?? node.xmlPath;
-    if (!xmlPath || !fs.existsSync(xmlPath)) {
-      return false;
-    }
-
-    return this.repositoryService.isEditRestricted(xmlPath);
+    return isEditLockedByRepository(node, this.editLockDeps);
   }
 
   private resolveEditLockReason(node: MetadataNode): 'support' | 'repository' | undefined {
-    if (this.isEditLockedBySupport(node)) {
-      return 'support';
-    }
-    if (this.isEditLockedByRepository(node)) {
-      return 'repository';
-    }
-    return undefined;
+    return resolveEditLockReason(node, this.editLockDeps);
   }
 
   private resolveNodeSupportMode(node: MetadataNode): SupportMode {
-    if (!this.supportService) {
-      return SupportMode.None;
-    }
-    const xmlPath = node.metaContext?.ownerObjectXmlPath ?? node.xmlPath;
-    if (!xmlPath || !fs.existsSync(xmlPath)) {
-      return SupportMode.None;
-    }
-
-    const childTagMap: Partial<Record<string, 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource'>> = {
-      Attribute: 'Attribute',
-      AddressingAttribute: 'AddressingAttribute',
-      Dimension: 'Dimension',
-      Resource: 'Resource',
-    };
-    const childTag = childTagMap[node.nodeKind];
-    if (childTag) {
-      const xml = fs.readFileSync(xmlPath, 'utf-8');
-      const childXml = extractChildMetaElementXml(xml, childTag, node.textLabel);
-      const uuid = extractUuidFromXml(childXml);
-      return uuid ? this.supportService.getSupportModeByUuid(xmlPath, uuid) : this.supportService.getSupportMode(xmlPath);
-    }
-
-    if (node.nodeKind === 'Column') {
-      const xml = fs.readFileSync(xmlPath, 'utf-8');
-      const columnXml = extractColumnXmlFromTabularSection(xml, node.metaContext?.tabularSectionName ?? '', node.textLabel);
-      const uuid = extractUuidFromXml(columnXml);
-      return uuid ? this.supportService.getSupportModeByUuid(xmlPath, uuid) : this.supportService.getSupportMode(xmlPath);
-    }
-
-    if (node.nodeKind === 'SessionParameter' || node.nodeKind === 'CommonAttribute') {
-      const xml = fs.readFileSync(xmlPath, 'utf-8');
-      const uuid = extractUuidFromXml(xml);
-      return uuid ? this.supportService.getSupportModeByUuid(xmlPath, uuid) : this.supportService.getSupportMode(xmlPath);
-    }
-
-    if (!xmlPath) {
-      return SupportMode.None;
-    }
-    return this.supportService.getSupportMode(xmlPath);
+    return resolveNodeSupportMode(node, this.editLockDeps);
   }
 
   /** Преобразует ObjectPropertyItem в PropertyControl для Vue. */
