@@ -18,6 +18,12 @@ import {
   // На момент написания теста экспорта ещё нет — это часть красного: импорт не скомпилируется,
   // пока unescapeXml не появится в XmlUtils.
   unescapeXml,
+  // Единый примитив извлечения версии формата из атрибута version="…" тега
+  // <MetaDataObject> (дедупликация 5a-5, безопасное ядро). Ранее один и тот же
+  // regex-литерал был скопирован в RoleRightsXml/SubsystemToolsService/
+  // CommandInterfaceService/ExternalObjectService. Политику walk-up/fallback/срез
+  // каждый вызывающий оставляет себе — здесь только текстовое извлечение.
+  extractMetaDataObjectVersion,
 } from '../../infra/xml/XmlUtils';
 
 suite('XmlUtils — escapeRegExp (единый, дедупликация 5a-1)', () => {
@@ -334,5 +340,35 @@ suite('XmlUtils — extractChildMetaElementsXml / extractColumnsXmlFromTabularSe
       '</MetaDataObject>',
     ].join('\n');
     assert.deepStrictEqual(extractColumnsXmlFromTabularSection(xmlWithEmptySection, 'ПустаяТЧ'), []);
+  });
+});
+
+suite('XmlUtils — extractMetaDataObjectVersion (единый примитив версии формата, 5a-5)', () => {
+  test('извлекает версию из атрибута version тега MetaDataObject', () => {
+    const xml = '<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" version="2.20">';
+    assert.strictEqual(extractMetaDataObjectVersion(xml), '2.20');
+  });
+
+  test('работает при наличии других атрибутов до version', () => {
+    const xml = '<MetaDataObject xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="…" version="2.18">';
+    assert.strictEqual(extractMetaDataObjectVersion(xml), '2.18');
+  });
+
+  test('версия с нецифровым суффиксом извлекается целиком (класс [^"]+)', () => {
+    // Сохраняем поведение исходных копий: символьный класс [^"]+, не [\\d.]+.
+    const xml = '<MetaDataObject version="2.21-rc">';
+    assert.strictEqual(extractMetaDataObjectVersion(xml), '2.21-rc');
+  });
+
+  test('тег без атрибута version — undefined', () => {
+    assert.strictEqual(extractMetaDataObjectVersion('<MetaDataObject xmlns="…">'), undefined);
+  });
+
+  test('нет тега MetaDataObject — undefined', () => {
+    assert.strictEqual(extractMetaDataObjectVersion('<Configuration><Name>Конф</Name></Configuration>'), undefined);
+  });
+
+  test('совпадает по границе слова: MetaDataObjectX не матчится', () => {
+    assert.strictEqual(extractMetaDataObjectVersion('<MetaDataObjectX version="9.9">'), undefined);
   });
 });

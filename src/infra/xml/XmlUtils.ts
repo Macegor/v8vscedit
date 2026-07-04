@@ -191,6 +191,17 @@ export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Извлекает версию формата из атрибута `version="…"` корневого тега
+ * `<MetaDataObject>` (единый примитив, дедупликация 5a-5). Только текстовое
+ * извлечение по границе имени тега — политику поиска Configuration.xml
+ * (walk-up/один каталог), объём чтения (весь файл/head) и fallback при
+ * отсутствии каждый вызывающий задаёт сам, т.к. они существенно расходятся.
+ */
+export function extractMetaDataObjectVersion(xml: string): string | undefined {
+  return /<MetaDataObject\b[^>]*version="([^"]+)"/.exec(xml)?.[1];
+}
+
 /** Извлекает текст первого вхождения тега без атрибутов. */
 export function extractSimpleTag(xml: string, tagName: string): string | undefined {
   const element = findFirstElement(parseXml(xml), tagName);

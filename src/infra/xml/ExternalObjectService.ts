@@ -6,6 +6,7 @@ import {
   escapeRegExp,
   escapeXmlAttribute as escapeXml,
   extractMainChildObjectsInnerXml,
+  extractMetaDataObjectVersion,
   writeTextFilePreservingBomAndEol,
 } from './XmlUtils';
 
@@ -864,7 +865,7 @@ function detectFormatVersion(startPath: string): string {
     const configXml = path.join(current, 'Configuration.xml');
     if (fs.existsSync(configXml)) {
       const head = fs.readFileSync(configXml, 'utf-8').slice(0, 2000);
-      return /<MetaDataObject\b[^>]*version="([^"]+)"/.exec(head)?.[1] ?? '2.17';
+      return extractMetaDataObjectVersion(head) ?? '2.17';
     }
     current = path.dirname(current);
   }

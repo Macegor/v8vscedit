@@ -4,6 +4,7 @@ import { XMLParser } from 'fast-xml-parser';
 import {
   escapeXmlAttribute,
   escapeXmlText as escapeXmlTextCanonical,
+  extractMetaDataObjectVersion,
   extractSimpleTag,
   extractSynonym,
 } from '../xml/XmlUtils';
@@ -341,8 +342,7 @@ export function detectFormatVersion(configDir: string): string {
   if (!fs.existsSync(configXmlPath)) {
     return DEFAULT_FORMAT_VERSION;
   }
-  const version = /<MetaDataObject\b[^>]*version="([^"]+)"/.exec(fs.readFileSync(configXmlPath, 'utf-8'))?.[1];
-  return version ?? DEFAULT_FORMAT_VERSION;
+  return extractMetaDataObjectVersion(fs.readFileSync(configXmlPath, 'utf-8')) ?? DEFAULT_FORMAT_VERSION;
 }
 
 export interface SerializableRoleRight {
