@@ -35,6 +35,7 @@ import type { ProjectEnvironmentViewProvider } from '../views/environment/Projec
 import type { AiMcpViewProvider } from '../views/ai/AiMcpViewProvider';
 import type { StandaloneServerViewProvider } from '../views/standalone/StandaloneServerViewProvider';
 import type { SubsystemEditorViewProvider } from '../views/subsystem/SubsystemEditorViewProvider';
+import type { HistoryGraphViewProvider } from '../views/history/HistoryGraphViewProvider';
 import type { UniversalPanelProcessingState } from '../views/universal/UniversalPanelViewProvider';
 
 export type NodeArg = MetadataNode | { xmlPath?: string; nodeKind?: string; label?: string };
@@ -63,6 +64,7 @@ export interface CommandServices {
   reloadEntries: () => void | Promise<void>;
   dynamicPanelController: DynamicPanelController;
   subsystemEditorViewProvider: SubsystemEditorViewProvider;
+  historyGraphViewProvider: HistoryGraphViewProvider;
   outputChannel: vscode.OutputChannel;
   supportService?: SupportInfoService;
   repositoryService: RepositoryService;
