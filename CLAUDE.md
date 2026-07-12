@@ -10,7 +10,7 @@
 1. **Навигатор метаданных** — дерево объектов из XML-выгрузки (CF и CFE), свойства, чтение/создание/редактирование метаданных, открытие BSL-модулей.
 2. **Языковая поддержка BSL** — LSP-клиент для внешнего `bsl-analyzer`.
 
-Подробная документация — в `./docs` (`architecture.md`, `metadata-navigator.md`, `metadata-parser.md`, `bsl-language-support.md`, `mcp-paths.md`, `xml-format-rulesets.md`, `agentic-pipeline.md`, `vscode-extension-best-practices.md`).
+Подробная документация — в `./docs` (`architecture.md`, `metadata-navigator.md`, `metadata-parser.md`, `bsl-language-support.md`, `mcp-paths.md`, `xml-format-rulesets.md`, `agentic-pipeline.md`, `vscode-extension-best-practices.md`, `git-metadata-changes.md`).
 
 ## Язык общения
 
@@ -130,7 +130,11 @@ src/
 │   ├── support/                      # SupportInfoReader/Service (ParentConfigurations.bin), Logger
 │   ├── cache/                        # MetadataCache, hashCache (CLI)
 │   ├── repository/                   # хранилище 1С, локальные захваты
-│   ├── git/                          # статус Git для узлов метаданных
+│   ├── git/                          # статус Git для узлов метаданных (GitMetadataStatusService,
+│   │                                  # декорации) + представление «Изменения метаданных»
+│   │                                  # (GitPorcelainReader, MetadataChangeResolver,
+│   │                                  # MetadataChangeAggregator, GitBlobReader, GitStatusReader,
+│   │                                  # GitWriteService — см. docs/git-metadata-changes.md)
 │   ├── environment/                  # bsl-analyzer.toml, окружение проекта, реестр баз
 │   ├── process/                      # поиск платформы, spawn, декодер OEM/Win1251
 │   └── skills/                       # AiSkillsInstaller — установка ИИ-навыков
@@ -140,8 +144,14 @@ src/
 │   ├── views/                        # webview-провайдеры
 │   │   ├── universal/                # UniversalPanelViewProvider — ОСНОВНОЙ UI навигатора
 │   │   ├── properties/               # PropertyBuilder по PropertySchema
+│   │   ├── changes/                  # changesDtoBuilder (листья, чистый) + changesTreeAssembler
+│   │   │                              # (сборка навигаторной иерархии секции, чистый) +
+│   │   │                              # MetadataChangesViewProvider (webview v8vsceditChanges, требует
+│   │   │                              # treeProvider — дерево панели повторяет иерархию навигатора;
+│   │   │                              # см. docs/git-metadata-changes.md)
 │   │   └── subsystem|search|repository|environment|standalone|…
 │   ├── commands/                     # CommandRegistry.registerAll + подпапки по доменам
+│   ├── git/                          # OnecGitContentProvider — схема onec-git для diff HEAD/индекс
 │   ├── mcp/                          # V8McpServer, McpNodeRegistry, McpPropertyService
 │   └── readonly/                     # BslReadonlyGuard
 │
@@ -199,7 +209,7 @@ export interface MetaTypeDef {
 
 ### Webview (`src-ui/`)
 
-Vue-приложения (сборка `vite.webview.config.ts`, проверка типов `vue-tsc`/`tsconfig.ui.json`). `src-ui/apps/*` — отдельные панели (`universal`, `dynamic-panel`, `environment`, `subsystem`, `repository-*`, `standalone`, `ai`, `tree-search`). `src-ui/shared/` — общий код: `protocol/` (контракт сообщений webview ↔ расширение), `state/`, `components/`, `api/`. При изменении взаимодействия панели и расширения правьте обе стороны протокола.
+Vue-приложения (сборка `vite.webview.config.ts`, проверка типов `vue-tsc`/`tsconfig.ui.json`). `src-ui/apps/*` — отдельные панели (`universal`, `dynamic-panel`, `environment`, `subsystem`, `repository-*`, `standalone`, `ai`, `tree-search`, `changes` — панель «Изменения метаданных», SCM-шапка + дерево, повторяющее навигаторную иерархию, обрезанную по изменениям). `src-ui/shared/` — общий код: `protocol/` (контракт сообщений webview ↔ расширение), `state/`, `components/` (в т.ч. `components/tree/UniversalTree*.vue` — дерево, общее для навигатора и панели изменений), `api/`. При изменении взаимодействия панели и расширения правьте обе стороны протокола.
 
 ## MCP-сервер для ИИ-агентов
 
@@ -248,6 +258,25 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
 - **Новый watcher:** `FileSystemWatcher` — только в `Container` или `ui/support/`; обработчик делегирует в сервис.
 - **Внешняя интеграция (vrunner):** запуск процесса в `ui/commands/ext/`; декодирование OEM/Win1251 через `iconv-lite`; прогресс/отмена через `vscode.window.withProgress`.
 - **Открытие BSL-модулей:** только реальные `file://` документы (виртуальная схема `onec://` удалена). Readonly — через `ui/readonly/BslReadonlyGuard.ts`.
+- **Новая часть объекта в панели «Изменения метаданных»** (`MetadataPartKind`, см.
+  [git-metadata-changes.md](./docs/git-metadata-changes.md)): случай в
+  `infra/git/MetadataChangeResolver.ts` (`resolveSubPath`/дизамбигуация слота через
+  `META_TYPES[kind].modules`) → при новом варианте схлопывания статуса — `combineStatus` в
+  `infra/git/MetadataChangeAggregator.ts` → метка/статус ЛИСТА в
+  `ui/views/changes/changesDtoBuilder.ts` (`partLabelOf`/`toGitStatus`, функции `buildObjectNode`/
+  `buildPartNode`; навигаторную иерархию НАД листом строит `changesTreeAssembler.ts` +
+  `MetadataChangesViewProvider.resolveAncestors`, этот слой не трогается для новой части) → тест на
+  реальном временном git-репозитории (образец — `support/changesFixtures.ts`). Каноничный путь владельца
+  — только через `domain/CanonicalNames.ts` (`canonicalRootPath`), не новый форматтер.
+- **Новая git-мутация над панелью изменений** (аналог stage/unstage/discard/commit): движок — функция
+  в `infra/git/GitWriteService.ts` (без `vscode`) → действие подключается веткой в
+  `MetadataChangesViewProvider.handleMessage` (значение `command` протокола) → то же значение `command`
+  добавляется на стороне ui в `src-ui/apps/changes/ChangesApp.vue` (пункт контекстного меню узла и/или
+  кнопка в `ChangesCommitBox.vue`) → узлы для действия строит `changesDtoBuilder` из `ChangesModel`
+  (`resolveChangeAddress` — единственное место, расшифровывающее `nodeId` обратно в файлы). Никаких
+  команд `package.json → contributes.commands`/меню `view/item/context` для этой панели не заводится —
+  весь UI-контракт живёт во внутреннем протоколе webview (см.
+  [git-metadata-changes.md](./docs/git-metadata-changes.md#формат-сообщений-протокола)).
 - **Декомпозиция God-класса (косметика, без изменения поведения):** characterization/байт-golden-тест ДО дробления (фиксирует текущий выход) → вынос по доменам/ответственности в подпапку того же слоя (`ui/mcp/registration/`, `infra/xml/<область>/`) через `git mv`/перенос функций без изменения публичного API фасада → диспетчер-`switch` → таблица (данные в `META_TYPES`/спец-реестр infra, поведение — функции поверх) → эталоны golden при этом НЕ редактируются: их правка означает регресс поведения, а не косметику. Для XML-генераторов (`MetadataXmlCreator`, `FormBuilders`) байт-golden обязателен как входное условие (см. запрет №17).
 
 ## Запреты и анти-паттерны
@@ -312,6 +341,17 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
 3. Миграция XML-парсинга на `fast-xml-parser` (внутри `infra/xml/*` — регулярки), без изменения публичного API ридеров.
 4. Сильная типизация дерева: `TreeNodeModel` → discriminated union по `kind`.
 5. `ui/views/properties/_types.ts` — окончательно отделить типы панели свойств.
+6. `infra/git/GitStatusReader.ts` дублирует запуск `git status`/поиск корня с `GitMetadataStatusService`
+   (панель «Изменения метаданных» vs декорации навигатора) — кандидат на объединение, см.
+   [git-metadata-changes.md](./docs/git-metadata-changes.md#известные-ограничения).
+7. Панель «Изменения метаданных» показывает дерево навигаторной иерархии, но лист (объект) раскрывается
+   только до глубины «объект → изменённая часть» (модуль/Свойства/форма), без разворота части до
+   атрибута/колонки — см. [git-metadata-changes.md](./docs/git-metadata-changes.md#известные-ограничения).
+8. Панель «Изменения метаданных»: `findNavigatorNode` ищет узел объекта в `MetadataTreeProvider`
+   отдельным DFS-обходом на КАЖДУЮ изменённую группу (O(изменения × размер дерева) на `refresh()`) —
+   кандидат на индексацию дерева одним проходом; `synthesizeAncestors` для удалённых объектов группы
+   `documents-branch` не восстанавливает промежуточную ветвь «Документы» — см.
+   [git-metadata-changes.md](./docs/git-metadata-changes.md#известные-ограничения).
 
 ## `.cursor/`, `.codex/`, `.claude/skills/` — это доменные 1С-скилы, а не разработка расширения
 

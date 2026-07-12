@@ -189,3 +189,19 @@ MCP-инструментов `v8vscedit_add_url_template`/`v8vscedit_add_method`
 `getIconUris(nodeKind, ownershipTag, extensionUri)` возвращает пару URI для светлой и тёмной темы. Для заимствованных объектов (`BORROWED`) добавляет суффикс `-borrowed` к имени иконки.
 
 `getIconName(kind)` в `iconMap.ts` читает `descriptor.icon` и возвращает имя SVG-файла. Иконки хранятся в `src/icons/light/` и `src/icons/dark/`.
+
+## Отдельно: панель «Изменения метаданных»
+
+Рядом с навигатором в том же контейнере активности `v8vscedit` есть независимая webview-панель
+`v8vsceditChanges` — семантический `git status` в терминах объектов метаданных (stage/unstage/discard/
+commit/diff). Она держит свою модель данных изменений (`ChangesModel` из `infra/git/*`, а не
+`MetadataCache`), но её дерево **повторяет навигаторную иерархию** этой панели, обрезанную только до
+изменённых объектов и их предков: `MetadataChangesViewProvider` для каждого изменённого объекта находит
+его узел в `MetadataTreeProvider` (`findNode` по `nodeKind`+`textLabel`) и поднимается `getParent` до
+корня конфигурации, собирая реальную цепочку групп (`Общее → Общие модули → ...`, `Справочники → ...` и
+т.д.); для удалённых объектов (уже отсутствующих в дереве) цепочка синтезируется из `META_TYPES`. Секция
+«Прочие» (файлы вне структуры выгрузки) исключение — она остаётся плоской, у таких файлов нет
+владеющего объекта. Переиспользуется и сам Vue-компонент дерева
+(`src-ui/shared/components/tree/UniversalTree*.vue`), что и у `UniversalPanelViewProvider`.
+Подробности, включая ограничения синтеза для удалённых объектов и производительность поиска узла, — в
+[git-metadata-changes.md](./git-metadata-changes.md#известные-ограничения).

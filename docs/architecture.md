@@ -7,6 +7,12 @@ VSCode-расширение `v8vscedit` предоставляет два нез
 1. **[Навигатор метаданных](./metadata-navigator.md)** — дерево объектов конфигураций и расширений из XML-выгрузки.
 2. **[Языковая поддержка BSL](./bsl-language-support.md)** — LSP-клиент для внешнего `bsl-analyzer`.
 
+Дополнительно — независимая webview-панель **[«Изменения метаданных»](./git-metadata-changes.md)**
+(`v8vsceditChanges`): `git status` рабочей копии в терминах объектов метаданных, с полноценными
+git-операциями (stage/unstage/discard/commit/diff); дерево панели повторяет навигаторную иерархию
+основного дерева конфигурации (обрезанную по изменениям), переиспользуя и Vue-компонент отрисовки,
+и саму структуру `MetadataTreeProvider`.
+
 ## Структура модулей
 
 ```
@@ -14,8 +20,19 @@ src/
 ├── extension.ts                      # тонкий activate/deactivate
 ├── Container.ts                      # composition root
 ├── domain/                           # чистый домен без vscode/fs/path
-├── infra/                            # файловая система, XML, окружение, хранилище
+├── infra/                            # файловая система, XML, окружение, хранилище, git/
+│   └── git/                          # GitMetadataStatusService (декорации навигатора) +
+│                                      # GitPorcelainReader/MetadataChangeResolver/
+│                                      # MetadataChangeAggregator/GitBlobReader/GitStatusReader/
+│                                      # GitWriteService (движок панели «Изменения метаданных»)
 ├── ui/                               # команды, дерево, webview, readonly guard
+│   ├── views/changes/                # changesDtoBuilder (листья дерева) + changesTreeAssembler
+│   │                                  # (сборка навигаторной иерархии секции) + MetadataChangesViewProvider
+│   │                                  # (webview v8vsceditChanges; строит цепочки предков через
+│   │                                  # treeProvider.getParent на реальном MetadataTreeProvider —
+│   │                                  # дерево панели повторяет навигаторную иерархию, обрезанную по
+│   │                                  # изменениям, а не просто переиспользует Vue-компонент отрисовки)
+│   └── git/                          # OnecGitContentProvider (схема onec-git для diff)
 ├── lsp/
 │   ├── LspManager.ts                 # запуск и перезапуск bsl-analyzer
 │   └── analyzer/
@@ -108,9 +125,11 @@ extension.ts
 | `BslReadonlyGuard` для BSL | Запрет редактирования не зависит от способа открытия файла |
 | Ленивая загрузка дерева | Дочерние узлы строятся при раскрытии, а не при старте расширения |
 | God-класс → тонкий фасад + подмодули в подпапке слоя | Убирает файлы 1000+ строк без риска регресса: рефактор косметический, публичный API и поведение неизменны (см. выше) |
+| Модель трёх деревьев git (HEAD/индекс/рабочее дерево) в представлении изменений | Единственный способ получить непустой diff для staged-файла — сравнивать HEAD↔индекс, а не индекс↔рабочее дерево (см. [git-metadata-changes.md](./git-metadata-changes.md)) |
 
 ## Подробная документация
 
 - [Навигатор метаданных](./metadata-navigator.md) — дерево, команды, path resolver.
 - [Языковая поддержка BSL](./bsl-language-support.md) — запуск `bsl-analyzer` и настройки.
 - [Парсинг XML конфигурации](./metadata-parser.md) — алгоритмы разбора Configuration.xml и объектных XML.
+- [Изменения метаданных](./git-metadata-changes.md) — семантический git по объектам 1С, представление `v8vsceditChanges`.
