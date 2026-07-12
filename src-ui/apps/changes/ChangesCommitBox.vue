@@ -39,8 +39,8 @@ function onCommit(): void {
       <button
         class="toolbar-button"
         type="button"
-        title="Проиндексировать всё"
-        aria-label="Проиндексировать всё"
+        title="Проиндексировать все изменения"
+        aria-label="Проиндексировать все изменения"
         @click="emit('stageAll')"
       >
         <span class="codicon codicon-add" aria-hidden="true" />
@@ -48,8 +48,8 @@ function onCommit(): void {
       <button
         class="toolbar-button"
         type="button"
-        title="Обновить"
-        aria-label="Обновить"
+        title="Обновить список изменений"
+        aria-label="Обновить список изменений"
         @click="emit('refresh')"
       >
         <span class="codicon codicon-refresh" aria-hidden="true" />
@@ -67,6 +67,8 @@ function onCommit(): void {
     <button
       class="commit-button"
       type="button"
+      title="Закоммитить проиндексированные изменения"
+      aria-label="Закоммитить проиндексированные изменения"
       :disabled="!canCommit || !message.trim()"
       @click="onCommit"
     >

@@ -260,7 +260,28 @@ export class MetadataChangesViewProvider implements vscode.WebviewViewProvider {
   }
 
   private postState(): void {
-    void this.view?.webview.postMessage({ type: 'state', state: this.buildState() });
+    const state = this.buildState();
+    this.updateBadge();
+    void this.view?.webview.postMessage({ type: 'state', state });
+  }
+
+  /**
+   * Счётчик изменений на иконке контейнера панели — как у штатного SCM.
+   * Считает уникальные изменённые файлы (части объектов + «Прочие»); при
+   * отсутствии изменений бейдж снимается (`undefined`).
+   */
+  private updateBadge(): void {
+    if (!this.view) {
+      return;
+    }
+    // this.model установлен buildState() перед updateBadge (единственный вызывающий —
+    // postState), поэтому правая часть `??` — недостижимый защитный резерв.
+    /* c8 ignore next */
+    const model = this.model ?? this.computeModel();
+    const count = countChangedFiles(model);
+    this.view.badge = count > 0
+      ? { value: count, tooltip: `Изменений метаданных: ${String(count)}` }
+      : undefined;
   }
 
   /**
@@ -398,4 +419,20 @@ export class MetadataChangesViewProvider implements vscode.WebviewViewProvider {
   private absFiles(address: ChangeAddress): string[] {
     return address.relFiles.map((rel) => path.resolve(this.services.gitRoot, rel));
   }
+}
+
+/** Число уникальных изменённых файлов в модели (части объектов + «Прочие») — для бейджа. */
+function countChangedFiles(model: ChangesModel): number {
+  const files = new Set<string>();
+  for (const group of [...model.staged, ...model.unstaged]) {
+    for (const part of group.parts) {
+      for (const file of part.files) {
+        files.add(file);
+      }
+    }
+  }
+  for (const raw of model.unresolved) {
+    files.add(raw.relPath);
+  }
+  return files.size;
 }

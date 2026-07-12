@@ -36,6 +36,11 @@
           "id": "v8vsceditDynamicPanelContainer",
           "title": "Дин. панель",
           "icon": "src/icons/dynamic-panel.svg"
+        },
+        {
+          "id": "v8vsceditChangesContainer",
+          "title": "Изменения метаданных",
+          "icon": "src/icons/changes.svg"
         }
       ]
     },
@@ -45,7 +50,9 @@
           "id": "v8vsceditUniversal",
           "name": "Редактор конфигураций",
           "type": "webview"
-        },
+        }
+      ],
+      "v8vsceditChangesContainer": [
         {
           "id": "v8vsceditChanges",
           "name": "Изменения метаданных",

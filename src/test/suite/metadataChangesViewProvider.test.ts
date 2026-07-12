@@ -232,7 +232,7 @@ suite('MetadataChangesViewProvider — webview-презентация предс
     removeFixtureRepo(fixture);
   });
 
-  function resolve(): void {
+  function resolve(): vscode.WebviewView {
     const fakeWebviewView = {
       webview: fakeWebview.webview,
       visible: true,
@@ -240,7 +240,23 @@ suite('MetadataChangesViewProvider — webview-презентация предс
       onDidDispose: new vscode.EventEmitter<void>().event,
     } as unknown as vscode.WebviewView;
     provider.resolveWebviewView(fakeWebviewView);
+    return fakeWebviewView;
   }
+
+  test('бейдж контейнера считает изменённые файлы (объекты + «Прочие») и снимается на чистом репозитории', () => {
+    const clean = resolve();
+    assert.strictEqual(clean.badge, undefined, 'без изменений бейдж не выставляется');
+
+    appendLine(fixture.objectModuleBsl, '// правка модуля — изменённый файл объекта');
+    fs.writeFileSync(path.join(fixture.cfRoot, 'RANDOM_NOTES.txt'), 'файл вне выгрузки\n', 'utf-8');
+    const dirty = resolve();
+    assert.ok(dirty.badge, 'после правок бейдж должен появиться');
+    assert.strictEqual(dirty.badge.value, 2, 'изменённый модуль объекта + файл вне выгрузки — счётчик 2');
+  });
+
+  test('refresh до resolveWebviewView не бросает и не трогает бейдж (view ещё нет)', () => {
+    assert.doesNotThrow(() => { provider.refresh(); });
+  });
 
   test('CSP отрендеренного HTML разрешает изображения (иконки метаданных грузятся как background-image)', () => {
     appendLine(fixture.objectModuleBsl, '// правка');
