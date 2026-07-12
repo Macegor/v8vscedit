@@ -77,4 +77,44 @@ suite('OnecGitContentProvider — содержимое HEAD/index для diff', 
 
     assert.strictEqual(provider.provideTextDocumentContent(uri), '');
   });
+
+  test('произвольный ref коммита возвращает содержимое ИМЕННО того коммита, не HEAD', () => {
+    // Фиксируем базовый коммит, затем делаем поверх второй с другим содержимым:
+    // ref первого коммита должен отдавать старую версию, HEAD — новую.
+    const baseline = fs.readFileSync(fixture.objectModuleBsl, 'utf-8');
+    const firstHash = git(fixture.gitRoot, ['rev-parse', 'HEAD']).trim();
+
+    const updated = 'вторая ревизия модуля\n';
+    fs.writeFileSync(fixture.objectModuleBsl, updated, 'utf-8');
+    git(fixture.gitRoot, ['add', '--', fixture.objectModuleBsl]);
+    git(fixture.gitRoot, ['commit', '-m', 'вторая ревизия']);
+
+    const provider = new OnecGitContentProvider();
+    const atFirst = buildOnecGitUri(fixture.gitRoot, fixture.objectModuleBsl, firstHash);
+    const atHead = buildOnecGitUri(fixture.gitRoot, fixture.objectModuleBsl, 'HEAD');
+
+    assert.strictEqual(provider.provideTextDocumentContent(atFirst), baseline);
+    assert.strictEqual(provider.provideTextDocumentContent(atHead), updated);
+  });
+
+  test('URI с gitRoot, но без query-параметра ref — трактуется как HEAD (обратная совместимость)', () => {
+    const baseline = fs.readFileSync(fixture.objectModuleBsl, 'utf-8');
+    const relPath = fixture.objectModuleBsl.slice(fixture.gitRoot.length).replace(/^[/\\]+/, '').split(/[/\\]/).join('/');
+    const provider = new OnecGitContentProvider();
+    const uri = vscode.Uri.from({
+      scheme: ONEC_GIT_SCHEME,
+      path: `/${relPath}`,
+      query: new URLSearchParams({ gitRoot: fixture.gitRoot }).toString(),
+    });
+
+    assert.strictEqual(provider.provideTextDocumentContent(uri), baseline);
+  });
+
+  test('ref «родитель первого коммита» (несуществующий) — пустое содержимое, провайдер не падает', () => {
+    // Для diff корневого коммита истории левая сторона — <hash>^, которого нет.
+    const provider = new OnecGitContentProvider();
+    const uri = buildOnecGitUri(fixture.gitRoot, fixture.objectModuleBsl, 'HEAD^');
+
+    assert.strictEqual(provider.provideTextDocumentContent(uri), '');
+  });
 });
