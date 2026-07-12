@@ -64,8 +64,11 @@ export function parsePorcelain(output: string): PorcelainEntry[] {
  * кириллические имена файлов в выгрузке 1С.
  *
  * Если строка не в кавычках — возвращается как есть.
+ *
+ * Экспортируется для переиспользования из {@link GitCommitChangesReader}
+ * (`git diff-tree --name-status` квотит кириллические пути тем же octal-escape).
  */
-function unquotePorcelainPath(raw: string): string {
+export function unquotePorcelainPath(raw: string): string {
   if (!(raw.startsWith('"') && raw.endsWith('"') && raw.length >= 2)) {
     return raw;
   }

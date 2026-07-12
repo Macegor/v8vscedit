@@ -119,3 +119,91 @@ export function buildChangesBaselineRepo(): ChangesFixture {
 export function removeFixtureRepo(fixture: ChangesFixture): void {
   fs.rmSync(fixture.workspaceRoot, { recursive: true, force: true });
 }
+
+/**
+ * Реальный временный git-репозиторий с ветвлением и merge — фундамент для
+ * тестов «Слоя 1» графа истории (`GitLogParser`, `GitCommitChangesReader`,
+ * а также `readBlobAtRef` из `GitBlobReader`). В отличие от
+ * {@link buildChangesBaselineRepo} (плоская история для панели «Изменения
+ * метаданных»), здесь нужна ИМЕННО топология: корень → точка ветвления →
+ * независимые коммиты на `main`/`feature` → merge с 2 родителями → коммит с
+ * переименованием и кириллическим файлом поверх merge. Хеши коммитов не
+ * детерминированы (зависят от времени/окружения), поэтому возвращаются как
+ * значения, а не захардкожены в тестах.
+ */
+export interface HistoryFixture {
+  readonly repoRoot: string;
+  /** Корневой коммит: `base.txt` = `A`. `parents=[]`. */
+  readonly root: string;
+  /** Точка ветвления: `base.txt` = `A\nB`. Помечена тегом `v1.0` и указателем `refs/remotes/origin/main`. */
+  readonly branchPoint: string;
+  /** Коммит на `feature` (ветка НЕ текущая на момент HEAD) — добавляет `feature-only.txt`. */
+  readonly featureCommit: string;
+  /** Коммит на `main` после точки ветвления, независимо от `feature`, — добавляет `main-only.txt`. */
+  readonly mainCommit: string;
+  /** Merge-коммит: `parents=[mainCommit, featureCommit]` (в этом порядке — обычный `git merge`). */
+  readonly mergeCommit: string;
+  /** Коммит поверх merge: переименование `base.txt`→`base-переименован.txt` + новый кириллический файл. HEAD указывает сюда, ветка `main` текущая. */
+  readonly renameCommit: string;
+}
+
+export function buildHistoryRepo(): HistoryFixture {
+  // realpathSync: см. обоснование в gitPorcelainReader.test.ts (macOS /tmp → /private/tmp).
+  const repoRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-history-')));
+  const baseFile = path.join(repoRoot, 'base.txt');
+
+  // '-b main' — фиксируем имя ветки явно: тесты графа опираются на конкретные
+  // имена ('main'/'feature'), а глобальный init.defaultBranch на машине
+  // разработчика может отличаться.
+  git(repoRoot, ['init', '-q', '-b', 'main']);
+  git(repoRoot, ['config', 'user.email', 'test@test.local']);
+  git(repoRoot, ['config', 'user.name', 'test']);
+  git(repoRoot, ['config', 'core.autocrlf', 'false']);
+  // core.quotepath НЕ выключаем (default=true) — тест GitCommitChangesReader
+  // на кириллическом имени файла проверяет реальное octal-escape декодирование
+  // git, как и gitPorcelainReader.test.ts делает для `git status --porcelain`.
+
+  fs.writeFileSync(baseFile, 'A\n', 'utf-8');
+  git(repoRoot, ['add', '-A']);
+  git(repoRoot, ['commit', '-q', '-m', 'корневой коммит']);
+  const root = git(repoRoot, ['rev-parse', 'HEAD']).trim();
+
+  fs.writeFileSync(baseFile, 'A\nB\n', 'utf-8');
+  git(repoRoot, ['add', '-A']);
+  git(repoRoot, ['commit', '-q', '-m', 'точка ветвления']);
+  const branchPoint = git(repoRoot, ['rev-parse', 'HEAD']).trim();
+  git(repoRoot, ['tag', 'v1.0']);
+  // Указатель на удалённую ветку без реального remote — валидная git-плюмбинг
+  // операция (см. `git update-ref`), даёт настоящий ref вида `refs/remotes/origin/main`
+  // для проверки разбора remoteBranch в %D без поднятия сетевого remote.
+  git(repoRoot, ['update-ref', 'refs/remotes/origin/main', branchPoint]);
+
+  git(repoRoot, ['checkout', '-q', '-b', 'feature']);
+  fs.writeFileSync(path.join(repoRoot, 'feature-only.txt'), 'фича\n', 'utf-8');
+  git(repoRoot, ['add', '-A']);
+  git(repoRoot, ['commit', '-q', '-m', 'коммит на ветке feature']);
+  const featureCommit = git(repoRoot, ['rev-parse', 'HEAD']).trim();
+
+  git(repoRoot, ['checkout', '-q', 'main']);
+  fs.writeFileSync(path.join(repoRoot, 'main-only.txt'), 'основная ветка\n', 'utf-8');
+  git(repoRoot, ['add', '-A']);
+  git(repoRoot, ['commit', '-q', '-m', 'коммит на main после ветвления']);
+  const mainCommit = git(repoRoot, ['rev-parse', 'HEAD']).trim();
+
+  // --no-ff: без него git слил бы fast-forward и merge-коммита с 2 родителями
+  // не получилось бы — а он нужен именно как узел графа с двумя рёбрами.
+  git(repoRoot, ['merge', '--no-ff', '-q', '-m', 'слияние feature в main', 'feature']);
+  const mergeCommit = git(repoRoot, ['rev-parse', 'HEAD']).trim();
+
+  git(repoRoot, ['mv', 'base.txt', 'base-переименован.txt']);
+  fs.writeFileSync(path.join(repoRoot, 'новый-файл.txt'), 'кириллическое имя\n', 'utf-8');
+  git(repoRoot, ['add', '-A']);
+  git(repoRoot, ['commit', '-q', '-m', 'переименование и кириллический файл']);
+  const renameCommit = git(repoRoot, ['rev-parse', 'HEAD']).trim();
+
+  return { repoRoot, root, branchPoint, featureCommit, mainCommit, mergeCommit, renameCommit };
+}
+
+export function removeHistoryRepo(fixture: HistoryFixture): void {
+  fs.rmSync(fixture.repoRoot, { recursive: true, force: true });
+}

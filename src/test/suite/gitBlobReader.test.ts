@@ -5,7 +5,12 @@ import * as os from 'os';
 import * as path from 'path';
 // ВЕХА 1 «Изменения метаданных», компонент №5 плана: тонкий ридер
 // `git show HEAD:<rel>` / индекса `:<rel>`. Модуль ещё не реализован.
-import { readBlobAtHead, readBlobAtIndex } from '../../infra/git/GitBlobReader';
+//
+// Граф истории git, Слой 1: сюда же добавляется `readBlobAtRef` — обобщение
+// на произвольный ref/commit-ish (`git show <ref>:<rel>`), нужное панели
+// графа для чтения содержимого файла на любом коммите истории, не только
+// HEAD/индексе. `readBlobAtRef` ещё не реализован — импорт обязан провалиться.
+import { readBlobAtHead, readBlobAtIndex, readBlobAtRef } from '../../infra/git/GitBlobReader';
 
 const FIXTURE_BSL = path.resolve(
   __dirname,
@@ -87,5 +92,55 @@ suite('GitBlobReader — чтение содержимого blob из HEAD и �
     } finally {
       fs.rmSync(outsideAnyRepo, { recursive: true, force: true });
     }
+  });
+});
+
+suite('GitBlobReader — readBlobAtRef: чтение содержимого на произвольном ref/commit-ish', () => {
+  let repo: string;
+  let filePath: string;
+  let v1Content: string;
+  let v2Content: string;
+  let v1Hash: string;
+
+  suiteSetup(() => {
+    repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-git-blob-ref-')));
+    filePath = path.join(repo, 'файл.bsl');
+    v1Content = 'Процедура Тест() КонецПроцедуры // V1\n';
+    v2Content = 'Процедура Тест() КонецПроцедуры // V2\n';
+
+    git(repo, ['init', '-q']);
+    git(repo, ['config', 'user.email', 'test@test.local']);
+    git(repo, ['config', 'user.name', 'test']);
+    git(repo, ['config', 'core.autocrlf', 'false']);
+
+    fs.writeFileSync(filePath, v1Content, 'utf-8');
+    git(repo, ['add', '-A']);
+    git(repo, ['commit', '-q', '-m', 'V1']);
+    v1Hash = git(repo, ['rev-parse', 'HEAD']).trim();
+
+    fs.writeFileSync(filePath, v2Content, 'utf-8');
+    git(repo, ['add', '-A']);
+    git(repo, ['commit', '-q', '-m', 'V2']);
+  });
+
+  suiteTeardown(() => {
+    fs.rmSync(repo, { recursive: true, force: true });
+  });
+
+  test('по хешу первого коммита возвращает содержимое V1, не текущее HEAD', () => {
+    assert.strictEqual(readBlobAtRef(repo, v1Hash, filePath), v1Content);
+  });
+
+  test('по ref "HEAD" возвращает содержимое последнего коммита (V2)', () => {
+    assert.strictEqual(readBlobAtRef(repo, 'HEAD', filePath), v2Content);
+  });
+
+  test('несуществующий ref — мягкий null, без исключения', () => {
+    assert.strictEqual(readBlobAtRef(repo, 'несуществующий-ref-абвгд', filePath), null);
+  });
+
+  test('существующий ref, но файл в нём отсутствует — мягкий null', () => {
+    const neverExisted = path.join(repo, 'никогда-не-существовавший.bsl');
+    assert.strictEqual(readBlobAtRef(repo, v1Hash, neverExisted), null);
   });
 });

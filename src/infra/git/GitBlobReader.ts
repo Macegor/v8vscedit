@@ -26,6 +26,16 @@ export function readBlobAtIndex(gitRoot: string, absFilePath: string): string | 
   return showBlob(gitRoot, ':', absFilePath);
 }
 
+/**
+ * Читает содержимое файла на произвольном ref/commit-ish (`git show <ref>:<rel>`).
+ * Обобщение {@link readBlobAtHead} для панели графа: любой коммит истории, не
+ * только HEAD. Возвращает `null`, если ref не существует, файла в нём нет или
+ * git недоступен.
+ */
+export function readBlobAtRef(gitRoot: string, ref: string, absFilePath: string): string | null {
+  return showBlob(gitRoot, `${ref}:`, absFilePath);
+}
+
 function showBlob(gitRoot: string, refPrefix: string, absFilePath: string): string | null {
   const relPath = path.relative(gitRoot, absFilePath).split(path.sep).join('/');
   try {
