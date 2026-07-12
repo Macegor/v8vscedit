@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import type { ConfigEntry } from '../../../domain/Configuration';
-import { META_TYPES, type MetaKind } from '../../../domain/MetaTypes';
+import type { MetaKind } from '../../../domain/MetaTypes';
 import {
   aggregateMetadataChanges,
   type ChangesModel,
@@ -27,6 +27,7 @@ import {
 } from './changesDtoBuilder';
 import {
   assembleNavigatorSection,
+  synthesizeAncestors,
   type ChangeChain,
   type NavAncestorDto,
 } from './changesTreeAssembler';
@@ -185,23 +186,7 @@ export class MetadataChangesViewProvider implements vscode.WebviewViewProvider {
   }
 
   private synthesizeAncestors(group: ObjectChangeGroup): NavAncestorDto[] {
-    const def = META_TYPES[group.rootKind];
-    const collection: NavAncestorDto = {
-      key: `syn~${group.rootKind}`,
-      label: def.pluralLabel,
-      icon: this.buildAssetIcon(group.rootKind),
-    };
-    if (def.group === 'common') {
-      return [
-        {
-          key: 'syn~group-common',
-          label: META_TYPES['group-common'].pluralLabel,
-          icon: this.buildAssetIcon('group-common'),
-        },
-        collection,
-      ];
-    }
-    return [collection];
+    return synthesizeAncestors(group, (kind, ownership) => this.buildAssetIcon(kind, ownership));
   }
 
   private isRootNode(node: MetadataNode): boolean {

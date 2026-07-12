@@ -1,3 +1,6 @@
+import { META_TYPES } from '../../../domain/MetaTypes';
+import type { ObjectChangeGroup } from '../../../infra/git/MetadataChangeAggregator';
+import type { NodeKind } from '../../tree/TreeNode';
 import type { ChangesSectionDto, IconDto, TreeNodeDto } from './changesDtoBuilder';
 
 /**
@@ -74,4 +77,40 @@ export function assembleNavigatorSection(
   }
 
   return { kind: side, label: sectionLabel, nodes: roots };
+}
+
+/**
+ * Синтезирует цепочку предков объекта, которого нет в навигаторном дереве
+ * (удалённый объект метаданных): для типа из группы «common» перед
+ * коллекцией добавляется промежуточная обёртка «Общие» (`group-common`),
+ * иначе — только сама коллекция. Иконки строит инъектированный {@link buildIcon}
+ * (в UI — `MetadataChangesViewProvider.buildAssetIcon`), поэтому функция
+ * остаётся чистой (без `vscode`).
+ */
+export function synthesizeAncestors(
+  group: ObjectChangeGroup,
+  buildIcon: (kind: NodeKind, ownership?: 'OWN' | 'BORROWED') => IconDto,
+): NavAncestorDto[] {
+  const def = META_TYPES[group.rootKind];
+  if (def.group === 'common') {
+    return [
+      {
+        key: 'syn~group-common',
+        label: META_TYPES['group-common'].pluralLabel,
+        icon: buildIcon('group-common'),
+      },
+      {
+        key: `syn~${group.rootKind}`,
+        label: def.pluralLabel,
+        icon: buildIcon(group.rootKind),
+      },
+    ];
+  }
+  return [
+    {
+      key: `syn~${group.rootKind}`,
+      label: def.pluralLabel,
+      icon: buildIcon(group.rootKind),
+    },
+  ];
 }

@@ -233,6 +233,72 @@ suite('changesDtoBuilder — buildObjectNode/buildPartNode строят TreeNode
     assert.ok(node.children && node.children.length > 0, 'у удалённого объекта всё равно должны быть части (Свойства, модули)');
     assert.ok(node.children.every((c: TreeNodeDto) => c.gitStatus === 'deleted'), 'все части полностью удалённого объекта — deleted');
   });
+
+  // ─── Read-only режим (Слой 3a, задача C): узлы истории/коммита не индексируются ──
+  //
+  // Граф истории показывает узлы КОММИТОВ (в т.ч. чужих/уже закоммиченных
+  // изменений) — их нельзя ни застейджить, ни снять с индексации, поэтому
+  // билдеры получают необязательный флаг, отключающий инлайн-кнопки.
+  // Тест БЕЗ опции выше («инлайн-кнопки индексации…») — регрессионная защита
+  // текущего поведения панели изменений, он не удаляется и не дублируется.
+
+  test('buildObjectNode({ readonly: true }) — inlineActions отсутствует, но остальные поля узла и его частей как обычно', () => {
+    appendLine(fixture.objectModuleBsl, '// правка для read-only узла (граф истории)');
+    const model = buildModel(fixture);
+    const idx = groupIndex(model, 'unstaged', canonicalRootPath('Catalog', 'ПричиныВозврата'));
+
+    const node = buildObjectNode('unstaged', model.unstaged[idx], idx, fakeIconResolver([]), { readonly: true });
+
+    assert.strictEqual(node.inlineActions, undefined, 'узел истории/коммита read-only — stage/unstage недоступны');
+    assert.deepStrictEqual(node.actions, []);
+    assert.strictEqual(node.gitStatus, 'modified');
+    assert.strictEqual(node.label, 'ПричиныВозврата');
+    assert.ok(Array.isArray(node.children) && node.children.length === 1, 'состав частей объекта в read-only режиме не меняется');
+    assert.strictEqual(
+      node.children[0].inlineActions,
+      undefined,
+      'дочерние части read-only объекта тоже не должны предлагать stage/unstage'
+    );
+  });
+
+  test('buildObjectNode без опции (значение по умолчанию) — inlineActions присутствует, поведение не меняется read-only режимом', () => {
+    // Дублирует инвариант соседнего теста «инлайн-кнопки индексации…», но
+    // именно ПОСЛЕ появления параметра readonly — фиксирует, что необязательный
+    // 4-й параметр не ломает вызовы без него (обратная совместимость сигнатуры).
+    appendLine(fixture.objectModuleBsl, '// правка без read-only опции');
+    const model = buildModel(fixture);
+    const idx = groupIndex(model, 'unstaged', canonicalRootPath('Catalog', 'ПричиныВозврата'));
+
+    const node = buildObjectNode('unstaged', model.unstaged[idx], idx, fakeIconResolver([]));
+
+    assert.deepStrictEqual(node.inlineActions?.map((a) => a.id), ['stage']);
+  });
+
+  test('buildPartNode(objectId, part, index, true) — часть без inlineActions, остальные поля как обычно', () => {
+    appendLine(fixture.objectModuleBsl, '// unstaged-правка модуля объекта для read-only части');
+    const model = buildModel(fixture);
+    const idx = groupIndex(model, 'unstaged', canonicalRootPath('Catalog', 'ПричиныВозврата'));
+    const part = model.unstaged[idx].parts[0];
+
+    const node = buildPartNode('unstaged#7', part, 3, true);
+
+    assert.strictEqual(node.id, 'unstaged#7.3');
+    assert.strictEqual(node.label, 'МодульОбъекта');
+    assert.strictEqual(node.kind, 'changePart');
+    assert.strictEqual(node.gitStatus, 'modified');
+    assert.strictEqual(node.inlineActions, undefined, 'read-only часть не должна предлагать stage/unstage');
+  });
+
+  test('buildPartNode без read-only флага (значение по умолчанию) — inlineActions присутствует как раньше', () => {
+    appendLine(fixture.objectModuleBsl, '// unstaged-правка для проверки обратной совместимости buildPartNode');
+    const model = buildModel(fixture);
+    const idx = groupIndex(model, 'unstaged', canonicalRootPath('Catalog', 'ПричиныВозврата'));
+    const part = model.unstaged[idx].parts[0];
+
+    const node = buildPartNode('unstaged#7', part, 3);
+
+    assert.deepStrictEqual(node.inlineActions?.map((a) => a.id), ['stage']);
+  });
 });
 
 suite('changesDtoBuilder — buildOtherSection строит плоскую секцию «Прочие» из RawChange', () => {

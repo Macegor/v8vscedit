@@ -18,10 +18,14 @@
 import * as assert from 'assert';
 import {
   assembleNavigatorSection,
+  synthesizeAncestors,
   type ChangeChain,
   type NavAncestorDto,
 } from '../../ui/views/changes/changesTreeAssembler';
-import type { TreeNodeDto } from '../../ui/views/changes/changesDtoBuilder';
+import type { IconDto, TreeNodeDto } from '../../ui/views/changes/changesDtoBuilder';
+import { META_TYPES } from '../../domain/MetaTypes';
+import type { ObjectChangeGroup } from '../../infra/git/MetadataChangeAggregator';
+import type { NodeKind } from '../../ui/tree/TreeNode';
 
 /**
  * Зеркало приватной `NODE_ID_RE` из `changesDtoBuilder.ts` (та же схема
@@ -207,5 +211,77 @@ suite('changesTreeAssembler — assembleNavigatorSection сворачивает 
     assert.strictEqual(found.gitStatus, 'modified');
     assert.strictEqual(found.children?.length, 1);
     assert.strictEqual(found.children[0].id, 'unstaged#0.0', 'дочерняя часть листа (Свойства) должна дойти без переименования id');
+  });
+});
+
+/**
+ * ВЫНОС ИЗ ПРОВАЙДЕРА: `synthesizeAncestors` (Слой 3a, задача B) переезжает
+ * из приватного метода `MetadataChangesViewProvider.synthesizeAncestors` в
+ * ЧИСТУЮ функцию модуля — синтез цепочки предков для объекта, которого нет в
+ * навигаторном дереве (удалённый объект метаданных). Поведение ДО выноса
+ * зафиксировано characterization-тестами на реальной фикстуре в
+ * `metadataChangesViewProvider.test.ts` («удалённый объект без остатка на
+ * диске» / «удалённый ОБЩИЙ модуль» — group==='common' даёт промежуточную
+ * обёртку «Общие» перед коллекцией, group!=='common' — только сама
+ * коллекция); здесь — тот же контракт, но на уровне чистой функции с
+ * инъекцией `buildIcon` вместо `vscode`/webview-URI.
+ */
+suite('changesTreeAssembler — synthesizeAncestors синтезирует предков удалённого объекта из META_TYPES', () => {
+  function group(rootKind: ObjectChangeGroup['rootKind'], rootName: string): ObjectChangeGroup {
+    return {
+      canonicalPath: `${rootKind}.${rootName}`,
+      rootKind,
+      rootName,
+      configRoot: '/fake/config/root',
+      parts: [],
+      aggregateStatus: 'D',
+    };
+  }
+
+  function fakeBuildIcon(
+    calls: { kind: NodeKind; ownership: 'OWN' | 'BORROWED' | undefined }[],
+  ): (kind: NodeKind, ownership?: 'OWN' | 'BORROWED') => IconDto {
+    return (kind, ownership) => {
+      calls.push({ kind, ownership });
+      return { kind: 'metadata', name: kind };
+    };
+  }
+
+  test('common-объект (CommonModule): две записи — обёртка «group-common» ПЕРЕД коллекцией «Общие модули»', () => {
+    const calls: { kind: NodeKind; ownership: 'OWN' | 'BORROWED' | undefined }[] = [];
+
+    const ancestors = synthesizeAncestors(group('CommonModule', 'GoogleПереводчик'), fakeBuildIcon(calls));
+
+    assert.strictEqual(ancestors.length, 2, 'у типа из группы "common" обязана быть промежуточная обёртка «Общие»');
+    assert.strictEqual(ancestors[0].key, 'syn~group-common');
+    assert.strictEqual(ancestors[0].label, META_TYPES['group-common'].pluralLabel);
+    assert.strictEqual(ancestors[1].key, 'syn~CommonModule');
+    assert.strictEqual(ancestors[1].label, META_TYPES.CommonModule.pluralLabel);
+    assert.deepStrictEqual(
+      calls.map((c) => c.kind),
+      ['group-common', 'CommonModule'],
+      'buildIcon обязан быть вызван для ОБЕИХ синтезированных записей, в порядке group-common → rootKind'
+    );
+  });
+
+  test('не-common объект (Catalog): одна запись-коллекция, без промежуточной обёртки', () => {
+    const calls: { kind: NodeKind; ownership: 'OWN' | 'BORROWED' | undefined }[] = [];
+
+    const ancestors = synthesizeAncestors(group('Catalog', 'ПричиныВозврата'), fakeBuildIcon(calls));
+
+    assert.strictEqual(ancestors.length, 1, 'у типа группы "top" обёртки не должно быть — только сама коллекция');
+    assert.strictEqual(ancestors[0].key, 'syn~Catalog');
+    assert.strictEqual(ancestors[0].label, META_TYPES.Catalog.pluralLabel);
+    assert.deepStrictEqual(calls.map((c) => c.kind), ['Catalog']);
+  });
+
+  test('иконка каждой синтезированной записи — результат buildIcon для её собственного kind', () => {
+    const ancestors = synthesizeAncestors(
+      group('CommonModule', 'GoogleПереводчик'),
+      (kind: NodeKind): IconDto => ({ kind: 'metadata', name: kind }),
+    );
+
+    assert.deepStrictEqual(ancestors[0].icon, { kind: 'metadata', name: 'group-common' });
+    assert.deepStrictEqual(ancestors[1].icon, { kind: 'metadata', name: 'CommonModule' });
   });
 });

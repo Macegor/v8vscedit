@@ -125,9 +125,11 @@ export function buildObjectNode(
   group: ObjectChangeGroup,
   groupIndex: number,
   iconResolver: IconResolver,
+  options?: { readonly?: boolean },
 ): TreeNodeDto {
+  const readonly = options?.readonly === true;
   const id = `${side}#${String(groupIndex)}`;
-  const children = group.parts.map((part, partIndex) => buildPartNode(id, part, partIndex));
+  const children = group.parts.map((part, partIndex) => buildPartNode(id, part, partIndex, readonly));
   return {
     id,
     key: id,
@@ -138,13 +140,20 @@ export function buildObjectNode(
     loaded: true,
     children,
     actions: [],
-    inlineActions: stageUnstageInline(side),
+    // Read-only режим (граф истории/коммит): узлы уже закоммиченных изменений
+    // нельзя индексировать/снимать, поэтому инлайн-кнопки отсутствуют.
+    inlineActions: readonly ? undefined : stageUnstageInline(side),
     gitStatus: toGitStatus(group.aggregateStatus),
   };
 }
 
 /** Строит узел одной изменённой части объекта по id-схеме `${objectId}.${partIndex}`. */
-export function buildPartNode(objectId: string, part: PartChange, partIndex: number): TreeNodeDto {
+export function buildPartNode(
+  objectId: string,
+  part: PartChange,
+  partIndex: number,
+  readonly?: boolean,
+): TreeNodeDto {
   const id = `${objectId}.${String(partIndex)}`;
   // Сторона узла закодирована в objectId (`staged#…`/`unstaged#…`) — из неё
   // выбирается инлайн-кнопка индексации/снятия для части (отдельный файл).
@@ -157,7 +166,7 @@ export function buildPartNode(objectId: string, part: PartChange, partIndex: num
     hasChildren: false,
     loaded: true,
     actions: [],
-    inlineActions: stageUnstageInline(side),
+    inlineActions: readonly === true ? undefined : stageUnstageInline(side),
     gitStatus: toGitStatus(part.status),
   };
 }
