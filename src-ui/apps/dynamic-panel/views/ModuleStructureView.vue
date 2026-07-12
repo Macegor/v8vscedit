@@ -8,7 +8,7 @@ import type {
 } from '@ui-shared/types/dynamicPanel';
 import type { TreeNodeDto } from '@ui-shared/types/tree';
 import type { IconDto } from '@ui-shared/types/icon';
-import UniversalTree from '../../universal/UniversalTree.vue';
+import UniversalTree from '@ui-shared/components/tree/UniversalTree.vue';
 
 const props = defineProps<{
   document: ActiveDocumentInfo;

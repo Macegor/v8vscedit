@@ -4,7 +4,7 @@ import { MessageBus } from '@ui-shared/api/messageBus';
 import type { HostToUiMessage } from '@ui-shared/protocol/hostMessages';
 import type { TreeNodeDto, TreeNodeActionDto } from '@ui-shared/types/tree';
 import type { UniversalPanelState, StandaloneServerStatusDto } from './main';
-import UniversalTree from './UniversalTree.vue';
+import UniversalTree from '@ui-shared/components/tree/UniversalTree.vue';
 import UniversalSearchBox from './UniversalSearchBox.vue';
 import UniversalProcessingOverlay from './UniversalProcessingOverlay.vue';
 import UniversalStandaloneActions from './UniversalStandaloneActions.vue';

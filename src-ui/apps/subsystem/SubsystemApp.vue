@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { MessageBus } from '@ui-shared/api/messageBus';
 import type { HostToUiMessage } from '@ui-shared/protocol/hostMessages';
-import UniversalTree from '../universal/UniversalTree.vue';
+import UniversalTree from '@ui-shared/components/tree/UniversalTree.vue';
 import type { SubsystemState, SubsystemTreeNodeDto } from './main';
 
 type IdMap = Readonly<Record<string, true>>;

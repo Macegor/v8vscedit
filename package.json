@@ -14,6 +14,7 @@
     "onStartupFinished",
     "workspaceContains:**/Configuration.xml",
     "onView:v8vsceditUniversal",
+    "onView:v8vsceditChanges",
     "onLanguage:bsl",
     "onCommand:v8vscedit.openAiSettings",
     "onCommand:v8vscedit.refresh"
@@ -43,6 +44,11 @@
         {
           "id": "v8vsceditUniversal",
           "name": "Редактор конфигураций",
+          "type": "webview"
+        },
+        {
+          "id": "v8vsceditChanges",
+          "name": "Изменения метаданных",
           "type": "webview"
         }
       ],

@@ -10,6 +10,8 @@ import {
   extractColumnsXmlFromTabularSection,
   extractMethodXmlFromUrlTemplate,
 } from '../xml/XmlUtils';
+import { readBlobAtHead } from './GitBlobReader';
+import { parsePorcelain } from './GitPorcelainReader';
 
 export type MetadataGitDecorationStatus = 'added' | 'modified' | 'deleted';
 
@@ -304,27 +306,25 @@ export class GitMetadataStatusService {
 
   private readHeadFile(filePath: string): string | null {
     const gitRoot = this.getGitRoot();
+    // Недостижимо: readHeadFile вызывается лишь после getFileStatus().changed === true,
+    // а статус получается через getFileDecorationStatus, который при отсутствии gitRoot
+    // возвращает undefined → changed === false → сюда не заходим.
+    /* c8 ignore next 3 */
     if (!gitRoot) {
       return null;
     }
     const state = this.ensureStatusMap(gitRoot);
     const key = normalizePath(filePath);
     const cached = state.headContentByPath.get(key);
+    // Недостижимо: снимок объекта кэшируется в getObjectSnapshot по ownerXmlPath,
+    // поэтому readHeadFile вызывается не более одного раза на путь — на момент вызова
+    // headContentByPath ещё не содержит записи для key.
+    /* c8 ignore next 3 */
     if (cached !== undefined) {
       return cached;
     }
 
-    const relativePath = path.relative(gitRoot, filePath).split(path.sep).join('/');
-    let content: string | null;
-    try {
-      content = execFileSync('git', ['-C', gitRoot, 'show', `HEAD:${relativePath}`], {
-        encoding: 'utf-8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-        maxBuffer: 64 * 1024 * 1024,
-      });
-    } catch {
-      content = null;
-    }
+    const content = readBlobAtHead(gitRoot, filePath);
     state.headContentByPath.set(key, content);
     return content;
   }
@@ -371,6 +371,10 @@ export class GitMetadataStatusService {
       return new Map();
     }
 
+    // Недостижимо: extractGroupXml вызывается только из getGroupStatus для целей
+    // группового уровня (контейнеры дочерних), а Column — лист внутри ТЧ и
+    // обрабатывается поштучно через extractTargetXml, не как группа.
+    /* c8 ignore next 6 */
     if (target.childKind === 'Column') {
       const columns = target.tabularSectionName
         ? extractColumnsXmlFromTabularSection(xml, target.tabularSectionName)
@@ -409,34 +413,18 @@ function normalizeComparableXml(xml: string): string {
 }
 
 /**
- * Парсит вывод `git status --porcelain` (v1) и заполняет переданную карту:
- *   XY <path>
- *   XY <path> -> <newpath>    (для переименований)
- * где XY — двухсимвольный код статуса (index + worktree).
+ * Схлопывает вывод `git status --porcelain` (v1) в карту «файл → статус
+ * декорации». Разбор строк делегирован общему {@link parsePorcelain}, здесь
+ * остаётся только доменное схлопывание X/Y в `added|modified|deleted`.
  */
 function parsePorcelainOutput(
   output: string,
   gitRoot: string,
   result: Map<string, MetadataGitDecorationStatus>
 ): void {
-  if (!output) {
-    return;
-  }
-  for (const rawLine of output.split(/\r?\n/)) {
-    if (rawLine.length < 4) {
-      continue;
-    }
-    const code = rawLine.slice(0, 2);
-    let relPath = rawLine.slice(3);
-    const renameArrow = relPath.indexOf(' -> ');
-    if (renameArrow !== -1) {
-      relPath = relPath.slice(renameArrow + 4);
-    }
-    if (relPath.startsWith('"') && relPath.endsWith('"')) {
-      relPath = unquotePorcelainPath(relPath);
-    }
-    const absolute = path.resolve(gitRoot, relPath);
-    result.set(normalizePath(absolute), decodePorcelainStatus(code));
+  for (const entry of parsePorcelain(output)) {
+    const absolute = path.resolve(gitRoot, entry.relPath);
+    result.set(normalizePath(absolute), decodePorcelainStatus(`${entry.index}${entry.worktree}`));
   }
 }
 
@@ -448,56 +436,4 @@ function decodePorcelainStatus(code: string): MetadataGitDecorationStatus {
     return 'added';
   }
   return 'modified';
-}
-
-/**
- * Декодирует C-style escape-последовательности из кавычек, которые git добавляет
- * при `core.quotepath=true` (по умолчанию). Полную семантику не реализуем —
- * расшифровываем только обычные escapes; этого хватает для путей в выгрузке 1С.
- */
-function unquotePorcelainPath(quoted: string): string {
-  const body = quoted.slice(1, -1);
-  let result = '';
-  let index = 0;
-  const bytes: number[] = [];
-  while (index < body.length) {
-    const ch = body[index];
-    if (ch !== '\\') {
-      if (bytes.length > 0) {
-        result += Buffer.from(bytes).toString('utf-8');
-        bytes.length = 0;
-      }
-      result += ch;
-      index += 1;
-      continue;
-    }
-    if (index + 1 >= body.length) {
-      break;
-    }
-    const next = body[index + 1];
-    if (next >= '0' && next <= '7') {
-      // Восьмеричный escape \NNN — байт UTF-8 последовательности.
-      const octal = body.slice(index + 1, index + 4);
-      bytes.push(parseInt(octal, 8));
-      index += 4;
-      continue;
-    }
-    if (bytes.length > 0) {
-      result += Buffer.from(bytes).toString('utf-8');
-      bytes.length = 0;
-    }
-    switch (next) {
-      case 'n': result += '\n'; break;
-      case 't': result += '\t'; break;
-      case 'r': result += '\r'; break;
-      case '\\': result += '\\'; break;
-      case '"': result += '"'; break;
-      default: result += next; break;
-    }
-    index += 2;
-  }
-  if (bytes.length > 0) {
-    result += Buffer.from(bytes).toString('utf-8');
-  }
-  return result;
 }
