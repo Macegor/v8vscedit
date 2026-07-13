@@ -1,6 +1,11 @@
 # 1С: Редактор конфигураций (v8vscedit)
 
+[![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/macegor.v8vscedit?label=Marketplace&color=1e1e1e)](https://marketplace.visualstudio.com/items?itemName=macegor.v8vscedit)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/macegor.v8vscedit)](https://marketplace.visualstudio.com/items?itemName=macegor.v8vscedit)
+
 `v8vscedit` — расширение для VS Code и Cursor, которое позволяет полноценно работать с конфигурациями и расширениями 1С:Предприятие прямо в редакторе: просматривать и менять метаданные, писать код, синхронизировать проект с базой, запускать 1С и работать с хранилищем конфигурации.
+
+Страница в Marketplace: <https://marketplace.visualstudio.com/items?itemName=macegor.v8vscedit>
 
 В качестве шаблона проекта используется структура `vanessa-bootstrap`: основная конфигурация хранится в `src/cf`, расширения — в `src/cfe/<ИмяРасширения>`, а параметры окружения задаются в `env.json`.
 
@@ -67,9 +72,29 @@
 
 ## Установка
 
+### Из Marketplace (рекомендуется)
+
+1. Откройте вкладку **Extensions** (`Ctrl+Shift+X`) в VS Code или Cursor.
+2. Введите в поиске `Редактор конфигураций 1С` или `macegor.v8vscedit` и нажмите **Install**.
+
+Либо установите одной командой из палитры (`Ctrl+P`):
+
+```
+ext install macegor.v8vscedit
+```
+
+Или из терминала:
+
+```bash
+code --install-extension macegor.v8vscedit
+cursor --install-extension macegor.v8vscedit
+```
+
+Страница расширения: <https://marketplace.visualstudio.com/items?itemName=macegor.v8vscedit>.
+
 ### Из VSIX
 
-1. Скачайте `v8vscedit-<версия>.vsix` из GitHub Releases.
+1. Скачайте `v8vscedit-<версия>.vsix` из [GitHub Releases](https://github.com/Macegor/v8vscedit/releases).
 2. В VS Code или Cursor выполните **Extensions → ... → Install from VSIX...**.
 
 Можно установить и из командной строки:
