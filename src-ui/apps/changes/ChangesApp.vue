@@ -211,6 +211,12 @@ function toggleHistory(): void {
 }
 
 function onSelectCommit(hash: string): void {
+  // Повторный клик по уже раскрытому коммиту — сворачиваем детали.
+  if (commitSelectedHash.value === hash) {
+    commitSelectedHash.value = undefined;
+    commitSection.value = null;
+    return;
+  }
   commitSelectedHash.value = hash;
   sendCommand('selectCommit', { hash });
 }
@@ -258,7 +264,9 @@ function handleState(message: HostToUiMessage<ChangesViewState>): void {
 function handleHistory(message: HostToUiMessage): void {
   if (message.type === 'history') {
     history.value = message.state;
-    commitSelectedHash.value = message.state.selectedHash;
+    // `commitSelectedHash` — чисто UI-состояние (тоггл раскрытия), НЕ
+    // перезаписываем его из state.selectedHash: иначе ручное сворачивание
+    // отменялось бы следующим refresh графа.
   }
 }
 

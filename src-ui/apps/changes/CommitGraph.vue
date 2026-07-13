@@ -135,17 +135,17 @@ function laneLineLeft(lane: number): number {
         </span>
       </div>
 
-      <div
-        v-if="isSelected(row)"
-        class="commit-details"
-        :style="{ paddingLeft: `${String(detailsIndent())}px` }"
-      >
-        <span
-          class="lane-continuation"
-          :style="{ left: `${String(laneLineLeft(row.lane))}px`, background: laneColor(row.laneColor) }"
-        />
-        <slot name="details" :row="row" />
-      </div>
+      <Transition name="expand">
+        <div v-if="isSelected(row)" class="commit-details-wrap">
+          <div class="commit-details" :style="{ paddingLeft: `${String(detailsIndent())}px` }">
+            <span
+              class="lane-continuation"
+              :style="{ left: `${String(laneLineLeft(row.lane))}px`, background: laneColor(row.laneColor) }"
+            />
+            <slot name="details" :row="row" />
+          </div>
+        </div>
+      </Transition>
     </template>
     <div v-if="!props.rows.length" class="graph-empty">Нет коммитов</div>
   </div>
@@ -222,8 +222,24 @@ function laneLineLeft(lane: number): number {
   background: var(--vscode-charts-yellow, var(--vscode-badge-background));
   color: var(--vscode-editor-background);
 }
+/* Плавное раскрытие/скрытие деталей коммита: grid-строка 0fr↔1fr корректно
+   анимирует блок неизвестной высоты (в отличие от max-height). */
+.commit-details-wrap {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+.expand-enter-active,
+.expand-leave-active {
+  transition: grid-template-rows 0.18s ease;
+}
+.expand-enter-from,
+.expand-leave-to {
+  grid-template-rows: 0fr;
+}
 .commit-details {
   position: relative;
+  min-height: 0;
+  overflow: hidden;
 }
 /* Продолжение дорожки выбранного коммита вниз через блок деталей —
    выровнено по центру точки коммита (laneX(lane)), а не по краю блока. */
