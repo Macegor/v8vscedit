@@ -21,6 +21,15 @@ import { registerConfigLifecycleTools } from './registration/McpConfigLifecycleT
 import { registerPropertyTools } from './registration/McpPropertyTools';
 import { McpMetadataPathService } from './McpMetadataPathService';
 import { McpPropertyService } from './McpPropertyService';
+import { probeIdentity, reclaimPort } from '../../infra/mcp/McpPortProbe';
+import { formatHostForUrl } from '../../infra/mcp/McpHost';
+import { decideMcpStart } from '../../infra/mcp/McpStartDecision';
+import {
+  PRODUCT_ID,
+  IDENTITY_PROTOCOL,
+  serializeIdentity,
+  type McpServerIdentity,
+} from '../../infra/mcp/McpServerIdentity';
 
 export interface V8McpServerOptions {
   readonly host: string;
@@ -31,6 +40,17 @@ export interface V8McpServerStatus {
   readonly running: boolean;
   readonly endpoint?: string;
 }
+
+/**
+ * Результат попытки старта на preferred-порту. Авто-инкремента порта нет:
+ * одна попытка bind, при занятости — зонд занявшего процесса и решение
+ * reuse/conflict без исключения.
+ */
+export type McpStartResult =
+  | { readonly kind: 'started'; readonly endpoint: string }
+  | { readonly kind: 'reuse'; readonly endpoint: string }
+  | { readonly kind: 'conflict-foreign'; readonly occupant: McpServerIdentity }
+  | { readonly kind: 'conflict-unknown' };
 
 type McpCommandServices = Omit<CommandServices, 'aiMcpViewProvider'>;
 
@@ -51,10 +71,16 @@ export class V8McpServer implements vscode.Disposable {
   // Набор разрешённых значений Host/Origin для защиты от DNS-rebinding.
   // Заполняется реальным портом при старте; пустой набор = сервер ещё не слушает.
   private allowedHosts = new Set<string>();
+  // adopted=true — сервер лишь переиспользовал чужой (свой по product+projectRoot)
+  // endpoint на занятом порту и НЕ владеет http.Server: его stop() не должен
+  // гасить владельца.
+  private adopted = false;
 
   constructor(
     private readonly services: McpCommandServices,
-    private readonly xmlEditor: ConfigurationXmlEditor
+    private readonly xmlEditor: ConfigurationXmlEditor,
+    private readonly projectRoot: string,
+    private readonly version: string
   ) {}
 
   getStatus(): V8McpServerStatus {
@@ -63,30 +89,66 @@ export class V8McpServer implements vscode.Disposable {
       : { running: false };
   }
 
-  async start(options: V8McpServerOptions): Promise<void> {
+  async start(options: V8McpServerOptions): Promise<McpStartResult> {
     if (this.endpoint) {
-      return;
+      return this.adopted
+        ? { kind: 'reuse', endpoint: this.endpoint }
+        : { kind: 'started', endpoint: this.endpoint };
     }
 
     const httpServer = http.createServer((req, res) => {
       void this.handleRequest(req, res);
     });
-    const port = await this.listenOnAvailablePort(httpServer, options.host, options.port);
+    const boundPort = await this.tryBind(httpServer, options.host, options.port);
+    if (boundPort !== null) {
+      this.httpServer = httpServer;
+      this.endpoint = `http://${formatHostForUrl(options.host)}:${String(boundPort)}/mcp`;
+      this.allowedHosts = buildAllowedHosts(boundPort);
+      this.adopted = false;
+      this.services.outputChannel.appendLine(`[mcp] Сервер запущен: ${this.endpoint}`);
+      return { kind: 'started', endpoint: this.endpoint };
+    }
 
-    this.httpServer = httpServer;
-    this.endpoint = `http://${formatHostForUrl(options.host)}:${String(port)}/mcp`;
-    this.allowedHosts = buildAllowedHosts(port);
-    this.services.outputChannel.appendLine(`[mcp] Сервер запущен: ${this.endpoint}`);
+    // Порт занят: один зонд занявшего процесса и решение без авто-инкремента.
+    const probe = await probeIdentity(options.host, options.port);
+    const decision = decideMcpStart(probe, this.projectRoot);
+    if (decision.kind === 'reuse') {
+      this.endpoint = decision.endpoint;
+      this.adopted = true;
+      this.services.outputChannel.appendLine(`[mcp] Переиспользован сервер того же проекта: ${decision.endpoint}`);
+      return { kind: 'reuse', endpoint: decision.endpoint };
+    }
+    if (decision.kind === 'conflict-foreign') {
+      return { kind: 'conflict-foreign', occupant: decision.occupant };
+    }
+    return { kind: 'conflict-unknown' };
+  }
+
+  /** Гасит занявший порт наш сервер (`/shutdown` + ожидание release) и стартует заново. */
+  async forceRestart(options: V8McpServerOptions): Promise<McpStartResult> {
+    if (this.endpoint) {
+      await this.stop();
+    }
+    await reclaimPort(options.host, options.port);
+    return this.start(options);
   }
 
   async stop(): Promise<void> {
     const httpServer = this.httpServer;
+    const adopted = this.adopted;
     this.httpServer = undefined;
     this.endpoint = undefined;
     this.allowedHosts = new Set();
-    if (httpServer) {
-      await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    this.adopted = false;
+    // adopter не владеет http.Server на порту — его stop() не трогает владельца.
+    if (adopted || !httpServer) {
+      return;
     }
+    // closeAllConnections принудительно рвёт долгоживущие соединения (SSE),
+    // иначе httpServer.close() ждёт естественного завершения потока и порт
+    // не освобождается (Node >= 18.2, гарантирован @types/node).
+    httpServer.closeAllConnections();
+    await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     const sessions = [...this.sessions.values()];
     this.sessions.clear();
     await Promise.all(sessions.map(async (session) => {
@@ -152,6 +214,20 @@ export class V8McpServer implements vscode.Disposable {
         return;
       }
       const url = new URL(req.url ?? '/', `http://${req.headers.host ?? '127.0.0.1'}`);
+      if (url.pathname === '/identity' && req.method === 'GET') {
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store',
+        }).end(serializeIdentity(this.identity()));
+        return;
+      }
+      if (url.pathname === '/shutdown' && req.method === 'POST') {
+        // Сначала отправляем 200, затем гасим сервер: stop() рвёт соединения
+        // (closeAllConnections), поэтому вызываем его после ответа.
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' }).end('ok');
+        setImmediate(() => { void this.stop(); });
+        return;
+      }
       if (url.pathname !== '/mcp') {
         res.writeHead(404).end('Not found');
         return;
@@ -200,7 +276,7 @@ export class V8McpServer implements vscode.Disposable {
     let initializedSessionId: string | undefined;
     const server = new McpServer({
       name: 'v8vscedit',
-      version: '0.3.5',
+      version: this.version,
     });
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
@@ -222,20 +298,11 @@ export class V8McpServer implements vscode.Disposable {
     return { server, transport };
   }
 
-  private async listenOnAvailablePort(server: http.Server, host: string, preferredPort: number): Promise<number> {
-    const startPort = Math.max(0, preferredPort);
-    const maxAttempts = startPort === 0 ? 1 : 20;
-    for (let offset = 0; offset < maxAttempts; offset += 1) {
-      const port = startPort === 0 ? 0 : startPort + offset;
-      const listened = await this.tryListen(server, host, port);
-      if (listened !== null) {
-        return listened;
-      }
-    }
-    throw new Error(`Не удалось запустить MCP-сервер на ${host}:${String(preferredPort)}.`);
-  }
-
-  private tryListen(server: http.Server, host: string, port: number): Promise<number | null> {
+  /**
+   * Одна попытка bind preferred-порта. Возвращает реально занятый порт при
+   * успехе или `null` при `EADDRINUSE` (авто-инкремента порта больше нет).
+   */
+  private tryBind(server: http.Server, host: string, port: number): Promise<number | null> {
     return new Promise((resolve, reject) => {
       const onError = (error: NodeJS.ErrnoException) => {
         server.off('listening', onListening);
@@ -254,6 +321,23 @@ export class V8McpServer implements vscode.Disposable {
       server.once('listening', onListening);
       server.listen(port, host);
     });
+  }
+
+  /** Форма идентичности для `GET /identity`: отличает наш сервер от чужого. */
+  private identity(): McpServerIdentity {
+    // endpoint здесь всегда задан: identity() зовётся только из обработчика GET /identity,
+    // а он доступен лишь на слушающем сервере. Fallback '' — защита от типа string|undefined,
+    // недостижимая в рантайме, поэтому её ветка исключена из покрытия.
+    /* c8 ignore next */
+    const endpoint = this.endpoint ?? '';
+    return {
+      product: PRODUCT_ID,
+      protocol: IDENTITY_PROTOCOL,
+      pid: process.pid,
+      projectRoot: this.projectRoot,
+      version: this.version,
+      endpoint,
+    };
   }
 
   private isLoopbackRequest(req: http.IncomingMessage): boolean {
@@ -306,10 +390,6 @@ export class V8McpServer implements vscode.Disposable {
     }));
   }
 
-}
-
-function formatHostForUrl(host: string): string {
-  return host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
 }
 
 /**

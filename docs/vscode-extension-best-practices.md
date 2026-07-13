@@ -93,8 +93,10 @@ LSP-клиентом (`vscode-languageclient`) и локальным MCP-сер�
 - **MCP/локальный сервер: bind только на loopback (`127.0.0.1`/`::1`), никогда `0.0.0.0`.**
   **[совпадает с CLAUDE.md: политика MCP]**
   [MCP security](https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices)
-- **Loopback ≠ достаточно: валидировать `Host`/`Origin`** против DNS-rebinding из браузера. *(TODO проекта:
-  V8McpServer сейчас только bind на loopback.)*
+- **Loopback ≠ достаточно: валидировать `Host`/`Origin`** против DNS-rebinding из браузера. **Закрыто:**
+  `V8McpServer.isAllowedHostAndOrigin` проверяет заголовок `Host` (обязателен, должен входить в
+  `allowedHosts`) и `Origin` (если задан) для `/mcp` и для служебных `/identity`/`/shutdown` —
+  см. [mcp-server-lifecycle.md](./mcp-server-lifecycle.md).
   [descope](https://www.descope.com/blog/post/mcp-server-security-best-practices)
 - **MCP-инструмент не исполняет произвольную строку/`executeCommand`, не пишет XML в обход сервиса.**
   **[совпадает с CLAUDE.md: правила MCP]**
@@ -191,7 +193,10 @@ LSP-клиентом (`vscode-languageclient`) и локальным MCP-сер�
 - **`FileSystemWatcher` создавать в composition root/support-слое и диспозить.**
   **[совпадает с CLAUDE.md: watcher только в `Container`]**
 - **`deactivate()` явно останавливает LSP-клиент и MCP-сервер** (`client.stop()`, закрытие
-  HTTP-listener), дожидаясь `Promise`.
+  HTTP-listener), дожидаясь `Promise`. **Закрыто:** `Container.deactivate()` — `async`, гасит
+  `mcpServer.stop()` и `lspManager.stop()` через `Promise.allSettled([...])`; `stop()` дополнительно
+  форсирует `closeAllConnections()`, чтобы порт освобождался немедленно (см.
+  [mcp-server-lifecycle.md](./mcp-server-lifecycle.md)).
 - **Не полагаться на диспоуз `subscriptions` при аварийном завершении** — критичную очистку (порты,
   временные файлы) делать явно. [issue #140697](https://github.com/microsoft/vscode/issues/140697)
 
@@ -206,10 +211,12 @@ LSP-клиентом (`vscode-languageclient`) и локальным MCP-сер�
 Кандидаты на улучшение (не реализованы, фиксируются как рекомендации):
 1. **`onStartupFinished`** для фоновой инициализации вместо любых широких событий активации.
 2. Миграция тест-раннера на **`@vscode/test-cli`** (`.vscode-test.mjs`) — проще запуск/дебаг отдельных тестов.
-3. Для MCP-сервера — явная **валидация `Host`/`Origin`** (не только bind на loopback) против DNS-rebinding.
-4. Проверить, что **`deactivate()`** дожидается остановки LSP-клиента и закрытия MCP-listener (возврат `Promise`).
 
-Любую из этих задач следует проводить по конвейеру (см. [agentic-pipeline.md](./agentic-pipeline.md)).
+Закрытые ранее пункты этого списка: явная валидация `Host`/`Origin` для MCP-сервера (раздел
+«3. Безопасность») и ожидание `deactivate()` остановки MCP/LSP через `Promise` (раздел «8. Управление
+ресурсами») — см. отметки «Закрыто» выше и [mcp-server-lifecycle.md](./mcp-server-lifecycle.md).
+
+Любую из оставшихся задач следует проводить по конвейеру (см. [agentic-pipeline.md](./agentic-pipeline.md)).
 
 ---
 

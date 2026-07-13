@@ -164,7 +164,10 @@ function createBaselineServices(overrides: Partial<CommandServices> = {}): Comma
 
 /** Создаёт `V8McpServer` и вызывает приватный `registerTools` на mock-сервере. */
 function registerAllTools(services: CommandServices): { tools: Map<string, RegisteredTool> } {
-  const server = new V8McpServer(services, new ConfigurationXmlEditor());
+  // Доработка жизненного цикла MCP-сервера (5c) добавляет обязательные
+  // projectRoot/version в конструктор — этот golden-тест бьёт по каталогу
+  // tools через registerTools, само значение projectRoot/version не проверяет.
+  const server = new V8McpServer(services, new ConfigurationXmlEditor(), '/tmp/v8vscedit-fixture', '0.0.0-test');
   const mock = createMockServer();
   (server as unknown as { registerTools(mcp: unknown): void }).registerTools(mock);
   return { tools: mock.tools };

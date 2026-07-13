@@ -61,7 +61,8 @@ import {
   type UniversalPanelProcessingState,
   UniversalPanelViewProvider,
 } from './ui/views/universal/UniversalPanelViewProvider';
-import { V8McpServer } from './ui/mcp/V8McpServer';
+import { V8McpServer, type V8McpServerOptions, type McpStartResult } from './ui/mcp/V8McpServer';
+import { buildMcpConflictPrompt, resolveMcpConflictAction } from './infra/mcp/McpConflictPrompt';
 import { BslAnalyzerMcpService } from './ui/mcp/BslAnalyzerMcpService';
 import { AiMcpViewProvider } from './ui/views/ai/AiMcpViewProvider';
 import { AiSecretStorage } from './infra/ai/AiSecretStorage';
@@ -300,7 +301,13 @@ export class Container {
     this.changeDetector = new ConfigurationChangeDetector(workspaceFolder.uri.fsPath);
 
     this.lspManager = new LspManager(context, this.outputChannel);
-    this.mcpServer = new V8McpServer(this.buildMcpCommandServices(), this.configurationXmlEditor);
+    const extensionPackageJson = context.extension.packageJSON as { version?: string };
+    this.mcpServer = new V8McpServer(
+      this.buildMcpCommandServices(),
+      this.configurationXmlEditor,
+      workspaceFolder.uri.fsPath,
+      typeof extensionPackageJson.version === 'string' ? extensionPackageJson.version : '0.0.0'
+    );
     this.bslAnalyzerMcpService = new BslAnalyzerMcpService(
       this.outputChannel,
       () => this.lspManager.ensureAnalyzerBinary(),
@@ -881,12 +888,41 @@ export class Container {
       this.outputChannel.appendLine(`[mcp][warn] Небезопасный адрес "${host}" отклонён, используется 127.0.0.1.`);
     }
     const port = config.get<number>('mcp.port', 38481);
+    const options: V8McpServerOptions = {
+      host: host === '127.0.0.1' || host === 'localhost' || host === '::1' ? host : '127.0.0.1',
+      port,
+    };
     void this.mcpServer
-      .start({ host: host === '127.0.0.1' || host === 'localhost' || host === '::1' ? host : '127.0.0.1', port })
+      .start(options)
+      .then((result) => this.handleMcpStartResult(result, options))
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
         this.outputChannel.appendLine(`[mcp][error] ${message}`);
       });
+  }
+
+  /**
+   * Обрабатывает исход старта MCP-сервера. Ветвление «конфликт → намерение
+   * диалога» вынесено в чистый `buildMcpConflictPrompt`/`resolveMcpConflictAction`
+   * (`infra/mcp`, покрыто unit-ом); здесь остаётся только исполнение через vscode.
+   */
+  private async handleMcpStartResult(result: McpStartResult, options: V8McpServerOptions): Promise<void> {
+    if (result.kind === 'started' || result.kind === 'reuse') {
+      return;
+    }
+    const prompt = buildMcpConflictPrompt(result, options.port);
+    /* c8 ignore start — чисто-диалоговый vscode-путь: показ окна и исполнение выбора; логика ветвления покрыта unit-тестами McpConflictPrompt */
+    const picked = await vscode.window.showWarningMessage(prompt.message, ...prompt.actions);
+    const action = resolveMcpConflictAction(picked);
+    if (action === 'force-restart') {
+      const restarted = await this.mcpServer.forceRestart(options);
+      await this.handleMcpStartResult(restarted, options);
+      return;
+    }
+    if (action === 'change-port') {
+      await vscode.commands.executeCommand('workbench.action.openSettings', 'v8vscedit.mcp.port');
+    }
+    /* c8 ignore stop */
   }
 
   private startBslAnalyzerMcpServers(): void {

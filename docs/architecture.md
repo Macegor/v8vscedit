@@ -28,7 +28,11 @@ src/
 ├── extension.ts                      # тонкий activate/deactivate
 ├── Container.ts                      # composition root
 ├── domain/                           # чистый домен без vscode/fs/path
-├── infra/                            # файловая система, XML, окружение, хранилище, git/
+├── infra/                            # файловая система, XML, окружение, хранилище, git/, mcp/
+│   ├── mcp/                          # McpServerIdentity/McpStartDecision/McpPortProbe/
+│   │                                  # McpConflictPrompt/McpHost — чистая логика жизненного цикла
+│   │                                  # встроенного MCP-сервера (без vscode), см.
+│   │                                  # docs/mcp-server-lifecycle.md
 │   └── git/                          # GitMetadataStatusService (декорации навигатора) +
 │                                      # GitPorcelainReader/MetadataChangeResolver/
 │                                      # MetadataChangeAggregator/GitBlobReader/GitStatusReader/
@@ -141,6 +145,8 @@ extension.ts
 | `BslReadonlyGuard` для BSL | Запрет редактирования не зависит от способа открытия файла |
 | Ленивая загрузка дерева | Дочерние узлы строятся при раскрытии, а не при старте расширения |
 | God-класс → тонкий фасад + подмодули в подпапке слоя | Убирает файлы 1000+ строк без риска регресса: рефактор косметический, публичный API и поведение неизменны (см. выше) |
+| MCP-сервер: одна попытка bind, без авто-инкремента порта; конфликт разрешается зондом `/identity` | Авто-инкремент молча подключал агента не к тому проекту; явное `reuse`/`conflict-foreign`/`conflict-unknown` не даёт агенту работать с чужой конфигурацией (см. [mcp-server-lifecycle.md](./mcp-server-lifecycle.md)) |
+| `stop()` MCP-сервера форсирует `closeAllConnections()` до `close()` | Долгоживущие SSE-соединения не давали `httpServer.close()` освободить порт естественным путём (см. [mcp-server-lifecycle.md](./mcp-server-lifecycle.md)) |
 | Модель трёх деревьев git (HEAD/индекс/рабочее дерево) в представлении изменений | Единственный способ получить непустой diff для staged-файла — сравнивать HEAD↔индекс, а не индекс↔рабочее дерево (см. [git-metadata-changes.md](./git-metadata-changes.md)) |
 | Предки объекта в блоке «История» синтезируются из `META_TYPES`, а не берутся из живого дерева навигатора | Живое дерево отражает только текущую рабочую копию и врало бы для исторического состояния коммита (см. [git-history-graph.md](./git-history-graph.md)) |
 
@@ -151,3 +157,4 @@ extension.ts
 - [Парсинг XML конфигурации](./metadata-parser.md) — алгоритмы разбора Configuration.xml и объектных XML.
 - [Изменения метаданных](./git-metadata-changes.md) — семантический git по объектам 1С, представление `v8vsceditChanges`.
 - [История изменений](./git-history-graph.md) — граф git-коммитов по объектам 1С, сворачиваемый блок панели `v8vsceditChanges`.
+- [Жизненный цикл MCP-сервера](./mcp-server-lifecycle.md) — старт/остановка, освобождение порта, обнаружение и разрешение конфликта порта; канон путей MCP-инструментов — отдельно, в [mcp-paths.md](./mcp-paths.md).
