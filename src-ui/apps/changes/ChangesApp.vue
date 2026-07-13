@@ -51,9 +51,11 @@ const commitOpenIds = reactive<Record<string, true>>({});
 const commitSelectedId = ref<string | null>(null);
 const commitLoadingIds = reactive<Record<string, true>>({});
 
+// Порядок секций: сверху «Не проиндексировано» (рабочие правки), ниже
+// «Проиндексировано» (готовое к коммиту) — как в стандартном SCM; «Прочие» в конце.
 const sections = computed<ChangesSectionDto[]>(() => [
-  state.value.staged,
   state.value.unstaged,
+  state.value.staged,
   state.value.unresolved,
 ]);
 
