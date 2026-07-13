@@ -192,6 +192,10 @@ function onStageAll(): void {
   sendCommand('stageAll');
 }
 
+function onUnstageAll(): void {
+  sendCommand('unstageAll');
+}
+
 function toggleChanges(): void {
   changesOpen.value = !changesOpen.value;
 }
@@ -283,18 +287,17 @@ onUnmounted(() => {
 <template>
   <div class="changes-panel">
     <section class="panel-block changes-block" :class="changesOpen ? 'expanded' : 'collapsed'">
-      <button type="button" class="block-header" @click="toggleChanges">
+      <div
+        class="block-header"
+        role="button"
+        tabindex="0"
+        @click="toggleChanges"
+        @keydown.enter.prevent="toggleChanges"
+        @keydown.space.prevent="toggleChanges"
+      >
         <span class="codicon" :class="changesOpen ? 'codicon-chevron-down' : 'codicon-chevron-right'" />
         <span class="block-title">Изменения</span>
         <span v-if="changesOpen" class="block-actions">
-          <button
-            type="button"
-            class="header-button"
-            title="Проиндексировать все изменения"
-            @click.stop="onStageAll"
-          >
-            <span class="codicon codicon-add" />
-          </button>
           <button
             type="button"
             class="header-button"
@@ -304,7 +307,7 @@ onUnmounted(() => {
             <span class="codicon codicon-refresh" />
           </button>
         </span>
-      </button>
+      </div>
 
       <div v-if="changesOpen" class="block-body">
         <ChangesCommitBox
@@ -316,7 +319,27 @@ onUnmounted(() => {
         <div class="block-scroll">
           <div v-if="hasChanges" class="changes-content">
             <section v-for="section in visibleSections" :key="section.kind" class="changes-section">
-              <div class="section-header">{{ section.label }}</div>
+              <div class="section-header">
+                <span class="section-title">{{ section.label }}</span>
+                <button
+                  v-if="section.kind === 'unstaged'"
+                  type="button"
+                  class="header-button"
+                  title="Проиндексировать все изменения"
+                  @click="onStageAll"
+                >
+                  <span class="codicon codicon-add" />
+                </button>
+                <button
+                  v-if="section.kind === 'staged'"
+                  type="button"
+                  class="header-button"
+                  title="Снять индексацию со всех изменений"
+                  @click="onUnstageAll"
+                >
+                  <span class="codicon codicon-remove" />
+                </button>
+              </div>
               <UniversalTree
                 :nodes="section.nodes"
                 :selected-id="selectedId"
@@ -340,7 +363,14 @@ onUnmounted(() => {
     </section>
 
     <section class="panel-block history-block" :class="historyOpen ? 'expanded' : 'collapsed'">
-      <button type="button" class="block-header" @click="toggleHistory">
+      <div
+        class="block-header"
+        role="button"
+        tabindex="0"
+        @click="toggleHistory"
+        @keydown.enter.prevent="toggleHistory"
+        @keydown.space.prevent="toggleHistory"
+      >
         <span class="codicon" :class="historyOpen ? 'codicon-chevron-down' : 'codicon-chevron-right'" />
         <span class="block-title">История</span>
         <span v-if="historyOpen" class="block-actions">
@@ -362,7 +392,7 @@ onUnmounted(() => {
             <span class="codicon codicon-chevron-down" />
           </button>
         </span>
-      </button>
+      </div>
 
       <div v-if="historyOpen" class="block-body">
         <div class="block-scroll">
@@ -505,12 +535,18 @@ onUnmounted(() => {
   flex-direction: column;
 }
 .section-header {
-  padding: 4px 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px 2px 10px;
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--vscode-descriptionForeground);
+}
+.section-title {
+  flex: 1 1 auto;
 }
 .changes-empty {
   display: flex;

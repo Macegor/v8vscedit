@@ -15,6 +15,9 @@ const emit = defineEmits<{
 const LANE_WIDTH = 14;
 const ROW_HEIGHT = 24;
 const DOT_RADIUS = 3.5;
+/** Левый паддинг строки коммита (см. `.commit-row` в стилях): на него сдвинут
+ *  SVG с точкой, поэтому продолжение дорожки под деталями смещаем так же. */
+const ROW_PADDING_LEFT = 4;
 
 /**
  * Стабильная палитра дорожек: контрастные тона, читаемые в тёмной и светлой
@@ -73,6 +76,12 @@ function isSelected(row: GraphRowDto): boolean {
 function detailsIndent(): number {
   return svgWidth() + 8;
 }
+
+/** X-центр продолжения дорожки под деталями = центр точки коммита (с учётом
+ *  левого паддинга строки), минус полуширина линии (1px). */
+function laneLineLeft(lane: number): number {
+  return ROW_PADDING_LEFT + laneX(lane) - 1;
+}
 </script>
 
 <template>
@@ -129,8 +138,12 @@ function detailsIndent(): number {
       <div
         v-if="isSelected(row)"
         class="commit-details"
-        :style="{ paddingLeft: `${String(detailsIndent())}px`, borderLeftColor: laneColor(row.laneColor) }"
+        :style="{ paddingLeft: `${String(detailsIndent())}px` }"
       >
+        <span
+          class="lane-continuation"
+          :style="{ left: `${String(laneLineLeft(row.lane))}px`, background: laneColor(row.laneColor) }"
+        />
         <slot name="details" :row="row" />
       </div>
     </template>
@@ -210,7 +223,15 @@ function detailsIndent(): number {
   color: var(--vscode-editor-background);
 }
 .commit-details {
-  border-left: 2px solid transparent;
+  position: relative;
+}
+/* Продолжение дорожки выбранного коммита вниз через блок деталей —
+   выровнено по центру точки коммита (laneX(lane)), а не по краю блока. */
+.lane-continuation {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
 }
 .graph-empty {
   padding: 24px;

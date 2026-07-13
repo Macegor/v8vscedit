@@ -352,6 +352,29 @@ suite('MetadataChangesViewProvider — webview-презентация предс
     });
   });
 
+  test('команда unstageAll снимает индексацию со ВСЕХ застейдженных файлов и пере-постит state', async () => {
+    appendLine(fixture.objectModuleBsl, '// правка для unstageAll');
+    const relModule = path.relative(fixture.gitRoot, fixture.objectModuleBsl);
+    git(fixture.gitRoot, ['add', relModule]);
+    resolve();
+    const before = lastState(fakeWebview.postedMessages);
+    assert.strictEqual(before.staged.nodes.length, 1, 'предусловие: один застейдженный объект');
+
+    await fakeWebview.receiveMessage({ type: 'command', command: 'unstageAll' });
+
+    assert.strictEqual(statusOf(fixture.gitRoot, relModule), ` M ${relModule}`, 'файл должен разындексироваться');
+    const after = lastState(fakeWebview.postedMessages);
+    assert.strictEqual(after.staged.nodes.length, 0, 'staged должен опустеть');
+    assert.strictEqual(after.unstaged.nodes.length, 1, 'объект должен вернуться в unstaged');
+  });
+
+  test('команда unstageAll без застейдженных файлов — no-op, не бросает', async () => {
+    resolve();
+    await assert.doesNotReject(async () => {
+      await fakeWebview.receiveMessage({ type: 'command', command: 'unstageAll' });
+    });
+  });
+
   test('команда unstage возвращает застейдженный файл в рабочее дерево, не теряя правку', async () => {
     appendLine(fixture.objectModuleBsl, '// правка, которую застейджим вручную');
     const relPath = path.relative(fixture.gitRoot, fixture.objectModuleBsl);

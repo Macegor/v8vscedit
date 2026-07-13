@@ -315,6 +315,9 @@ export class MetadataChangesViewProvider implements vscode.WebviewViewProvider {
       case 'stageAll':
         this.applyStageAll();
         return;
+      case 'unstageAll':
+        this.applyUnstageAll();
+        return;
       case 'unstage':
         this.applyUnstage(message.payload?.nodeId);
         return;
@@ -395,20 +398,48 @@ export class MetadataChangesViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Кнопка «+» в шапке блока «Изменения»: индексирует ВСЕ непроиндексированные
-   * файлы напрямую из модели (объектные части стороны unstaged + «Прочие»),
-   * без адресации по id узлов — верхнеуровневые узлы секции навигаторные
-   * (`unstaged#nav#…`) и не резолвятся через {@link resolveChangeAddress}.
+   * Кнопка «+» в шапке секции «Не проиндексировано»: индексирует ВСЕ изменения
+   * (объектные части стороны unstaged + «Прочие»). Работает по модели, а не по
+   * id узлов — верхнеуровневые узлы секции навигаторные (`unstaged#nav#…`) и не
+   * резолвятся через {@link resolveChangeAddress}.
    */
   private applyStageAll(): void {
+    const files = this.collectSideFiles((model) => model.unstaged);
+    if (files.length === 0) {
+      return;
+    }
+    stage(this.services.gitRoot, files);
+    this.refresh();
+  }
+
+  /**
+   * Кнопка «−» в шапке секции «Проиндексировано»: снимает индексацию со ВСЕХ
+   * застейдженных изменений (объектные части стороны staged + «Прочие»).
+   * Симметрична {@link applyStageAll}.
+   */
+  private applyUnstageAll(): void {
+    const files = this.collectSideFiles((model) => model.staged);
+    if (files.length === 0) {
+      return;
+    }
+    unstage(this.services.gitRoot, files);
+    this.refresh();
+  }
+
+  /**
+   * Абсолютные пути всех файлов выбранной стороны модели + «Прочие»,
+   * дедуплицированные. `git add`/`git reset` идемпотентны, поэтому включение
+   * «Прочих» безопасно для обеих операций.
+   */
+  private collectSideFiles(pick: (model: ChangesModel) => readonly ObjectChangeGroup[]): string[] {
     // handleMessage подключается в resolveWebviewView ПОСЛЕ присваивания
     // this.model — защитный guard недостижим обычным потоком (как в buildState).
     /* c8 ignore next 3 */
     if (!this.model) {
-      return;
+      return [];
     }
     const relFiles = new Set<string>();
-    for (const group of this.model.unstaged) {
+    for (const group of pick(this.model)) {
       for (const part of group.parts) {
         for (const file of part.files) {
           relFiles.add(file);
@@ -418,11 +449,7 @@ export class MetadataChangesViewProvider implements vscode.WebviewViewProvider {
     for (const raw of this.model.unresolved) {
       relFiles.add(raw.relPath);
     }
-    if (relFiles.size === 0) {
-      return;
-    }
-    stage(this.services.gitRoot, [...relFiles].map((rel) => path.resolve(this.services.gitRoot, rel)));
-    this.refresh();
+    return [...relFiles].map((rel) => path.resolve(this.services.gitRoot, rel));
   }
 
   private applyUnstage(nodeId: string | undefined): void {

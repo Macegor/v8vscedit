@@ -50,7 +50,7 @@ function onCommit(): void {
       @click="onCommit"
     >
       <span class="codicon codicon-check" aria-hidden="true" />
-      Закоммитить
+      Коммит
     </button>
   </div>
 </template>
@@ -72,7 +72,7 @@ function onCommit(): void {
   color: var(--vscode-input-foreground);
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, transparent);
-  border-radius: 2px;
+  border-radius: 5px;
   padding: 6px 8px;
 }
 .commit-message:focus {
@@ -83,9 +83,9 @@ function onCommit(): void {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 4px 10px;
+  padding: 6px 10px;
   border: 0;
-  border-radius: 2px;
+  border-radius: 5px;
   color: var(--vscode-button-foreground);
   background: var(--vscode-button-background);
   cursor: pointer;
