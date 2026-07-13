@@ -13,6 +13,13 @@ git-операциями (stage/unstage/discard/commit/diff); дерево па�
 основного дерева конфигурации (обрезанную по изменениям), переиспользуя и Vue-компонент отрисовки,
 и саму структуру `MetadataTreeProvider`.
 
+Рядом — **[«История»](./git-history-graph.md)** (`v8vsceditHistory`): отдельная вкладка редактора
+(`vscode.WebviewPanel`, открывается кнопкой `view/title` панели изменений) с графом git-коммитов всего
+репозитория, где выбор коммита показывает изменённые объекты метаданных того же коммита — read-only
+потребитель движка панели изменений (`aggregateMetadataChanges`, `changesDtoBuilder`,
+`changesTreeAssembler`), с собственным чистым ядром раскладки графа по дорожкам (`infra/git/GitLogReader`,
+`GitLogParser`, `GitGraphLayout`).
+
 ## Структура модулей
 
 ```
@@ -24,7 +31,10 @@ src/
 │   └── git/                          # GitMetadataStatusService (декорации навигатора) +
 │                                      # GitPorcelainReader/MetadataChangeResolver/
 │                                      # MetadataChangeAggregator/GitBlobReader/GitStatusReader/
-│                                      # GitWriteService (движок панели «Изменения метаданных»)
+│                                      # GitWriteService (движок панели «Изменения метаданных») +
+│                                      # GitLogReader/GitLogParser/GitGraphLayout/
+│                                      # GitCommitChangesReader (чистое ядро панели «История»,
+│                                      # см. docs/git-history-graph.md)
 ├── ui/                               # команды, дерево, webview, readonly guard
 │   ├── views/changes/                # changesDtoBuilder (листья дерева) + changesTreeAssembler
 │   │                                  # (сборка навигаторной иерархии секции) + MetadataChangesViewProvider
@@ -32,7 +42,12 @@ src/
 │   │                                  # treeProvider.getParent на реальном MetadataTreeProvider —
 │   │                                  # дерево панели повторяет навигаторную иерархию, обрезанную по
 │   │                                  # изменениям, а не просто переиспользует Vue-компонент отрисовки)
-│   └── git/                          # OnecGitContentProvider (схема onec-git для diff)
+│   ├── views/history/                # historyGraphDtoBuilder/historyGraphController (чистые) +
+│   │                                  # HistoryGraphViewProvider (WebviewPanel v8vsceditHistory,
+│   │                                  # read-only переиспользование движка панели изменений —
+│   │                                  # см. docs/git-history-graph.md)
+│   └── git/                          # OnecGitContentProvider (схема onec-git для diff HEAD/индекс
+│                                      # и произвольного commit-ish для панели «История»)
 ├── lsp/
 │   ├── LspManager.ts                 # запуск и перезапуск bsl-analyzer
 │   └── analyzer/
@@ -126,6 +141,7 @@ extension.ts
 | Ленивая загрузка дерева | Дочерние узлы строятся при раскрытии, а не при старте расширения |
 | God-класс → тонкий фасад + подмодули в подпапке слоя | Убирает файлы 1000+ строк без риска регресса: рефактор косметический, публичный API и поведение неизменны (см. выше) |
 | Модель трёх деревьев git (HEAD/индекс/рабочее дерево) в представлении изменений | Единственный способ получить непустой diff для staged-файла — сравнивать HEAD↔индекс, а не индекс↔рабочее дерево (см. [git-metadata-changes.md](./git-metadata-changes.md)) |
+| Предки объекта в панели «История» синтезируются из `META_TYPES`, а не берутся из живого дерева навигатора | Живое дерево отражает только текущую рабочую копию и врало бы для исторического состояния коммита (см. [git-history-graph.md](./git-history-graph.md)) |
 
 ## Подробная документация
 
@@ -133,3 +149,4 @@ extension.ts
 - [Языковая поддержка BSL](./bsl-language-support.md) — запуск `bsl-analyzer` и настройки.
 - [Парсинг XML конфигурации](./metadata-parser.md) — алгоритмы разбора Configuration.xml и объектных XML.
 - [Изменения метаданных](./git-metadata-changes.md) — семантический git по объектам 1С, представление `v8vsceditChanges`.
+- [История изменений](./git-history-graph.md) — граф git-коммитов по объектам 1С, вкладка редактора `v8vsceditHistory`.

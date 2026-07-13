@@ -104,11 +104,13 @@ git-декорации навигатора (`infra/git/GitMetadataStatusService
   CSP `{ allowStyles: true, allowImages: true }`, `localResourceRoots` через
   `resolveWebviewLocalResourceRoots(extensionUri, { includeIcons: true })`.
 
-### `ui/git/` — тонкая обёртка diff-схемы (не менялась)
+### `ui/git/` — тонкая обёртка diff-схемы
 
 `OnecGitContentProvider.ts` — `TextDocumentContentProvider` со схемой `onec-git`; URI самодостаточен
 (`gitRoot` + `ref` в query), поэтому не зависит от глобального состояния. `buildOnecGitUri(gitRoot,
-absFilePath, ref)` строит URI для `HEAD` или `index`.
+absFilePath, ref)` строит URI для `HEAD`/`index` либо (после обобщения ради панели «История», см.
+[git-history-graph.md](./git-history-graph.md#uigit--обобщение-diff-схемы-на-произвольный-ref)) любого
+commit-ish. Эта панель по-прежнему передаёт только `'HEAD'`/`'index'` — контракт для неё не изменился.
 
 ### `src-ui/apps/changes/` — Vue-приложение панели
 
@@ -324,4 +326,9 @@ git-мутация над панелью изменений»).
   (`GitMetadataStatusService`), к которому эта панель не относится напрямую, но переиспользует общий
   парсер porcelain, общий Vue-компонент дерева и, с итерации 2, саму навигаторную иерархию
   (`MetadataTreeProvider.getParent`).
+- [git-history-graph.md](./git-history-graph.md) — панель «История» (граф git-коммитов по объектам 1С),
+  read-only потребитель движка этой панели: `aggregateMetadataChanges`, `changesDtoBuilder`
+  (`buildObjectNode`/`buildOtherSection`/`resolveChangeAddress`) и `changesTreeAssembler`
+  (`assembleNavigatorSection`/`synthesizeAncestors`) переиспользуются БЕЗ ИЗМЕНЕНИЙ, `synthesizeAncestors`
+  ради этого вынесен из приватного метода `MetadataChangesViewProvider` в отдельный экспортируемый модуль.
 - [architecture.md](./architecture.md) — общая раскладка каталогов и слоёв.

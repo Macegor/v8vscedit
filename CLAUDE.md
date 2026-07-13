@@ -10,7 +10,7 @@
 1. **Навигатор метаданных** — дерево объектов из XML-выгрузки (CF и CFE), свойства, чтение/создание/редактирование метаданных, открытие BSL-модулей.
 2. **Языковая поддержка BSL** — LSP-клиент для внешнего `bsl-analyzer`.
 
-Подробная документация — в `./docs` (`architecture.md`, `metadata-navigator.md`, `metadata-parser.md`, `bsl-language-support.md`, `mcp-paths.md`, `xml-format-rulesets.md`, `agentic-pipeline.md`, `vscode-extension-best-practices.md`, `git-metadata-changes.md`).
+Подробная документация — в `./docs` (`architecture.md`, `metadata-navigator.md`, `metadata-parser.md`, `bsl-language-support.md`, `mcp-paths.md`, `xml-format-rulesets.md`, `agentic-pipeline.md`, `vscode-extension-best-practices.md`, `git-metadata-changes.md`, `git-history-graph.md`).
 
 ## Язык общения
 
@@ -134,7 +134,10 @@ src/
 │   │                                  # декорации) + представление «Изменения метаданных»
 │   │                                  # (GitPorcelainReader, MetadataChangeResolver,
 │   │                                  # MetadataChangeAggregator, GitBlobReader, GitStatusReader,
-│   │                                  # GitWriteService — см. docs/git-metadata-changes.md)
+│   │                                  # GitWriteService — см. docs/git-metadata-changes.md) +
+│   │                                  # чистое ядро графа истории (GitLogReader, GitLogParser,
+│   │                                  # GitGraphLayout, GitCommitChangesReader — см.
+│   │                                  # docs/git-history-graph.md)
 │   ├── environment/                  # bsl-analyzer.toml, окружение проекта, реестр баз
 │   ├── process/                      # поиск платформы, spawn, декодер OEM/Win1251
 │   └── skills/                       # AiSkillsInstaller — установка ИИ-навыков
@@ -149,6 +152,10 @@ src/
 │   │   │                              # MetadataChangesViewProvider (webview v8vsceditChanges, требует
 │   │   │                              # treeProvider — дерево панели повторяет иерархию навигатора;
 │   │   │                              # см. docs/git-metadata-changes.md)
+│   │   ├── history/                  # historyGraphDtoBuilder/historyGraphController (чистые) +
+│   │   │                              # HistoryGraphViewProvider (singleton WebviewPanel
+│   │   │                              # v8vsceditHistory — вкладка редактора, не WebviewView; read-only
+│   │   │                              # переиспользование движка changes/; см. docs/git-history-graph.md)
 │   │   └── subsystem|search|repository|environment|standalone|…
 │   ├── commands/                     # CommandRegistry.registerAll + подпапки по доменам
 │   ├── git/                          # OnecGitContentProvider — схема onec-git для diff HEAD/индекс
@@ -209,7 +216,7 @@ export interface MetaTypeDef {
 
 ### Webview (`src-ui/`)
 
-Vue-приложения (сборка `vite.webview.config.ts`, проверка типов `vue-tsc`/`tsconfig.ui.json`). `src-ui/apps/*` — отдельные панели (`universal`, `dynamic-panel`, `environment`, `subsystem`, `repository-*`, `standalone`, `ai`, `tree-search`, `changes` — панель «Изменения метаданных», SCM-шапка + дерево, повторяющее навигаторную иерархию, обрезанную по изменениям). `src-ui/shared/` — общий код: `protocol/` (контракт сообщений webview ↔ расширение), `state/`, `components/` (в т.ч. `components/tree/UniversalTree*.vue` — дерево, общее для навигатора и панели изменений), `api/`. При изменении взаимодействия панели и расширения правьте обе стороны протокола.
+Vue-приложения (сборка `vite.webview.config.ts`, проверка типов `vue-tsc`/`tsconfig.ui.json`). `src-ui/apps/*` — отдельные панели (`universal`, `dynamic-panel`, `environment`, `subsystem`, `repository-*`, `standalone`, `ai`, `tree-search`, `changes` — панель «Изменения метаданных», SCM-шапка + дерево, повторяющее навигаторную иерархию, обрезанную по изменениям; `history` — панель «История», граф git-коммитов (`CommitGraph.vue`) + дерево изменений выбранного коммита через общий `UniversalTree`, read-only, см. `docs/git-history-graph.md`). `src-ui/shared/` — общий код: `protocol/` (контракт сообщений webview ↔ расширение), `state/`, `components/` (в т.ч. `components/tree/UniversalTree*.vue` — дерево, общее для навигатора, панели изменений и панели истории), `api/`. При изменении взаимодействия панели и расширения правьте обе стороны протокола.
 
 ## MCP-сервер для ИИ-агентов
 
@@ -277,6 +284,22 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
   команд `package.json → contributes.commands`/меню `view/item/context` для этой панели не заводится —
   весь UI-контракт живёт во внутреннем протоколе webview (см.
   [git-metadata-changes.md](./docs/git-metadata-changes.md#формат-сообщений-протокола)).
+- **Новая возможность панели «История»** (граф git-коммитов, см.
+  [git-history-graph.md](./docs/git-history-graph.md)), в зависимости от слоя:
+  - новая колонка/поле графа (например автор-аватар, статус CI) — `RawCommit`/`GitLogParser` (если
+    берётся из `git log`) → `GraphRowDto` в `ui/views/history/historyGraphDtoBuilder.ts` →
+    `src-ui/shared/types/history.ts` (зеркало) → отрисовка в `src-ui/apps/history/CommitGraph.vue`;
+  - новая команда протокола (аналог `selectCommit`/`openDiff`/`loadMore`/`refresh`) —
+    `HistoryGraphViewProvider.handleMessage` (ветка `switch (message.command)`) → та же строка `command`
+    добавляется в `src-ui/apps/history/HistoryApp.vue` (`sendCommand`); чистая бизнес-логика команды —
+    в `historyGraphController.ts`, а не в самом провайдере;
+  - изменение алгоритма раскладки дорожек — только `infra/git/GitGraphLayout.ts` (чистая функция без
+    `vscode`), тест на реальном временном git-репозитории с ветвлением/merge (образец —
+    `support/changesFixtures.ts:buildHistoryRepo`);
+  - новая часть/статус объекта в дереве изменений коммита переиспользует ТОТ ЖЕ путь, что и панель
+    изменений (см. пункт выше «Новая часть объекта в панели «Изменения метаданных»»), т.к.
+    `buildCommitChangesSection` вызывает те же `buildObjectNode`/`buildPartNode`/`synthesizeAncestors` —
+    отдельного реестра для панели истории не заводится.
 - **Декомпозиция God-класса (косметика, без изменения поведения):** characterization/байт-golden-тест ДО дробления (фиксирует текущий выход) → вынос по доменам/ответственности в подпапку того же слоя (`ui/mcp/registration/`, `infra/xml/<область>/`) через `git mv`/перенос функций без изменения публичного API фасада → диспетчер-`switch` → таблица (данные в `META_TYPES`/спец-реестр infra, поведение — функции поверх) → эталоны golden при этом НЕ редактируются: их правка означает регресс поведения, а не косметику. Для XML-генераторов (`MetadataXmlCreator`, `FormBuilders`) байт-golden обязателен как входное условие (см. запрет №17).
 
 ## Запреты и анти-паттерны
@@ -352,6 +375,10 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
    кандидат на индексацию дерева одним проходом; `synthesizeAncestors` для удалённых объектов группы
    `documents-branch` не восстанавливает промежуточную ветвь «Документы» — см.
    [git-metadata-changes.md](./docs/git-metadata-changes.md#известные-ограничения).
+9. Панель «История»: пагинация графа — полная перераскладка растущего окна `git log --max-count` на
+   каждый `loadMore` (без курсора/`--skip`, осознанно ради детерминизма дорожек); резолвинг
+   принадлежности файлов коммита объектам идёт по ТЕКУЩЕМУ списку `configRoots`, а не по структуре
+   выгрузки на момент коммита — см. [git-history-graph.md](./docs/git-history-graph.md#известные-ограничения).
 
 ## `.cursor/`, `.codex/`, `.claude/skills/` — это доменные 1С-скилы, а не разработка расширения
 
