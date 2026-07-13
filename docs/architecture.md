@@ -7,6 +7,20 @@ VSCode-расширение `v8vscedit` предоставляет два нез
 1. **[Навигатор метаданных](./metadata-navigator.md)** — дерево объектов конфигураций и расширений из XML-выгрузки.
 2. **[Языковая поддержка BSL](./bsl-language-support.md)** — LSP-клиент для внешнего `bsl-analyzer`.
 
+Дополнительно — независимая webview-панель **[«Изменения метаданных»](./git-metadata-changes.md)**
+(`v8vsceditChanges`): `git status` рабочей копии в терминах объектов метаданных, с полноценными
+git-операциями (stage/unstage/discard/commit/diff); дерево панели повторяет навигаторную иерархию
+основного дерева конфигурации (обрезанную по изменениям), переиспользуя и Vue-компонент отрисовки,
+и саму структуру `MetadataTreeProvider`.
+
+Внутри той же панели — второй сворачиваемый блок **[«История»](./git-history-graph.md)**: граф
+git-коммитов всего репозитория (свёрнут по умолчанию, грузится лениво при первом раскрытии), где выбор
+коммита раскрывает inline изменённые объекты метаданных того же коммита — read-only потребитель движка
+панели изменений (`aggregateMetadataChanges`, `changesDtoBuilder`, `changesTreeAssembler`), с собственным
+чистым ядром раскладки графа по дорожкам (`infra/git/GitLogReader`, `GitLogParser`, `GitGraphLayout`) и
+тонким чистым helper'ом состояния (`ui/views/changes/changesHistorySection.ts`), которым владеет тот же
+`MetadataChangesViewProvider` — отдельного webview-провайдера/вкладки/команды для истории нет.
+
 ## Структура модулей
 
 ```
@@ -14,8 +28,27 @@ src/
 ├── extension.ts                      # тонкий activate/deactivate
 ├── Container.ts                      # composition root
 ├── domain/                           # чистый домен без vscode/fs/path
-├── infra/                            # файловая система, XML, окружение, хранилище
+├── infra/                            # файловая система, XML, окружение, хранилище, git/
+│   └── git/                          # GitMetadataStatusService (декорации навигатора) +
+│                                      # GitPorcelainReader/MetadataChangeResolver/
+│                                      # MetadataChangeAggregator/GitBlobReader/GitStatusReader/
+│                                      # GitWriteService (движок панели «Изменения метаданных») +
+│                                      # GitLogReader/GitLogParser/GitGraphLayout/
+│                                      # GitCommitChangesReader (чистое ядро блока «История»,
+│                                      # см. docs/git-history-graph.md)
 ├── ui/                               # команды, дерево, webview, readonly guard
+│   ├── views/changes/                # changesDtoBuilder (листья дерева) + changesTreeAssembler
+│   │                                  # (сборка навигаторной иерархии секции) + changesHistorySection
+│   │                                  # (чистый helper состояния блока «История» поверх
+│   │                                  # historyGraphController/historyGraphDtoBuilder) +
+│   │                                  # MetadataChangesViewProvider (единственный webview-провайдер
+│   │                                  # v8vsceditChanges — строит цепочки предков через
+│   │                                  # treeProvider.getParent на реальном MetadataTreeProvider и
+│   │                                  # диспетчеризует команды блока «История»)
+│   ├── views/history/                # ТОЛЬКО чистые модули (без vscode): historyGraphDtoBuilder/
+│   │                                  # historyGraphController — см. docs/git-history-graph.md
+│   └── git/                          # OnecGitContentProvider (схема onec-git для diff HEAD/индекс
+│                                      # и произвольного commit-ish для блока «История»)
 ├── lsp/
 │   ├── LspManager.ts                 # запуск и перезапуск bsl-analyzer
 │   └── analyzer/
@@ -108,9 +141,13 @@ extension.ts
 | `BslReadonlyGuard` для BSL | Запрет редактирования не зависит от способа открытия файла |
 | Ленивая загрузка дерева | Дочерние узлы строятся при раскрытии, а не при старте расширения |
 | God-класс → тонкий фасад + подмодули в подпапке слоя | Убирает файлы 1000+ строк без риска регресса: рефактор косметический, публичный API и поведение неизменны (см. выше) |
+| Модель трёх деревьев git (HEAD/индекс/рабочее дерево) в представлении изменений | Единственный способ получить непустой diff для staged-файла — сравнивать HEAD↔индекс, а не индекс↔рабочее дерево (см. [git-metadata-changes.md](./git-metadata-changes.md)) |
+| Предки объекта в блоке «История» синтезируются из `META_TYPES`, а не берутся из живого дерева навигатора | Живое дерево отражает только текущую рабочую копию и врало бы для исторического состояния коммита (см. [git-history-graph.md](./git-history-graph.md)) |
 
 ## Подробная документация
 
 - [Навигатор метаданных](./metadata-navigator.md) — дерево, команды, path resolver.
 - [Языковая поддержка BSL](./bsl-language-support.md) — запуск `bsl-analyzer` и настройки.
 - [Парсинг XML конфигурации](./metadata-parser.md) — алгоритмы разбора Configuration.xml и объектных XML.
+- [Изменения метаданных](./git-metadata-changes.md) — семантический git по объектам 1С, представление `v8vsceditChanges`.
+- [История изменений](./git-history-graph.md) — граф git-коммитов по объектам 1С, сворачиваемый блок панели `v8vsceditChanges`.

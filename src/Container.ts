@@ -39,6 +39,9 @@ import { SubsystemXmlService } from './infra/xml/SubsystemXmlService';
 import { RepositoryService } from './infra/repository/RepositoryService';
 import { ensureEnvJson } from './infra/repository/envJsonTemplate';
 import { GitMetadataStatusService } from './infra/git/GitMetadataStatusService';
+import { resolveGitRoot } from './infra/git/GitStatusReader';
+import { MetadataChangesViewProvider } from './ui/views/changes/MetadataChangesViewProvider';
+import { OnecGitContentProvider, ONEC_GIT_SCHEME } from './ui/git/OnecGitContentProvider';
 import { AiSkillsInstaller } from './infra/skills/AiSkillsInstaller';
 import { StandaloneServerService } from './infra/standalone';
 import { SupportDecorationProvider } from './ui/tree/decorations/SupportDecorationProvider';
@@ -85,6 +88,10 @@ export class Container {
   readonly repositoryService: RepositoryService;
   readonly gitMetadataStatusService: GitMetadataStatusService;
   readonly gitMetadataDecorationProvider: GitMetadataDecorationProvider;
+  readonly metadataChangesViewProvider: MetadataChangesViewProvider;
+  readonly onecGitContentProvider: OnecGitContentProvider;
+  readonly changesGitRoot: string;
+  private changesConfigRoots: readonly ConfigEntry[] = [];
   readonly repositoryConnectionViewProvider: RepositoryConnectionViewProvider;
   readonly repositoryCommitViewProvider: RepositoryCommitViewProvider;
   readonly bslAnalyzerConfigService: BslAnalyzerConfigService;
@@ -153,6 +160,12 @@ export class Container {
     this.gitMetadataStatusService = new GitMetadataStatusService(workspaceFolder.uri.fsPath);
     this.gitMetadataDecorationProvider = new GitMetadataDecorationProvider(this.gitMetadataStatusService);
 
+    // Представление «Изменения метаданных»: gitRoot — реальный toplevel
+    // репозитория (может быть выше workspace), корни выгрузки — как у навигатора.
+    this.changesGitRoot = resolveGitRoot(workspaceFolder.uri.fsPath) ?? workspaceFolder.uri.fsPath;
+    this.changesConfigRoots = findConfigurations(workspaceFolder.uri.fsPath);
+    this.onecGitContentProvider = new OnecGitContentProvider();
+
     this.decorationProvider = new SupportDecorationProvider();
     context.subscriptions.push(
       vscode.window.registerFileDecorationProvider(this.decorationProvider),
@@ -171,6 +184,15 @@ export class Container {
       this.repositoryService
     );
     context.subscriptions.push(this.treeProvider);
+
+    // Панель «Изменения метаданных» повторяет навигаторную иерархию, поэтому
+    // создаётся после treeProvider и получает его как источник дерева.
+    this.metadataChangesViewProvider = new MetadataChangesViewProvider(context.extensionUri, {
+      gitRoot: this.changesGitRoot,
+      getConfigRoots: () => this.changesConfigRoots,
+      treeProvider: this.treeProvider,
+    });
+
     this.subsystemXmlService = new SubsystemXmlService();
     this.exchangePlanContentService = new ExchangePlanContentService();
     this.typeRegistryService = new TypeRegistryService();
@@ -305,6 +327,7 @@ export class Container {
     c.wireConfigurationWatcher();
     c.wireConfigurationSourceWatcher();
     c.wireGitDecorationWatcher();
+    c.wireMetadataChangesView();
     c.wireCommands();
     c.wireReadonlyGuard();
     c.reloadEntries();
@@ -336,6 +359,10 @@ export class Container {
     // поэтому кэш `findConfigRoot` нужно сбросить до перестроения дерева.
     this.repositoryService.invalidateConfigRootCache();
     this.treeProvider.updateEntries(entries);
+    // Состав корней выгрузки мог измениться — синхронизируем представление
+    // изменений (заодно пересчитывается его модель git-статуса).
+    this.changesConfigRoots = entries;
+    this.metadataChangesViewProvider.updateConfigRoots();
     if (this.isProjectInitialized()) {
       this.bslAnalyzerConfigService.ensureExists(getExtensionRootPaths(entries));
     }
@@ -557,6 +584,26 @@ export class Container {
     }
   }
 
+  /**
+   * Регистрирует webview-представление «Изменения метаданных» и провайдер левой
+   * стороны diff (`onec-git`). Обновление подвешено на тот же путь, что и
+   * git-декорации навигатора (`scheduleDecorationRefresh`), плюс смену состава
+   * рабочих папок — модель `git status` не пересчитывается на hot path.
+   */
+  private wireMetadataChangesView(): void {
+    this.context.subscriptions.push(
+      vscode.window.registerWebviewViewProvider(
+        MetadataChangesViewProvider.viewType,
+        this.metadataChangesViewProvider,
+        { webviewOptions: { retainContextWhenHidden: true } }
+      ),
+      vscode.workspace.registerTextDocumentContentProvider(ONEC_GIT_SCHEME, this.onecGitContentProvider),
+      vscode.workspace.onDidChangeWorkspaceFolders(() => {
+        this.metadataChangesViewProvider.refresh();
+      })
+    );
+  }
+
   private wireGitDecorationWatcher(): void {
     const watchers = [
       new vscode.RelativePattern(this.workspaceFolder, '.git/HEAD'),
@@ -624,6 +671,7 @@ export class Container {
     try {
       const refreshed = this.treeProvider.refreshCacheForFiles(filePaths);
       this.gitMetadataDecorationProvider.refresh();
+      this.metadataChangesViewProvider.refresh();
       return refreshed;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -641,6 +689,7 @@ export class Container {
       this.decorationRefreshTimer = undefined;
       this.gitMetadataDecorationProvider.refresh();
       this.treeProvider.refreshDecorations();
+      this.metadataChangesViewProvider.refresh();
     }, 500);
   }
 

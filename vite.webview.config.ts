@@ -10,6 +10,7 @@ const entries = {
   environment: 'src-ui/apps/environment/main.ts',
   standalone: 'src-ui/apps/standalone/main.ts',
   'tree-search': 'src-ui/apps/tree-search/main.ts',
+  changes: 'src-ui/apps/changes/main.ts',
   'repository-connection': 'src-ui/apps/repository-connection/main.ts',
   'repository-commit': 'src-ui/apps/repository-commit/main.ts',
   subsystem: 'src-ui/apps/subsystem/main.ts',
