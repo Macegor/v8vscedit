@@ -25,3 +25,14 @@ scripts/**
 **/*.map
 **/*.ts
 src/test/**
+coverage/**
+.claude/**
+.codex/**
+.github/**
+CLAUDE.md
+AGENTS.md
+MCP_REFACTORING_PLAN.md
+eslint.config.mjs
+.c8rc.json
+.editorconfig
+.npmrc
