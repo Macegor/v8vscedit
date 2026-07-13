@@ -86,7 +86,6 @@ export class HistoryGraphViewProvider implements vscode.Disposable {
     });
 
     this.renderHtml(this.panel);
-    this.postGraph();
   }
 
   /** Пересчёт графа при открытой панели; при закрытой — no-op (git не читается). */
@@ -181,22 +180,25 @@ export class HistoryGraphViewProvider implements vscode.Disposable {
   }
 
   /**
-   * Полная перерисовка HTML. Манифест `history` webview появляется в Слое 4 —
-   * до него `getEntry` бросает, поэтому рендер обёрнут в try/catch (как у
-   * `SubsystemEditorViewProvider`): открытие панели не должно падать.
+   * Полная перерисовка HTML с ВСТРОЕННЫМ начальным графом (как панель изменений
+   * встраивает своё состояние) — граф виден сразу, без опоры на буферизацию
+   * `postMessage`. Рендер обёрнут в try/catch (как `SubsystemEditorViewProvider`):
+   * при отсутствии/повреждении манифеста `history` панель не падает, остаётся
+   * пустой, а последующий `refresh`/`Обновить` дошлёт граф отдельным сообщением.
    */
   private renderHtml(panel: vscode.WebviewPanel): void {
     try {
+      const state = loadHistoryState(this.services.gitRoot, this.pageSize, nowSec(), this.selectedHash);
       panel.webview.html = this.htmlFactory.renderVueWebviewHtml({
         webview: panel.webview,
         title: 'История изменений',
         entry: 'history',
         viewKind: 'history',
-        initialState: null,
+        initialState: state,
         csp: { allowStyles: true, allowImages: true },
       });
     } catch {
-      // Манифест `history` ещё не собран (Слой 4) — панель остаётся пустой, но не падает.
+      // Манифест `history` недоступен/повреждён — панель остаётся пустой, но не падает.
     }
   }
 }

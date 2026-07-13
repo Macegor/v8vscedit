@@ -1,4 +1,6 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 /**
@@ -209,5 +211,24 @@ suite('HistoryGraphViewProvider — webview-панель «История» (о�
 
     assert.doesNotThrow(() => { provider.dispose(); });
     assert.doesNotThrow(() => { provider.open(); });
+  });
+
+  test('open() с extensionUri БЕЗ собранного dist/ui/manifest.json — renderHtml реально ловит исключение getEntry, панель не падает', () => {
+    // Реальный ENOENT от WebviewAssetManifestReader (без построенного webview),
+    // а не подделка: `renderHtml` оборачивает рендер в try/catch именно на этот
+    // случай (см. её doc-комментарий) — ветка обязана быть достижима по-настоящему,
+    // а не через `c8 ignore`.
+    const bareExtensionRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-history-no-manifest-')));
+    const bareProvider = new HistoryGraphViewProvider(vscode.Uri.file(bareExtensionRoot), {
+      gitRoot: fixture.gitRoot,
+      getConfigRoots: () => fixture.configRoots,
+    });
+
+    try {
+      assert.doesNotThrow(() => { bareProvider.open(); });
+    } finally {
+      bareProvider.dispose();
+      fs.rmSync(bareExtensionRoot, { recursive: true, force: true });
+    }
   });
 });

@@ -17,7 +17,8 @@
     "onView:v8vsceditChanges",
     "onLanguage:bsl",
     "onCommand:v8vscedit.openAiSettings",
-    "onCommand:v8vscedit.refresh"
+    "onCommand:v8vscedit.refresh",
+    "onCommand:v8vscedit.history.open"
   ],
   "categories": [
     "Other",
@@ -68,6 +69,12 @@
       ]
     },
     "commands": [
+      {
+        "command": "v8vscedit.history.open",
+        "title": "История изменений",
+        "category": "1С",
+        "icon": "$(git-commit)"
+      },
       {
         "command": "v8vscedit.refresh",
         "title": "Обновить",
@@ -517,6 +524,13 @@
       }
     ],
     "menus": {
+      "view/title": [
+        {
+          "command": "v8vscedit.history.open",
+          "when": "view == v8vsceditChanges",
+          "group": "navigation"
+        }
+      ],
       "commandPalette": [
         {
           "command": "v8vscedit.bsl.surround.if",

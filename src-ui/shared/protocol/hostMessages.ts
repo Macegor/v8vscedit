@@ -1,8 +1,13 @@
+import type { HistoryGraphState } from '../types/history';
+import type { ChangesSectionDto } from '../types/changes';
+
 export type HostStatusKind = 'idle' | 'loading' | 'success' | 'error';
 
 export type HostToUiMessage<TState = unknown> =
   | { readonly type: 'init'; readonly state: TState }
   | { readonly type: 'state'; readonly state: TState }
+  | { readonly type: 'graph'; readonly state: HistoryGraphState }
+  | { readonly type: 'commitChanges'; readonly hash: string; readonly section: ChangesSectionDto }
   | { readonly type: 'standaloneStatus'; readonly status: unknown }
   | {
       readonly type: 'childrenLoaded';
