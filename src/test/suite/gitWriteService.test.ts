@@ -4,8 +4,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 // ВЕХА 1 «Изменения метаданных», компонент №6 плана: мутации git над набором
-// файлов, без vscode. Модуль ещё не реализован.
-import { stage, unstage, discard, commit, type DiscardEntry } from '../../infra/git/GitWriteService';
+// файлов, без vscode. `push`/`pull` добавлены для вариантов кнопки «Фиксация»
+// (Фиксация и отправка / Фиксация и синхронизация).
+import { stage, unstage, discard, commit, push, pull, type DiscardEntry } from '../../infra/git/GitWriteService';
 
 const TRACKED_CONTENT = 'исходное содержимое\n';
 const DELETED_CONTENT = 'будет удалён\n';
@@ -28,7 +29,7 @@ function statusOf(repo: string, relPath: string): string {
 function buildBaselineRepo(): string {
   // realpathSync: см. комментарий в gitPorcelainReader.test.ts.
   const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-git-write-service-')));
-  git(repo, ['init', '-q']);
+  git(repo, ['init', '-q', '-b', 'main']);
   git(repo, ['config', 'user.email', 'test@test.local']);
   git(repo, ['config', 'user.name', 'test']);
 
@@ -39,6 +40,20 @@ function buildBaselineRepo(): string {
   git(repo, ['commit', '-q', '-m', 'baseline']);
 
   return repo;
+}
+
+/**
+ * Поднимает bare-репозиторий как `origin` для `repo` и привязывает upstream
+ * текущей ветки первичным push'ем. Это НЕ мок: `push`/`pull` работают с
+ * настоящим git-remote (bare-репозиторий на диске, без сети). Возвращает путь
+ * поднятого remote — вызывающий обязан удалить его в teardown.
+ */
+function attachBareRemote(repo: string): string {
+  const remote = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-git-remote-')));
+  git(remote, ['init', '-q', '--bare', '-b', 'main']);
+  git(repo, ['remote', 'add', 'origin', remote]);
+  git(repo, ['push', '-q', '-u', 'origin', 'HEAD']);
+  return remote;
 }
 
 suite('GitWriteService — мутации git над набором файлов на реальном репозитории', () => {
@@ -161,5 +176,71 @@ suite('GitWriteService — мутации git над набором файлов
     } finally {
       fs.rmSync(outsideAnyRepo, { recursive: true, force: true });
     }
+  });
+
+  test('push() отправляет локальные коммиты в привязанный remote (upstream догоняет HEAD)', () => {
+    const remote = attachBareRemote(repo);
+    try {
+      fs.writeFileSync(path.join(repo, 'tracked.txt'), 'правка под push\n', 'utf-8');
+      git(repo, ['add', 'tracked.txt']);
+      commit(repo, 'коммит под push');
+      const localHead = git(repo, ['rev-parse', 'HEAD']).trim();
+      // До push upstream (origin/main) отстаёт от локального HEAD.
+      assert.notStrictEqual(git(repo, ['rev-parse', '@{u}']).trim(), localHead);
+
+      push(repo);
+
+      assert.strictEqual(
+        git(repo, ['rev-parse', '@{u}']).trim(),
+        localHead,
+        'после push удалённая ветка должна указывать на тот же коммит, что и локальный HEAD'
+      );
+      assert.strictEqual(
+        git(remote, ['rev-parse', 'main']).trim(),
+        localHead,
+        'сам bare-remote должен принять коммит'
+      );
+    } finally {
+      fs.rmSync(remote, { recursive: true, force: true });
+    }
+  });
+
+  test('pull() подтягивает коммит, появившийся в remote, в текущую ветку (fast-forward)', () => {
+    const remote = attachBareRemote(repo);
+    // Второй клон правит remote «извне» — так в origin появляется коммит,
+    // которого нет локально; pull обязан привести его fast-forward'ом.
+    const otherClone = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-git-clone-')));
+    try {
+      git(otherClone, ['clone', '-q', remote, '.']);
+      git(otherClone, ['config', 'user.email', 'other@test.local']);
+      git(otherClone, ['config', 'user.name', 'other']);
+      fs.writeFileSync(path.join(otherClone, 'remote-added.txt'), 'добавлено в remote\n', 'utf-8');
+      git(otherClone, ['add', '-A']);
+      git(otherClone, ['commit', '-q', '-m', 'коммит из другого клона']);
+      git(otherClone, ['push', '-q', 'origin', 'HEAD:main']);
+
+      assert.strictEqual(fs.existsSync(path.join(repo, 'remote-added.txt')), false, 'предусловие: локально файла ещё нет');
+
+      pull(repo);
+
+      assert.strictEqual(
+        fs.existsSync(path.join(repo, 'remote-added.txt')),
+        true,
+        'после pull файл из remote должен появиться в рабочем дереве'
+      );
+    } finally {
+      fs.rmSync(remote, { recursive: true, force: true });
+      fs.rmSync(otherClone, { recursive: true, force: true });
+    }
+  });
+
+  test('push() без привязанного remote падает управляемой ошибкой (коммит не теряется)', () => {
+    fs.writeFileSync(path.join(repo, 'tracked.txt'), 'правка без remote\n', 'utf-8');
+    git(repo, ['add', 'tracked.txt']);
+    commit(repo, 'коммит без remote');
+
+    // Ни origin, ни upstream не настроены — git push обязан упасть, а не молча
+    // проглотить неудачу (ошибка нужна вызывающему для показа сообщения).
+    assert.throws(() => push(repo));
   });
 });

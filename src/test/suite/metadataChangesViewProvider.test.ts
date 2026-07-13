@@ -36,6 +36,7 @@ import type { ChangesSectionDto, ChangesViewState, TreeNodeDto } from '../../ui/
 import type { HistoryGraphState } from '../../ui/views/history/historyGraphDtoBuilder';
 import {
   appendLine,
+  attachBareRemote,
   buildChangesBaselineRepo,
   git,
   removeFixtureRepo,
@@ -195,13 +196,19 @@ suite('MetadataChangesViewProvider — webview-презентация предс
   let configRootsOverride: ChangesFixture['configRoots'] | undefined;
 
   let originalShowWarningMessage: typeof vscode.window.showWarningMessage;
+  let originalShowErrorMessage: typeof vscode.window.showErrorMessage;
   let originalShowInputBox: typeof vscode.window.showInputBox;
   let originalExecuteCommand: typeof vscode.commands.executeCommand;
-  const windowRef = vscode.window as { showWarningMessage: typeof vscode.window.showWarningMessage; showInputBox: typeof vscode.window.showInputBox };
+  const windowRef = vscode.window as {
+    showWarningMessage: typeof vscode.window.showWarningMessage;
+    showErrorMessage: typeof vscode.window.showErrorMessage;
+    showInputBox: typeof vscode.window.showInputBox;
+  };
   const commandsRef = vscode.commands as { executeCommand: typeof vscode.commands.executeCommand };
 
   let warningCalls: unknown[][];
   let warningResolution: string | undefined;
+  let errorCalls: unknown[][];
   let inputBoxCalls: number;
   let executeCommandCalls: unknown[][];
 
@@ -219,16 +226,23 @@ suite('MetadataChangesViewProvider — webview-презентация предс
 
     warningCalls = [];
     warningResolution = undefined;
+    errorCalls = [];
     inputBoxCalls = 0;
     executeCommandCalls = [];
 
     originalShowWarningMessage = vscode.window.showWarningMessage;
+    originalShowErrorMessage = vscode.window.showErrorMessage;
     originalShowInputBox = vscode.window.showInputBox;
     originalExecuteCommand = vscode.commands.executeCommand;
 
     windowRef.showWarningMessage = ((message: string, ...rest: unknown[]) => {
       warningCalls.push([message, ...rest]);
       return Promise.resolve(warningResolution);
+    });
+
+    windowRef.showErrorMessage = ((message: string, ...rest: unknown[]) => {
+      errorCalls.push([message, ...rest]);
+      return Promise.resolve(undefined);
     });
 
     windowRef.showInputBox = (() => {
@@ -247,6 +261,7 @@ suite('MetadataChangesViewProvider — webview-презентация предс
 
   teardown(() => {
     windowRef.showWarningMessage = originalShowWarningMessage;
+    windowRef.showErrorMessage = originalShowErrorMessage;
     windowRef.showInputBox = originalShowInputBox;
     commandsRef.executeCommand = originalExecuteCommand;
     disposeTreeProvider();
@@ -277,6 +292,63 @@ suite('MetadataChangesViewProvider — webview-презентация предс
 
   test('refresh до resolveWebviewView не бросает и не трогает бейдж (view ещё нет)', () => {
     assert.doesNotThrow(() => { provider.refresh(); });
+  });
+
+  test('бейдж контейнера снимается после коммита ВСЕХ изменений через панель', async () => {
+    appendLine(fixture.objectModuleBsl, '// правка для проверки бейджа');
+    git(fixture.gitRoot, ['add', path.relative(fixture.gitRoot, fixture.objectModuleBsl)]);
+    const view = resolve();
+    assert.ok(view.badge, 'предусловие: до коммита бейдж выставлен (есть изменение)');
+    assert.strictEqual(view.badge.value, 1, 'ровно одно изменение');
+
+    await fakeWebview.receiveMessage({
+      type: 'command',
+      command: 'commit',
+      payload: { message: 'коммит всех изменений для снятия бейджа' },
+    });
+
+    assert.strictEqual(
+      view.badge,
+      undefined,
+      'после коммита всех изменений (репозиторий чист) бейдж должен сняться'
+    );
+  });
+
+  test('показ вью переустанавливает бейдж по актуальной модели (обход потери обновления скрытой вью)', async () => {
+    appendLine(fixture.objectModuleBsl, '// правка для бейджа при показе');
+    git(fixture.gitRoot, ['add', path.relative(fixture.gitRoot, fixture.objectModuleBsl)]);
+
+    // Вью с управляемой видимостью и доступным эмиттером — чтобы сымитировать
+    // скрытие/показ, чего статичная `resolve()` не позволяет.
+    const visibilityEmitter = new vscode.EventEmitter<void>();
+    let visible = true;
+    const fakeView = {
+      webview: fakeWebview.webview,
+      get visible() { return visible; },
+      onDidChangeVisibility: visibilityEmitter.event,
+      onDidDispose: new vscode.EventEmitter<void>().event,
+    } as unknown as vscode.WebviewView;
+    const badgeHolder = fakeView as { badge?: vscode.ViewBadge };
+
+    provider.resolveWebviewView(fakeView);
+    assert.ok(fakeView.badge, 'предусловие: бейдж выставлен (есть изменение)');
+
+    // Коммитим всё через панель — модель становится чистой, бейдж снимается.
+    await fakeWebview.receiveMessage({ type: 'command', command: 'commit', payload: { message: 'коммит для бейджа при показе' } });
+    assert.strictEqual(fakeView.badge, undefined);
+
+    // Симулируем «застрявший» бейдж, который VS Code не сбросил, пока вью была скрыта.
+    badgeHolder.badge = { value: 1, tooltip: 'устаревший' };
+
+    // Событие видимости со скрытой вью (visible=false) — бейдж НЕ трогаем.
+    visible = false;
+    visibilityEmitter.fire();
+    assert.deepStrictEqual(badgeHolder.badge, { value: 1, tooltip: 'устаревший' }, 'скрытая вью бейдж не переустанавливает');
+
+    // Показ вью (visible=true) — бейдж переустанавливается по актуальной (чистой) модели.
+    visible = true;
+    visibilityEmitter.fire();
+    assert.strictEqual(fakeView.badge, undefined, 'при показе бейдж приводится к актуальной модели (репозиторий чист)');
   });
 
   test('CSP отрендеренного HTML разрешает изображения (иконки метаданных грузятся как background-image)', () => {
@@ -451,6 +523,116 @@ suite('MetadataChangesViewProvider — webview-презентация предс
       'коммит из панели изменений метаданных'
     );
     assert.strictEqual(inputBoxCalls, 0, 'сообщение коммита приходит из payload, а не через showInputBox');
+  });
+
+  test('commit mode=push коммитит и отправляет в remote (upstream догоняет локальный HEAD), без ошибок', async () => {
+    const remote = attachBareRemote(fixture.gitRoot);
+    try {
+      appendLine(fixture.objectModuleBsl, '// правка для коммита с отправкой');
+      git(fixture.gitRoot, ['add', path.relative(fixture.gitRoot, fixture.objectModuleBsl)]);
+      resolve();
+
+      await fakeWebview.receiveMessage({
+        type: 'command',
+        command: 'commit',
+        payload: { message: 'фиксация и отправка', mode: 'push' },
+      });
+
+      const localHead = git(fixture.gitRoot, ['rev-parse', 'HEAD']).trim();
+      assert.strictEqual(
+        git(fixture.gitRoot, ['rev-parse', '@{u}']).trim(),
+        localHead,
+        'после mode=push удалённая ветка должна догнать локальный HEAD'
+      );
+      assert.strictEqual(git(fixture.gitRoot, ['log', '-1', '--pretty=%s']).trim(), 'фиксация и отправка');
+      assert.strictEqual(errorCalls.length, 0, 'при успешной отправке ошибка не показывается');
+    } finally {
+      fs.rmSync(remote, { recursive: true, force: true });
+    }
+  });
+
+  test('commit mode=sync коммитит, подтягивает чужой коммит из remote (pull) и отправляет свой (push)', async () => {
+    const remote = attachBareRemote(fixture.gitRoot);
+    const otherClone = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-changes-clone-')));
+    try {
+      // «Чужой» клон добавляет коммит в remote — его обязан подтянуть pull внутри sync.
+      git(otherClone, ['clone', '-q', remote, '.']);
+      git(otherClone, ['config', 'user.email', 'other@test.local']);
+      git(otherClone, ['config', 'user.name', 'other']);
+      fs.writeFileSync(path.join(otherClone, 'from-remote.txt'), 'добавлено извне\n', 'utf-8');
+      git(otherClone, ['add', '-A']);
+      git(otherClone, ['commit', '-q', '-m', 'коммит из чужого клона']);
+      git(otherClone, ['push', '-q', 'origin', 'HEAD']);
+
+      appendLine(fixture.objectModuleBsl, '// локальная правка для синхронизации');
+      git(fixture.gitRoot, ['add', path.relative(fixture.gitRoot, fixture.objectModuleBsl)]);
+      resolve();
+
+      await fakeWebview.receiveMessage({
+        type: 'command',
+        command: 'commit',
+        payload: { message: 'фиксация и синхронизация', mode: 'sync' },
+      });
+
+      assert.strictEqual(
+        fs.existsSync(path.join(fixture.gitRoot, 'from-remote.txt')),
+        true,
+        'sync обязан подтянуть чужой коммит из remote (pull)'
+      );
+      assert.strictEqual(
+        git(fixture.gitRoot, ['rev-parse', '@{u}']).trim(),
+        git(fixture.gitRoot, ['rev-parse', 'HEAD']).trim(),
+        'sync обязан отправить локальный коммит (push) — upstream догоняет HEAD'
+      );
+      assert.strictEqual(errorCalls.length, 0, 'при успешной синхронизации ошибка не показывается');
+    } finally {
+      fs.rmSync(remote, { recursive: true, force: true });
+      fs.rmSync(otherClone, { recursive: true, force: true });
+    }
+  });
+
+  test('commit mode=push без remote: коммит СОХРАНЯЕТСЯ, но показывается ошибка отправки', async () => {
+    appendLine(fixture.objectModuleBsl, '// правка для коммита без remote');
+    git(fixture.gitRoot, ['add', path.relative(fixture.gitRoot, fixture.objectModuleBsl)]);
+    resolve();
+    const beforeLog = git(fixture.gitRoot, ['log', '--oneline']).trim().split('\n').length;
+
+    // origin не настроен — push внутри mode=push обязан упасть, но коммит уже
+    // сделан ДО отправки (refresh опустошил панель) и теряться не должен.
+    await fakeWebview.receiveMessage({
+      type: 'command',
+      command: 'commit',
+      payload: { message: 'коммит без remote', mode: 'push' },
+    });
+
+    const afterLog = git(fixture.gitRoot, ['log', '--oneline']).trim().split('\n').length;
+    assert.strictEqual(afterLog, beforeLog + 1, 'коммит должен состояться несмотря на провал отправки');
+    assert.strictEqual(git(fixture.gitRoot, ['log', '-1', '--pretty=%s']).trim(), 'коммит без remote');
+    assert.strictEqual(errorCalls.length, 1, 'провал отправки обязан показать ошибку пользователю');
+  });
+
+  test('commit mode=sync без remote: коммит СОХРАНЯЕТСЯ, ошибка синхронизации показывается', async () => {
+    appendLine(fixture.objectModuleBsl, '// правка для синхронизации без remote');
+    git(fixture.gitRoot, ['add', path.relative(fixture.gitRoot, fixture.objectModuleBsl)]);
+    resolve();
+    const beforeLog = git(fixture.gitRoot, ['log', '--oneline']).trim().split('\n').length;
+
+    // Без origin pull внутри sync падает раньше push — коммит уже сделан,
+    // сообщение об ошибке формулируется про «синхронизировать» (не «отправить»).
+    await fakeWebview.receiveMessage({
+      type: 'command',
+      command: 'commit',
+      payload: { message: 'синхронизация без remote', mode: 'sync' },
+    });
+
+    const afterLog = git(fixture.gitRoot, ['log', '--oneline']).trim().split('\n').length;
+    assert.strictEqual(afterLog, beforeLog + 1, 'коммит должен состояться несмотря на провал синхронизации');
+    assert.strictEqual(errorCalls.length, 1, 'провал синхронизации обязан показать ошибку пользователю');
+    const [firstErrorMessage] = errorCalls[0] as [string];
+    assert.ok(
+      firstErrorMessage.includes('синхронизировать'),
+      `текст ошибки sync должен упоминать синхронизацию, получено: ${firstErrorMessage}`
+    );
   });
 
   test('unstaged-часть: openDiff открывает diff слева onec-git(index), справа file:// рабочего файла', async () => {

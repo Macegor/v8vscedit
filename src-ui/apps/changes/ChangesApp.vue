@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { MessageBus } from '@ui-shared/api/messageBus';
 import type { HostToUiMessage } from '@ui-shared/protocol/hostMessages';
-import type { ChangesSectionDto, ChangesViewState } from '@ui-shared/types/changes';
+import type { ChangesSectionDto, ChangesViewState, CommitMode } from '@ui-shared/types/changes';
 import type { HistoryGraphState } from '@ui-shared/types/history';
 import type { TreeNodeDto } from '@ui-shared/types/tree';
 import UniversalTree from '@ui-shared/components/tree/UniversalTree.vue';
@@ -179,8 +179,8 @@ function closeContextMenu(): void {
   contextMenu.nodeId = null;
 }
 
-function onCommit(message: string): void {
-  sendCommand('commit', { message });
+function onCommit(message: string, mode: CommitMode): void {
+  sendCommand('commit', { message, mode });
 }
 
 function onRefresh(): void {

@@ -6,6 +6,13 @@ import type { TreeNodeDto } from './tree';
  * webview-сборки, поэтому типы дублируются по конвенции протокола).
  */
 
+/**
+ * Вариант фиксации из split-кнопки «Фиксация» (webview-сторона протокола).
+ * Зеркалит `CommitMode` из `src/ui/views/changes/MetadataChangesViewProvider.ts`
+ * (host-сторона исключена из webview-сборки — типы протокола дублируются по конвенции).
+ */
+export type CommitMode = 'commit' | 'push' | 'sync';
+
 /** Секция изменений: проиндексировано / не проиндексировано / прочие. */
 export interface ChangesSectionDto {
   readonly kind: 'staged' | 'unstaged' | 'other';

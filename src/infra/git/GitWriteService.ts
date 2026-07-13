@@ -59,6 +59,27 @@ export function commit(gitRoot: string, message: string): void {
   runGit(gitRoot, ['commit', '-q', '-m', message]);
 }
 
+/**
+ * Отправляет текущую ветку в привязанный remote (`git push`). При отсутствии
+ * настроенного upstream/origin падает управляемой ошибкой — вызывающий (UI)
+ * показывает её пользователю, не теряя уже сделанный локальный коммит.
+ */
+export function push(gitRoot: string): void {
+  runGit(gitRoot, ['push']);
+}
+
+/**
+ * Подтягивает и вливает изменения удалённой ветки слиянием
+ * (`git pull --no-rebase --no-edit`). `--no-rebase` задаёт стратегию явно: с
+ * git ≥ 2.27 при разошедшихся ветках `git pull` без указания стратегии падает
+ * фатально («Need to specify how to reconcile divergent branches»); синхронизация
+ * штатного SCM по умолчанию — именно merge. `--no-edit` не даёт git открыть
+ * редактор для merge-сообщения (stdin здесь закрыт).
+ */
+export function pull(gitRoot: string): void {
+  runGit(gitRoot, ['pull', '--no-rebase', '--no-edit']);
+}
+
 function runGit(gitRoot: string, args: readonly string[]): void {
   execFileSync('git', ['-C', gitRoot, ...args], {
     stdio: ['ignore', 'ignore', 'pipe'],

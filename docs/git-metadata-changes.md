@@ -41,7 +41,7 @@ git-декорации навигатора (`infra/git/GitMetadataStatusService
 | `MetadataChangeAggregator.ts` | `aggregateMetadataChanges(entries, gitRoot, configRoots)` → `ChangesModel { staged, unstaged, unresolved }` — группирует файлы по объекту, разносит X/Y по сторонам staged/unstaged, схлопывает статусы частей и объекта (`combineStatus`), файлы вне известной структуры выгрузки — в `unresolved`. |
 | `GitBlobReader.ts` | `readBlobAtHead`/`readBlobAtIndex` (`git show HEAD:<path>` / `git show :<path>`) — левая/правая сторона diff без мутаций; мягкий `null`, если blob отсутствует или git недоступен. |
 | `GitStatusReader.ts` | `readPorcelainEntries`/`resolveGitRoot` — раннер git-процесса для UI-слоя (провайдер сам процессов не запускает). |
-| `GitWriteService.ts` | Мутации над НАБОРОМ файлов: `stage`/`unstage`/`discard`/`commit`. `discard` различает `modified`/`deleted` (`git checkout --`) и `untracked` (удаление файла с диска). |
+| `GitWriteService.ts` | Мутации над НАБОРОМ файлов: `stage`/`unstage`/`discard`/`commit` + обмен с remote `push`/`pull`. `discard` различает `modified`/`deleted` (`git checkout --`) и `untracked` (удаление файла с диска). `pull` идёт с `--no-rebase --no-edit` (явная стратегия слияния — иначе git ≥2.27 падает на разошедшихся ветках; без открытия редактора merge-сообщения). |
 
 `ChangesModel` — единственная граница между движком и презентацией: всё, что ниже, про webview ничего
 не знает, а всё, что выше, про git-процессы ничего не знает.
@@ -111,12 +111,15 @@ git-декорации навигатора (`infra/git/GitMetadataStatusService
      (напр. «Общие модули»), иначе — одна коллекция (напр. «Справочники»).
   4. Готовые цепочки (`ChangeChain[]`) сворачивает `assembleNavigatorSection` в секцию.
 
-  Протокол ui → host: `{ type: 'command', command, payload: { nodeId? } | { message? } }`, где `command`
-  ∈ `stage | unstage | discard | commit | openDiff | refresh`; host → ui: `{ type: 'state', state:
-  ChangesViewState }`. Действия транслируются в существующие функции `infra/git/GitWriteService`
-  (`stage`/`unstage`/`discard`/`commit`) и в `vscode.diff` с URI `onec-git` (`buildOnecGitUri`);
-  `commit` берёт текст сообщения из `payload.message`, `discard` — с модальным подтверждением
-  (`showWarningMessage`). Иконка объекта строится через `getIconUris(kind, undefined, extensionUri)` и
+  Протокол ui → host: `{ type: 'command', command, payload: { nodeId? } | { message?, mode? } }`, где
+  `command` ∈ `stage | unstage | discard | commit | openDiff | refresh`; host → ui: `{ type: 'state',
+  state: ChangesViewState }`. Действия транслируются в существующие функции `infra/git/GitWriteService`
+  (`stage`/`unstage`/`discard`/`commit`/`push`/`pull`) и в `vscode.diff` с URI `onec-git`
+  (`buildOnecGitUri`); `commit` берёт текст сообщения из `payload.message`, а `payload.mode`
+  (`'commit'|'push'|'sync'` — варианты split-кнопки «Фиксация») задаёт обмен с remote ПОСЛЕ фиксации:
+  `push` = `commit`+`push`, `sync` = `commit`+`pull`+`push`. Порядок важен — сначала `commit`+`refresh()`
+  (панель пустеет сразу, коммит не теряется при провале обмена), затем try/catch над remote-операцией с
+  `showErrorMessage` при неудаче. `discard` — с модальным подтверждением (`showWarningMessage`). Иконка объекта строится через `getIconUris(kind, undefined, extensionUri)` и
   доводится до `webview.asWebviewUri(...)` — тот же источник, что у навигатора. Webview-опции:
   CSP `{ allowStyles: true, allowImages: true }`, `localResourceRoots` через
   `resolveWebviewLocalResourceRoots(extensionUri, { includeIcons: true })`.
@@ -146,9 +149,12 @@ commit-ish. Эта панель по-прежнему передаёт толь�
   `body`/`#app` сброшены изолированно в стилях компонента (`:global(html,body,#app){margin:0;padding:0}`,
   `scoped`-стиль бандла `changes`, на остальные панели не влияет) — дерево панели рисуется встык к краям
   контейнера активности, как у навигатора.
-- `ChangesCommitBox.vue` — SCM-шапка: textarea сообщения коммита + кнопка «Закоммитить»
-  (`disabled`, пока пусто сообщение или `canCommit === false`) + тулбар «Проиндексировать всё»/«Обновить»
-  (образец компоновки — `src-ui/apps/repository-commit`).
+- `ChangesCommitBox.vue` — SCM-шапка: textarea сообщения фиксации + **split-кнопка «Фиксация»**
+  (`disabled`, пока пусто сообщение или `canCommit === false`): основное действие — обычная фиксация,
+  каретка раскрывает меню из трёх вариантов («Фиксация», «Фиксация и отправка», «Фиксация и
+  синхронизация» — как в штатном SCM), выбор эмитит `commit: [message, mode]`; меню закрывается кликом по
+  прозрачной подложке. Кнопки «Проиндексировать всё»/«Обновить» вынесены в шапки соответствующих секций/
+  блока (не в этот компонент).
 
 ### Переиспользование дерева навигатора
 
@@ -273,7 +279,7 @@ Diff открывается только для узла с ЕДИНСТВЕНН
 | Направление | Форма | Когда |
 |---|---|---|
 | ui → host | `{ type: 'command', command: 'stage'\|'unstage'\|'discard'\|'openDiff', payload: { nodeId } }` | клик по действию узла/меню |
-| ui → host | `{ type: 'command', command: 'commit', payload: { message } }` | кнопка «Закоммитить» |
+| ui → host | `{ type: 'command', command: 'commit', payload: { message, mode } }` | split-кнопка «Фиксация» (`mode` ∈ `'commit'\|'push'\|'sync'` — обычная / +push / +pull+push) |
 | ui → host | `{ type: 'command', command: 'refresh' }` | кнопка «Обновить» |
 | host → ui | `{ type: 'state', state: ChangesViewState }` | после `resolveWebviewView`, после любой мутации, после `refresh()`/`updateConfigRoots()` |
 

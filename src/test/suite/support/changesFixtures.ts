@@ -121,6 +121,20 @@ export function removeFixtureRepo(fixture: ChangesFixture): void {
 }
 
 /**
+ * Поднимает bare-репозиторий как `origin` для `gitRoot` и привязывает upstream
+ * текущей ветки первичным push'ем. Это НЕ мок: `push`/`pull` в тестах вариантов
+ * кнопки «Фиксация» работают с настоящим git-remote (bare-репозиторий на диске,
+ * без сети). Возвращает путь поднятого remote — вызывающий обязан удалить его.
+ */
+export function attachBareRemote(gitRoot: string): string {
+  const remoteRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-changes-remote-')));
+  git(remoteRoot, ['init', '-q', '--bare']);
+  git(gitRoot, ['remote', 'add', 'origin', remoteRoot]);
+  git(gitRoot, ['push', '-q', '-u', 'origin', 'HEAD']);
+  return remoteRoot;
+}
+
+/**
  * Реальный временный git-репозиторий с ветвлением и merge — фундамент для
  * тестов «Слоя 1» графа истории (`GitLogParser`, `GitCommitChangesReader`,
  * а также `readBlobAtRef` из `GitBlobReader`). В отличие от

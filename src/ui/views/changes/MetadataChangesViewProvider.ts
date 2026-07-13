@@ -8,7 +8,7 @@ import {
   type ObjectChangeGroup,
 } from '../../../infra/git/MetadataChangeAggregator';
 import { readPorcelainEntries } from '../../../infra/git/GitStatusReader';
-import { commit, discard, stage, unstage, type DiscardEntry } from '../../../infra/git/GitWriteService';
+import { commit, discard, pull, push, stage, unstage, type DiscardEntry } from '../../../infra/git/GitWriteService';
 import { buildOnecGitUri } from '../../git/OnecGitContentProvider';
 import { getIconUris } from '../../tree/presentation/icon';
 import type { MetadataTreeProvider } from '../../tree/MetadataTreeProvider';
@@ -42,11 +42,22 @@ export interface MetadataChangesViewServices {
   readonly treeProvider: MetadataTreeProvider;
 }
 
+/**
+ * Вариант фиксации из split-кнопки «Фиксация»: обычная фиксация, фиксация с
+ * отправкой (push) или с синхронизацией (pull → push) — как в штатном SCM.
+ */
+type CommitMode = 'commit' | 'push' | 'sync';
+
 /** Сообщение ui → host: команда над узлом/коммитом (изменения либо история). */
 interface ChangesCommandMessage {
   readonly type: string;
   readonly command: string;
-  readonly payload?: { readonly nodeId?: string; readonly message?: string; readonly hash?: string };
+  readonly payload?: {
+    readonly nodeId?: string;
+    readonly message?: string;
+    readonly hash?: string;
+    readonly mode?: CommitMode;
+  };
 }
 
 const DISCARD_CONFIRM_LABEL = 'Отменить изменения';
@@ -93,6 +104,14 @@ export class MetadataChangesViewProvider implements vscode.WebviewViewProvider {
     webviewView.webview.html = this.buildHtml(webviewView.webview);
     webviewView.webview.onDidReceiveMessage((message: ChangesCommandMessage) => {
       void this.handleMessage(message);
+    });
+    // Бейдж контейнера, обновлённый пока вью была скрыта (`retainContextWhenHidden`
+    // + refresh по watcher/коммиту в фоне), VS Code не всегда пробрасывает на
+    // иконку активити-бара — при показе переустанавливаем его по актуальной модели.
+    webviewView.onDidChangeVisibility(() => {
+      if (webviewView.visible) {
+        this.updateBadge();
+      }
     });
     this.postState();
   }
@@ -325,7 +344,7 @@ export class MetadataChangesViewProvider implements vscode.WebviewViewProvider {
         await this.applyDiscard(message.payload?.nodeId);
         return;
       case 'commit':
-        this.applyCommit(message.payload?.message);
+        this.applyCommit(message.payload?.message, message.payload?.mode ?? 'commit');
         return;
       case 'openDiff':
         await this.openDiff(message.payload?.nodeId);
@@ -482,7 +501,14 @@ export class MetadataChangesViewProvider implements vscode.WebviewViewProvider {
     this.refresh();
   }
 
-  private applyCommit(message: string | undefined): void {
+  /**
+   * Фиксирует застейдженное и, в зависимости от варианта split-кнопки, обменивается
+   * с remote. Порядок важен: сначала {@link commit} + {@link refresh} (панель
+   * пустеет сразу), и только потом отправка/синхронизация — при провале обмена с
+   * remote локальный коммит уже сделан и не теряется, а ошибка показывается
+   * пользователю (как в штатном SCM). Для `sync` сперва {@link pull}, затем push.
+   */
+  private applyCommit(message: string | undefined, mode: CommitMode): void {
     const text = (message ?? '').trim();
     if (text.length === 0) {
       return;
@@ -490,6 +516,23 @@ export class MetadataChangesViewProvider implements vscode.WebviewViewProvider {
     commit(this.services.gitRoot, text);
     this.commitMessage = '';
     this.refresh();
+    if (mode === 'commit') {
+      return;
+    }
+    try {
+      if (mode === 'sync') {
+        pull(this.services.gitRoot);
+      }
+      push(this.services.gitRoot);
+      // Обмен с remote мог изменить рабочее дерево (pull) — пере-читаем панель.
+      this.refresh();
+    } catch (error) {
+      // Провал обмена мог оставить рабочее дерево изменённым (конфликт merge при
+      // sync) — пере-читаем панель, чтобы она отражала реальное состояние.
+      this.refresh();
+      const action = mode === 'sync' ? 'синхронизировать' : 'отправить';
+      void vscode.window.showErrorMessage(`Не удалось ${action} изменения: ${describeGitError(error)}`);
+    }
   }
 
   private async openDiff(nodeId: string | undefined): Promise<void> {
@@ -529,6 +572,17 @@ export class MetadataChangesViewProvider implements vscode.WebviewViewProvider {
 /** Текущее время в секундах Unix (для относительных дат графа истории). */
 function nowSec(): number {
   return Math.floor(Date.now() / 1000);
+}
+
+/**
+ * Текст ошибки git-обмена (push/pull) для показа пользователю. `execFileSync`
+ * из {@link push}/{@link pull} всегда бросает `Error` со stderr git в `message`
+ * (ветка Error покрыта тестом провала отправки); правая ветка `String(error)` —
+ * защитный резерв на нестандартный throw, в этом контексте недостижима.
+ */
+function describeGitError(error: unknown): string {
+  /* c8 ignore next */
+  return error instanceof Error ? error.message : String(error);
 }
 
 /** Число уникальных изменённых файлов в модели (части объектов + «Прочие») — для бейджа. */
