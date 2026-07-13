@@ -79,6 +79,8 @@ function buildRootProperties(kind: MetaKind, name: string, ruleset: FormatRulese
       return join([...base, typeBlock()]);
     case 'CommonModule':
       return join([...base, ...buildCommonModuleProperties()]);
+    case 'CommonForm':
+      return join([...base, ...buildCommonFormProperties()]);
     case 'ScheduledJob':
       return join([...base, ...buildScheduledJobProperties()]);
     case 'Subsystem':
@@ -199,6 +201,27 @@ function buildDataProcessorProperties(): string[] {
     '\t\t\t<DefaultForm/>',
     '\t\t\t<AuxiliaryForm/>',
     '\t\t\t<IncludeHelpInContents>false</IncludeHelpInContents>',
+    '\t\t\t<ExtendedPresentation/>',
+    '\t\t\t<Explanation/>',
+  ];
+}
+
+/**
+ * Свойства дескриптора общей формы (`CommonForms/<Имя>.xml`). Ключевое —
+ * `<FormType>Managed</FormType>`: при отсутствии тега платформа 1С трактует форму
+ * как обычную (Ordinary), а расширение создаёт только управляемые формы. Порядок и
+ * состав свойств сняты с эталона 2.21 (`example/.../CommonForms/*.xml`) и совпадают
+ * с каноном `COMMON_FORM_ROOT_META_PROPERTY_KEYS` панели свойств.
+ */
+function buildCommonFormProperties(): string[] {
+  return [
+    '\t\t\t<FormType>Managed</FormType>',
+    '\t\t\t<IncludeHelpInContents>false</IncludeHelpInContents>',
+    '\t\t\t<UsePurposes>',
+    '\t\t\t\t<v8:Value xsi:type="app:ApplicationUsePurpose">PlatformApplication</v8:Value>',
+    '\t\t\t</UsePurposes>',
+    '\t\t\t<UseInInterfaceCompatibilityMode>Any</UseInInterfaceCompatibilityMode>',
+    '\t\t\t<UseStandardCommands>true</UseStandardCommands>',
     '\t\t\t<ExtendedPresentation/>',
     '\t\t\t<Explanation/>',
   ];

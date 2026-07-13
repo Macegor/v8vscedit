@@ -37,6 +37,13 @@ export function addChildToObjectXml(xml: string, options: AddChildMetadataOption
     return addColumnToTabularSectionXml(xml, options.tabularSectionName, options.name, ruleset);
   }
 
+  if (options.childTag === 'Method') {
+    if (!options.urlTemplateName) {
+      return { changed: false, error: 'Не указан URL-шаблон для добавления метода.' };
+    }
+    return addMethodToUrlTemplateXml(xml, options.urlTemplateName, options.name);
+  }
+
   const ownerKind = extractMetadataObjectKind(xml);
   if (!ownerKind) {
     return { changed: false, error: 'Не найден корневой элемент объекта метаданных.' };
@@ -87,6 +94,30 @@ function addColumnToTabularSectionXml(xml: string, tabularSectionName: string, c
   };
 }
 
+function addMethodToUrlTemplateXml(xml: string, urlTemplateName: string, methodName: string): { changed: true; xml: string } | { changed: false; error: string } {
+  const template = findNamedChildBlock(xml, 'URLTemplate', urlTemplateName);
+  if (!template) {
+    return { changed: false, error: `URL-шаблон "${urlTemplateName}" не найден.` };
+  }
+  const templateXml = xml.slice(template.start, template.end);
+  const childObjects = getChildObjectsBlock(templateXml);
+  if (!childObjects) {
+    return { changed: false, error: `В URL-шаблоне "${urlTemplateName}" отсутствует <ChildObjects>.` };
+  }
+  if (hasChildName(childObjects.inner, 'Method', methodName)) {
+    return { changed: false, error: `Метод "${methodName}" уже существует.` };
+  }
+
+  const indent = detectChildIndent(childObjects.inner, '\t\t\t\t\t');
+  const fragment = buildMethodFragment(methodName, indent);
+  const replacement = buildChildObjectsReplacement(childObjects, fragment, indent);
+  const nextTemplateXml = `${templateXml.slice(0, childObjects.start)}${replacement}${templateXml.slice(childObjects.end)}`;
+  return {
+    changed: true,
+    xml: `${xml.slice(0, template.start)}${nextTemplateXml}${xml.slice(template.end)}`,
+  };
+}
+
 /** Сужает тип владельца до известных типов регистров; для прочих — undefined (общий набор свойств). */
 function toRegisterOwnerKind(ownerKind?: string): RegisterOwnerKind | undefined {
   return ownerKind === 'InformationRegister' || ownerKind === 'AccumulationRegister' ? ownerKind : undefined;
@@ -122,7 +153,51 @@ function buildChildFragment(
   if (tag === 'Template') {
     return `${indent}<Template>${escapeXml(name)}</Template>`;
   }
+  if (tag === 'URLTemplate') {
+    return buildUrlTemplateFragment(name, indent);
+  }
+  if (tag === 'Method') {
+    // Метод добавляется в контейнер URL-шаблона (addMethodToUrlTemplateXml),
+    // а не напрямую в <ChildObjects> объекта — сюда управление не доходит.
+    throw new Error('Метод HTTP-сервиса добавляется в URL-шаблон, а не напрямую в объект.');
+  }
   return buildSimpleChildFragment(tag, name, indent);
+}
+
+/**
+ * Свежий URL-шаблон HTTP-сервиса: Name/Synonym/Comment + пустой самозакрытый
+ * `<Template/>` и пустой `<ChildObjects/>` под вложенные методы.
+ */
+function buildUrlTemplateFragment(name: string, indent: string): string {
+  return [
+    `${indent}<URLTemplate uuid="${newUuid()}">`,
+    `${indent}\t<Properties>`,
+    `${indent}\t\t<Name>${escapeXml(name)}</Name>`,
+    buildLocalizedTag(`${indent}\t\t`, 'Synonym', splitCamelCase(name)),
+    `${indent}\t\t<Comment/>`,
+    `${indent}\t\t<Template/>`,
+    `${indent}\t</Properties>`,
+    `${indent}\t<ChildObjects/>`,
+    `${indent}</URLTemplate>`,
+  ].join('\n');
+}
+
+/**
+ * Свежий метод URL-шаблона: Name/Synonym/Comment + `<HTTPMethod>GET</HTTPMethod>`
+ * и пустой самозакрытый `<Handler/>`. Метод — лист, без `<ChildObjects>`.
+ */
+function buildMethodFragment(name: string, indent: string): string {
+  return [
+    `${indent}<Method uuid="${newUuid()}">`,
+    `${indent}\t<Properties>`,
+    `${indent}\t\t<Name>${escapeXml(name)}</Name>`,
+    buildLocalizedTag(`${indent}\t\t`, 'Synonym', splitCamelCase(name)),
+    `${indent}\t\t<Comment/>`,
+    `${indent}\t\t<HTTPMethod>GET</HTTPMethod>`,
+    `${indent}\t\t<Handler/>`,
+    `${indent}\t</Properties>`,
+    `${indent}</Method>`,
+  ].join('\n');
 }
 
 function buildTypedFieldFragment(

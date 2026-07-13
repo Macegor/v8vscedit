@@ -22,9 +22,10 @@ export class ConfigurationXmlEditor {
   modifyObjectProperty(
     xmlPath: string,
     options: {
-      targetKind: 'Self' | 'StandardAttribute' | 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column' | 'TabularSection' | 'Command' | 'EnumValue';
+      targetKind: 'Self' | 'StandardAttribute' | 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column' | 'TabularSection' | 'Command' | 'EnumValue' | 'URLTemplate' | 'Method';
       targetName: string;
       tabularSectionName?: string;
+      urlTemplateName?: string;
       propertyKey: string;
       valueKind: PropertyValueKind;
       value: string | boolean | string[];

@@ -4,7 +4,7 @@ import { MessageBus } from '@ui-shared/api/messageBus';
 import type { HostToUiMessage } from '@ui-shared/protocol/hostMessages';
 import type { TreeNodeDto, TreeNodeActionDto } from '@ui-shared/types/tree';
 import type { UniversalPanelState, StandaloneServerStatusDto } from './main';
-import UniversalTree from './UniversalTree.vue';
+import UniversalTree from '@ui-shared/components/tree/UniversalTree.vue';
 import UniversalSearchBox from './UniversalSearchBox.vue';
 import UniversalProcessingOverlay from './UniversalProcessingOverlay.vue';
 import UniversalStandaloneActions from './UniversalStandaloneActions.vue';
@@ -328,16 +328,7 @@ onUnmounted(() => {
       <template v-else>
         <div class="actions">
           <button type="button" title="Импортировать конфигурации из базы" aria-label="Импортировать конфигурации из базы" @click="sendCommand('v8vscedit.importConfigurations')">
-            <span class="codicon codicon-cloud-download" aria-hidden="true" />
-          </button>
-          <button type="button" title="Обновить изменённые конфигурации" aria-label="Обновить изменённые конфигурации" @click="sendCommand('v8vscedit.updateChangedConfigurations')">
-            <span class="codicon codicon-sync" aria-hidden="true" />
-          </button>
-          <button type="button" title="Запустить тонкий клиент" aria-label="Запустить тонкий клиент" @click="sendCommand('v8vscedit.runThinClient')">
-            <span class="codicon codicon-play" aria-hidden="true" />
-          </button>
-          <button type="button" title="Запустить конфигуратор" aria-label="Запустить конфигуратор" @click="sendCommand('v8vscedit.runConfigurator')">
-            <span class="codicon codicon-tools" aria-hidden="true" />
+            <span class="codicon codicon-arrow-down" aria-hidden="true" />
           </button>
           <button type="button" title="Настройки проекта" aria-label="Настройки проекта" @click="sendCommand('v8vscedit.configureEnvironment')">
             <span class="codicon codicon-settings-gear" aria-hidden="true" />
@@ -345,9 +336,20 @@ onUnmounted(() => {
           <button type="button" title="ИИ и MCP" aria-label="ИИ и MCP" @click="sendCommand('v8vscedit.openAiSettings')">
             <span class="ai-mark" aria-hidden="true">AI</span>
           </button>
+          <button class="group-right" type="button" title="Обновить изменённые конфигурации" aria-label="Обновить изменённые конфигурации" @click="sendCommand('v8vscedit.updateChangedConfigurations')">
+            <span class="codicon codicon-database" aria-hidden="true" />
+          </button>
+          <button type="button" title="Запустить конфигуратор" aria-label="Запустить конфигуратор" @click="sendCommand('v8vscedit.runConfigurator')">
+            <span class="codicon codicon-code-oss" aria-hidden="true" />
+          </button>
+          <button type="button" title="Запустить тонкий клиент" aria-label="Запустить тонкий клиент" @click="sendCommand('v8vscedit.runThinClient')">
+            <span class="codicon codicon-play" aria-hidden="true" />
+          </button>
         </div>
 
+        <!-- TODO: блок «Автономный сервер» временно скрыт — нужно переоформить (см. UniversalStandaloneActions.vue). -->
         <UniversalStandaloneActions
+          v-if="false"
           :status="standaloneStatus"
           :message-bus="messageBus"
         />
@@ -421,6 +423,10 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 3px;
+}
+/* Пустое место между левой группой (импорт/настройки/AI) и правой (обновление/конфигуратор/клиент). */
+.actions .group-right {
+  margin-inline-start: auto;
 }
 button {
   width: 26px;

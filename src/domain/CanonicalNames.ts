@@ -44,7 +44,7 @@ export const DIRECT_CHILD_TAGS: readonly ChildTag[] = [
  */
 export const SEGMENTED_CHILD_TAGS: readonly ChildTag[] = [
   'StandardAttribute', 'Form', 'Command', 'Template',
-  'AddressingAttribute',
+  'AddressingAttribute', 'URLTemplate', 'Method',
 ] as const;
 
 // ─── Слоты модулей: сегмент пути + файл BSL ──────────────────────────────
@@ -387,7 +387,10 @@ export function canonicalSubsystemPath(names: readonly string[]): string {
  *  - для `StandardAttribute`/`Form`/`Command`/`Template`/`AddressingAttribute`
  *    сегмент обязателен;
  *  - для колонок внутри ТЧ (`tabularSectionName` задан + `childTag === 'Attribute'`)
- *    путь имеет форму `…ТабличнаяЧасть.Имя.Реквизит.Колонка`.
+ *    путь имеет форму `…ТабличнаяЧасть.Имя.Реквизит.Колонка`;
+ *  - для методов внутри URL-шаблона (`urlTemplateName` задан + `childTag === 'Method'`)
+ *    путь имеет форму `…URLШаблон.Имя.Метод.Имя` (третий уровень вложенности
+ *    HTTP-сервиса, тот же контейнерный паттерн, что и ТЧ→Колонка).
  */
 export function canonicalChildPath(opts: {
   readonly rootKind: MetaKind;
@@ -395,6 +398,7 @@ export function canonicalChildPath(opts: {
   readonly childTag: ChildTag;
   readonly childName: string;
   readonly tabularSectionName?: string;
+  readonly urlTemplateName?: string;
 }): string {
   const root = canonicalRootPath(opts.rootKind, opts.rootName);
   assertSimpleName(opts.childName, 'canonicalChildPath/childName');
@@ -402,16 +406,18 @@ export function canonicalChildPath(opts: {
   const tagCfg = CHILD_TAG_CONFIG[opts.childTag];
   const segment = tagCfg.pathSegment;
 
-  if (opts.tabularSectionName !== undefined) {
-    assertSimpleName(opts.tabularSectionName, 'canonicalChildPath/tabularSectionName');
-    // Колонка внутри ТЧ: …ТабличнаяЧасть.X.<сегмент дочернего>.Y
-    return [
-      root,
-      CHILD_TAG_CONFIG.TabularSection.pathSegment,
-      opts.tabularSectionName,
-      segment,
-      opts.childName,
-    ].join('.');
+  // Контейнерный дочерний элемент (колонка ТЧ или метод URL-шаблона):
+  // …<Контейнер>.Имя.<сегмент дочернего>.Имя. Имя контейнера-родителя задаётся
+  // отдельным полем (`tabularSectionName`/`urlTemplateName`) — осознанное
+  // дублирование слота имени контейнера, а не параллельный реестр типов.
+  const container = opts.urlTemplateName !== undefined
+    ? { segment: CHILD_TAG_CONFIG.URLTemplate.pathSegment, name: opts.urlTemplateName, ctx: 'canonicalChildPath/urlTemplateName' }
+    : opts.tabularSectionName !== undefined
+      ? { segment: CHILD_TAG_CONFIG.TabularSection.pathSegment, name: opts.tabularSectionName, ctx: 'canonicalChildPath/tabularSectionName' }
+      : undefined;
+  if (container) {
+    assertSimpleName(container.name, container.ctx);
+    return [root, container.segment, container.name, segment, opts.childName].join('.');
   }
 
   if (DIRECT_CHILD_TAGS.includes(opts.childTag)) {
@@ -490,6 +496,8 @@ export type ParsedCanonicalPath =
       readonly childTag: ChildTag;
       readonly childName: string;
       readonly tabularSectionName?: string;
+      /** Имя URL-шаблона-контейнера для методов HTTP-сервиса (аналог `tabularSectionName`). */
+      readonly urlTemplateName?: string;
     }
   | {
       readonly kind: 'module';
@@ -620,7 +628,30 @@ function parseAfterRoot(
     return { kind: 'child', rootKind, rootName, childTag, childName };
   }
 
-  // 3+ сегмента: либо колонка ТЧ, либо модуль формы/команды.
+  // 3+ сегмента: либо метод URL-шаблона, либо колонка ТЧ, либо модуль формы/команды.
+  if (childTag === 'URLTemplate' && rest.length === 4) {
+    const templateName = rest[1];
+    const innerSegment = rest[2];
+    const innerName = rest[3];
+    assertSimpleName(templateName, 'parseCanonicalPath/urlTemplateName');
+    assertSimpleName(innerName, 'parseCanonicalPath/methodName');
+    const innerTag = CHILD_SEGMENT_TO_TAG.get(innerSegment);
+    if (innerTag !== 'Method') {
+      throw new Error(
+        `parseCanonicalPath: внутри URLШаблон.X ожидается сегмент «Метод», ` +
+        `получено «${innerSegment}» в «${input}»`,
+      );
+    }
+    return {
+      kind: 'child',
+      rootKind,
+      rootName,
+      childTag: 'Method',
+      childName: innerName,
+      urlTemplateName: templateName,
+    };
+  }
+
   if (childTag === 'TabularSection' && rest.length === 4) {
     const tsName = rest[1];
     const innerSegment = rest[2];

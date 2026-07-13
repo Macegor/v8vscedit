@@ -93,14 +93,15 @@ export function resolveTypeRegistryFilter(key: string): TypeRegistryFilter {
 
 export function resolvePropertyTarget(node: MetadataNode): {
   xmlPath: string;
-  targetKind: 'Self' | 'StandardAttribute' | 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column' | 'TabularSection' | 'Command' | 'EnumValue';
+  targetKind: 'Self' | 'StandardAttribute' | 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column' | 'TabularSection' | 'Command' | 'EnumValue' | 'URLTemplate' | 'Method';
   targetName: string;
   tabularSectionName?: string;
+  urlTemplateName?: string;
 } | null {
   if (!node.xmlPath) {
     return null;
   }
-  const directKinds: Partial<Record<string, 'StandardAttribute' | 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column' | 'TabularSection' | 'Command' | 'EnumValue'>> = {
+  const directKinds: Partial<Record<string, 'StandardAttribute' | 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column' | 'TabularSection' | 'Command' | 'EnumValue' | 'URLTemplate' | 'Method'>> = {
     StandardAttribute: 'StandardAttribute',
     Attribute: 'Attribute',
     AddressingAttribute: 'AddressingAttribute',
@@ -110,6 +111,8 @@ export function resolvePropertyTarget(node: MetadataNode): {
     TabularSection: 'TabularSection',
     Command: 'Command',
     EnumValue: 'EnumValue',
+    URLTemplate: 'URLTemplate',
+    Method: 'Method',
   };
   const mapped = directKinds[node.nodeKind];
   if (mapped) {
@@ -120,6 +123,7 @@ export function resolvePropertyTarget(node: MetadataNode): {
         ? node.metaContext?.standardAttributeName ?? node.textLabel
         : node.textLabel,
       tabularSectionName: node.metaContext?.tabularSectionName,
+      urlTemplateName: node.metaContext?.urlTemplateName,
     };
   }
   if (node.nodeKind === 'Form') {
@@ -180,7 +184,7 @@ export function isValidMetadataName(value: string): boolean {
 
 export function isRootObjectNode(
   node: MetadataNode,
-  target: { targetKind: 'Self' | 'StandardAttribute' | 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column' | 'TabularSection' | 'Command' | 'EnumValue' }
+  target: { targetKind: 'Self' | 'StandardAttribute' | 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column' | 'TabularSection' | 'Command' | 'EnumValue' | 'URLTemplate' | 'Method' }
 ): boolean {
   if (target.targetKind !== 'Self') {
     return false;

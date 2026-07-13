@@ -10,7 +10,7 @@
 1. **Навигатор метаданных** — дерево объектов из XML-выгрузки (CF и CFE), свойства, чтение/создание/редактирование метаданных, открытие BSL-модулей.
 2. **Языковая поддержка BSL** — LSP-клиент для внешнего `bsl-analyzer`.
 
-Подробная документация — в `./docs` (`architecture.md`, `metadata-navigator.md`, `metadata-parser.md`, `bsl-language-support.md`, `mcp-paths.md`, `xml-format-rulesets.md`, `agentic-pipeline.md`, `vscode-extension-best-practices.md`).
+Подробная документация — в `./docs` (`architecture.md`, `metadata-navigator.md`, `metadata-parser.md`, `bsl-language-support.md`, `mcp-paths.md`, `mcp-server-lifecycle.md`, `xml-format-rulesets.md`, `agentic-pipeline.md`, `vscode-extension-best-practices.md`, `git-metadata-changes.md`, `git-history-graph.md`).
 
 ## Язык общения
 
@@ -48,6 +48,19 @@
 с конкретными замечаниями; после доработки — повторный `qa-e2e` и `reviewer`. При сомнении в размере
 задачи оркестратор выбирает FULL-трек.
 
+**Эффективность конвейера (обязанности оркестратора):**
+
+- **Не дроби `test-writer`.** Один брифинг = все тесты задачи сразу: покрытие новых файлов до 100% (все
+  ветки), параметризация по конечным множествам значений (enum/настройки, напр. `host`), helper'ы
+  диалогов и т.п. Отдельные вызовы «дописать тест на X», «добрать покрытие Y» — это лишние ре-циклы;
+  включай их в первый бриф. Исключение — реальный возврат от reviewer/qa по новому дефекту.
+- **Гейт покрытия — `coverage:changed`, не глобальный `coverage`.** qa-e2e проверяет 100% на изменённых
+  файлах; глобальный порог красный из-за легаси и НЕ основание для RED. Не давай агентам гонять
+  stash/baseline-сравнения и десятки повторов «на стабильность».
+- **Флейк = дефект теста, а не окружения.** Возврат автору тестов, а не бесконечные повторы.
+- **Быстрый цикл на промежуточных стадиях:** `test:compile` → `MOCHA_GREP=… test:fast`; полный `npm test`
+  — один раз на стадии qa-e2e.
+
 ## Команды
 
 ```bash
@@ -56,13 +69,15 @@ npm run watch         # параллельный watch node + webview (scripts/v
 npm run typecheck     # tsc (расширение) + vue-tsc (webview); = npm run compile
 npm run lint          # eslint . --max-warnings=0
 npm test              # запуск всех тестов через @vscode/test-electron (out/test/runTests.js)
-npm run coverage      # c8 с порогом 100%
+npm run test:fast     # прогон без pretest-пересборки; фильтр: MOCHA_GREP='<regex>' npm run test:fast
+npm run coverage:changed # 100% ТОЛЬКО по изменённым production-файлам (гейт задачи; scripts/patch-coverage.mjs)
+npm run coverage      # c8 с глобальным порогом 100% (аспирационный; сейчас RED из-за легаси-долга — не гейт задачи)
 npm run coverage:report  # покрытие без падения по порогу (диагностика)
 ```
 
-- **`npm test` требует предварительной сборки.** Скрипт `pretest` уже делает `typecheck → build → test:compile` (компиляция тестов в `out/` через `tsconfig.test.json`). Тестовый runner берётся из `out/`, т.к. Mocha грузит `out/test/suite/*.js`.
+- **`npm test` требует предварительной сборки.** Скрипт `pretest` делает `typecheck → build:node → build:webview → test:compile` (без `clean` — сборка инкрементальная; компиляция тестов в `out/` через `tsconfig.test.json`). Тестовый runner берётся из `out/`, т.к. Mocha грузит `out/test/suite/*.js`.
 - Запуск под конкретной версией VS Code: `VSCODE_TEST_VERSION=1.85.0 npm test`.
-- **Отдельный тест:** runner (`src/test/suite/index.ts`) грузит все `**/*.test.js` без grep-фильтра. Чтобы прогнать один — временно `test.only(...)` / `suite.only(...)` (Mocha UI — `tdd`), затем пересобрать тесты (`npm run test:compile`).
+- **Отдельный тест — быстро и без `.only`.** Runner (`src/test/suite/index.ts`) читает `MOCHA_GREP` и применяет `mocha.grep()`. Итерация: правка теста → `npm run test:compile` → `MOCHA_GREP='<regex по имени suite/теста>' npm run test:fast` (`test:fast` НЕ запускает `pretest`, т.е. не пересобирает Vite — на порядок быстрее полного `npm test`). `.only` больше не нужен.
 - Перед любым коммитом: `npm run compile` и **`npm run lint`** должны проходить без ошибок и предупреждений.
 - Точки входа: `main` = `./dist/extension.js`; CLI — `dist/cli/onec-tools.js`. Целевая среда — VS Code API ≥ 1.85, TypeScript ≥ 5.3, strict, ES2020.
 
@@ -130,9 +145,21 @@ src/
 │   ├── support/                      # SupportInfoReader/Service (ParentConfigurations.bin), Logger
 │   ├── cache/                        # MetadataCache, hashCache (CLI)
 │   ├── repository/                   # хранилище 1С, локальные захваты
-│   ├── git/                          # статус Git для узлов метаданных
+│   ├── git/                          # статус Git для узлов метаданных (GitMetadataStatusService,
+│   │                                  # декорации) + представление «Изменения метаданных»
+│   │                                  # (GitPorcelainReader, MetadataChangeResolver,
+│   │                                  # MetadataChangeAggregator, GitBlobReader, GitStatusReader,
+│   │                                  # GitWriteService — см. docs/git-metadata-changes.md) +
+│   │                                  # чистое ядро графа истории (GitLogReader, GitLogParser,
+│   │                                  # GitGraphLayout, GitCommitChangesReader — см.
+│   │                                  # docs/git-history-graph.md; граф — сворачиваемый блок панели
+│   │                                  # «Изменения метаданных», отдельного webview/вкладки нет)
 │   ├── environment/                  # bsl-analyzer.toml, окружение проекта, реестр баз
 │   ├── process/                      # поиск платформы, spawn, декодер OEM/Win1251
+│   ├── mcp/                          # McpServerIdentity/McpStartDecision/McpPortProbe/
+│   │                                  # McpConflictPrompt/McpHost — чистая логика жизненного цикла
+│   │                                  # встроенного MCP-сервера (bind/reuse/conflict, закрытие порта),
+│   │                                  # без vscode; см. docs/mcp-server-lifecycle.md
 │   └── skills/                       # AiSkillsInstaller — установка ИИ-навыков
 │
 ├── ui/                               # Всё, что знает про vscode API
@@ -140,9 +167,25 @@ src/
 │   ├── views/                        # webview-провайдеры
 │   │   ├── universal/                # UniversalPanelViewProvider — ОСНОВНОЙ UI навигатора
 │   │   ├── properties/               # PropertyBuilder по PropertySchema
+│   │   ├── changes/                  # changesDtoBuilder (листья, чистый) + changesTreeAssembler
+│   │   │                              # (сборка навигаторной иерархии секции, чистый) +
+│   │   │                              # changesHistorySection (чистый helper состояния блока
+│   │   │                              # «История» поверх views/history/*, см. ниже) +
+│   │   │                              # MetadataChangesViewProvider (ЕДИНСТВЕННЫЙ webview-провайдер
+│   │   │                              # v8vsceditChanges — панель с ДВУМЯ сворачиваемыми блоками
+│   │   │                              # «Изменения»/«История»; дерево «Изменения» повторяет иерархию
+│   │   │                              # навигатора через treeProvider; см. docs/git-metadata-changes.md
+│   │   │                              # и docs/git-history-graph.md)
+│   │   ├── history/                  # ТОЛЬКО чистые модули (без vscode): historyGraphDtoBuilder/
+│   │   │                              # historyGraphController — read-only переиспользование движка
+│   │   │                              # changes/; см. docs/git-history-graph.md
 │   │   └── subsystem|search|repository|environment|standalone|…
 │   ├── commands/                     # CommandRegistry.registerAll + подпапки по доменам
-│   ├── mcp/                          # V8McpServer, McpNodeRegistry, McpPropertyService
+│   ├── git/                          # OnecGitContentProvider — схема onec-git для diff HEAD/индекс
+│   ├── mcp/                          # V8McpServer (тонкий HTTP-фасад: транспорт MCP, служебные
+│   │                                  # эндпоинты /identity+/shutdown — не MCP-инструменты,
+│   │                                  # см. docs/mcp-server-lifecycle.md), McpNodeRegistry,
+│   │                                  # McpPropertyService
 │   └── readonly/                     # BslReadonlyGuard
 │
 ├── lsp/                              # LspManager + analyzer/ (внешний bsl-analyzer; встроенного сервера нет)
@@ -199,11 +242,11 @@ export interface MetaTypeDef {
 
 ### Webview (`src-ui/`)
 
-Vue-приложения (сборка `vite.webview.config.ts`, проверка типов `vue-tsc`/`tsconfig.ui.json`). `src-ui/apps/*` — отдельные панели (`universal`, `dynamic-panel`, `environment`, `subsystem`, `repository-*`, `standalone`, `ai`, `tree-search`). `src-ui/shared/` — общий код: `protocol/` (контракт сообщений webview ↔ расширение), `state/`, `components/`, `api/`. При изменении взаимодействия панели и расширения правьте обе стороны протокола.
+Vue-приложения (сборка `vite.webview.config.ts`, проверка типов `vue-tsc`/`tsconfig.ui.json`). `src-ui/apps/*` — отдельные панели (`universal`, `dynamic-panel`, `environment`, `subsystem`, `repository-*`, `standalone`, `ai`, `tree-search`, `changes` — панель «Изменения метаданных»: ДВА сворачиваемых блока — «Изменения» (SCM-шапка + дерево, повторяющее навигаторную иерархию, обрезанную по изменениям) и «История» (граф git-коммитов `CommitGraph.vue` с inline-раскрытием коммита: детали + дерево изменений через общий `UniversalTree`, read-only, ленивая загрузка при первом раскрытии, см. `docs/git-history-graph.md`); отдельного приложения `apps/history` больше нет — граф целиком часть `apps/changes`). `src-ui/shared/` — общий код: `protocol/` (контракт сообщений webview ↔ расширение), `state/`, `components/` (в т.ч. `components/tree/UniversalTree*.vue` — дерево, общее для навигатора и панели изменений, включая её блок истории), `api/`. При изменении взаимодействия панели и расширения правьте обе стороны протокола.
 
 ## MCP-сервер для ИИ-агентов
 
-`src/ui/mcp/V8McpServer.ts` — локальный MCP-сервер, официальный канал автоматизации. Запускается только после `reloadEntries()`, слушает loopback, не даёт агенту прямой доступ к shell/произвольным путям/произвольным VS Code командам.
+`src/ui/mcp/V8McpServer.ts` — локальный MCP-сервер, официальный канал автоматизации. Запускается только после `reloadEntries()`, слушает loopback, не даёт агенту прямой доступ к shell/произвольным путям/произвольным VS Code командам. Старт/остановка, гарантированное освобождение порта и разрешение конфликта порта с другим инстансом/проектом — отдельный слой `infra/mcp/`, см. [mcp-server-lifecycle.md](./docs/mcp-server-lifecycle.md) (не путать с каноном путей инструментов ниже).
 
 Правила:
 - SDK: production-ветка `@modelcontextprotocol/sdk` v1.x. Транспорт: Streamable HTTP на `127.0.0.1`/`localhost`/`::1`; удалённый bind запрещён.
@@ -236,6 +279,7 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
 - **Новый тип метаданных:** запись в `META_TYPES` → при спец-модуле `ModuleSlot` + карта в `MetaPathResolver` → при наборе свойств схема в `PROPERTY_SCHEMAS` → иконка `src/icons/{light,dark}/<icon>.svg` → при нестандартной сборке узла builder в `ui/tree/nodeBuilders/` → тест `ObjectXmlReader` на пример из `example/`.
 - **Новый слот модуля (`ModuleSlot`):** литерал в `domain/ModuleSlot.ts` → путь в карте `MetaPathResolver` → при необходимости `OpenModuleCommandId` + команда → поле `modules` в записях `META_TYPES`.
 - **Новый дочерний тег (`ChildTag`):** значение в `domain/ChildTag.ts` + `CHILD_TAG_CONFIG` → при своём контейнере расширить `ObjectXmlReader.parseChildren` → тег в `childTags` нужных `META_TYPES`.
+- **Новый контейнерный дочерний тип со своими вложенными листьями** (паттерн ТЧ→Колонка; второй прецедент — HTTPСервис→URLШаблон→Метод, см. [mcp-paths.md](./docs/mcp-paths.md#26-расширенные-примеры-путей) и [metadata-navigator.md](./docs/metadata-navigator.md#контейнерные-дочерние-узлы-тчколонка-и-httpсервисurlшаблонметод)): контейнер и лист — обе отдельные записи `MetaKind`/`META_TYPES`/`ChildTag`; лист парсится в `MetaChild.columns` контейнера через `ObjectXmlReader.toXxxChild` (образец `toTabularSectionChild`) → имя родителя-контейнера пробрасывается ПАРАЛЛЕЛЬНЫМ полем контекста (`tabularSectionName`/`urlTemplateName`), а не переименованием существующего слота и не новым реестром → `domain/CanonicalNames.ts` (`canonicalChildPath`) обобщает контейнерную ветку по этому полю → узел дерева строится симметрично в ДВУХ источниках — `infra/cache/MetadataCache.ts` (webview) и `ui/tree/nodeBuilders/metaObjectTreeBuilder.ts` (нативный TreeView/свойства) → `infra/xml/XmlUtils.ts` получает nesting-aware `findXxxRangeInYyy`/`extractXxxXmlFromYyy` (образец `findColumnRangeInTabularSection`) → MCP add-инструмент для листа получает флаг-аналог `inTabularSection` (например `inUrlTemplate`) в `McpAddToolsRegistration.ts`, владелец — сам контейнер (`allowedOwnerKinds: ['<Контейнер>']`).
 - **Новая схема свойств:** объект-схема в `PROPERTY_SCHEMAS` → при новом `PropertyValueKind` расширить `_types.ts` + `PropertyBuilder.ts`. Регулярки — только в `infra/xml/`.
 - **Новая команда:** класс в `ui/commands/...` с `readonly id` → регистрация в `CommandRegistry.registerAll` → `package.json → contributes.commands` → при меню узла `contributes.menus` c `when: viewItem =~ /…/` → при хоткее `contributes.keybindings`.
 - **Новый builder узла:** `ui/tree/nodeBuilders/<имя>.ts` → регистрация в диспетчере `metaObjectTreeBuilder.ts`. XML — только через `parseObjectXml`/`ObjectXmlReader`.
@@ -247,6 +291,52 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
 - **Новый watcher:** `FileSystemWatcher` — только в `Container` или `ui/support/`; обработчик делегирует в сервис.
 - **Внешняя интеграция (vrunner):** запуск процесса в `ui/commands/ext/`; декодирование OEM/Win1251 через `iconv-lite`; прогресс/отмена через `vscode.window.withProgress`.
 - **Открытие BSL-модулей:** только реальные `file://` документы (виртуальная схема `onec://` удалена). Readonly — через `ui/readonly/BslReadonlyGuard.ts`.
+- **Изменение жизненного цикла/безопасности встроенного MCP-сервера** (порт, идентичность процесса,
+  graceful shutdown, Host/Origin, отличается от «новый MCP-инструмент» из раздела выше): чистая логика —
+  в `infra/mcp/` (`McpServerIdentity`, `McpStartDecision`, `McpPortProbe`, `McpConflictPrompt`, `McpHost`,
+  без `vscode`) → тонкий адаптер конкретного эндпоинта/диалога — `ui/mcp/V8McpServer.ts` (HTTP-роутинг,
+  служебные `/identity`+`/shutdown` — не MCP-инструменты) и `Container` (чтение настроек `v8vscedit.mcp.*`,
+  показ диалога конфликта порта). См. [mcp-server-lifecycle.md](./docs/mcp-server-lifecycle.md).
+- **Новая часть объекта в панели «Изменения метаданных»** (`MetadataPartKind`, см.
+  [git-metadata-changes.md](./docs/git-metadata-changes.md)): случай в
+  `infra/git/MetadataChangeResolver.ts` (`resolveSubPath`/дизамбигуация слота через
+  `META_TYPES[kind].modules`) → при новом варианте схлопывания статуса — `combineStatus` в
+  `infra/git/MetadataChangeAggregator.ts` → метка/статус ЛИСТА в
+  `ui/views/changes/changesDtoBuilder.ts` (`partLabelOf`/`toGitStatus`, функции `buildObjectNode`/
+  `buildPartNode`; навигаторную иерархию НАД листом строит `changesTreeAssembler.ts` +
+  `MetadataChangesViewProvider.resolveAncestors`, этот слой не трогается для новой части) → тест на
+  реальном временном git-репозитории (образец — `support/changesFixtures.ts`). Каноничный путь владельца
+  — только через `domain/CanonicalNames.ts` (`canonicalRootPath`), не новый форматтер.
+- **Новая git-мутация над панелью изменений** (аналог stage/unstage/discard/commit): движок — функция
+  в `infra/git/GitWriteService.ts` (без `vscode`) → действие подключается веткой в
+  `MetadataChangesViewProvider.handleMessage` (значение `command` протокола) → то же значение `command`
+  добавляется на стороне ui в `src-ui/apps/changes/ChangesApp.vue` (пункт контекстного меню узла и/или
+  кнопка в `ChangesCommitBox.vue`) → узлы для действия строит `changesDtoBuilder` из `ChangesModel`
+  (`resolveChangeAddress` — единственное место, расшифровывающее `nodeId` обратно в файлы). Никаких
+  команд `package.json → contributes.commands`/меню `view/item/context` для этой панели не заводится —
+  весь UI-контракт живёт во внутреннем протоколе webview (см.
+  [git-metadata-changes.md](./docs/git-metadata-changes.md#формат-сообщений-протокола)).
+- **Новая возможность блока «История»** (граф git-коммитов внутри панели «Изменения метаданных», НЕ
+  отдельная вкладка/провайдер, см. [git-history-graph.md](./docs/git-history-graph.md)), в зависимости от
+  слоя:
+  - новая колонка/поле графа (например автор-аватар, статус CI) — `RawCommit`/`GitLogParser` (если
+    берётся из `git log`) → `GraphRowDto` в `ui/views/history/historyGraphDtoBuilder.ts` →
+    `src-ui/shared/types/history.ts` (зеркало) → отрисовка в `src-ui/apps/changes/CommitGraph.vue`;
+  - новая команда протокола (аналог `selectCommit`/`openCommitDiff`/`historyLoadMore`/`historyRefresh`) —
+    `MetadataChangesViewProvider.handleMessage` (ветка `switch (message.command)`) → та же строка
+    `command` добавляется в `src-ui/apps/changes/ChangesApp.vue` (`sendCommand`); чистая бизнес-логика
+    команды — в `historyGraphController.ts`/`ChangesHistorySection` (`ui/views/changes/
+    changesHistorySection.ts`), а не в самом провайдере;
+  - изменение алгоритма раскладки дорожек — только `infra/git/GitGraphLayout.ts` (чистая функция без
+    `vscode`), тест на реальном временном git-репозитории с ветвлением/merge (образец —
+    `support/changesFixtures.ts:buildHistoryRepo`);
+  - новое поле/метод состояния графа (пагинация, выбор коммита) — `ChangesHistorySection`
+    (`ui/views/changes/changesHistorySection.ts`), а не поля самого `MetadataChangesViewProvider` —
+    провайдер остаётся тонким диспетчером команд поверх этого helper'а;
+  - новая часть/статус объекта в дереве изменений коммита переиспользует ТОТ ЖЕ путь, что и панель
+    изменений (см. пункт выше «Новая часть объекта в панели «Изменения метаданных»»), т.к.
+    `buildCommitChangesSection` вызывает те же `buildObjectNode`/`buildPartNode`/`synthesizeAncestors` —
+    отдельного реестра для блока истории не заводится.
 - **Декомпозиция God-класса (косметика, без изменения поведения):** characterization/байт-golden-тест ДО дробления (фиксирует текущий выход) → вынос по доменам/ответственности в подпапку того же слоя (`ui/mcp/registration/`, `infra/xml/<область>/`) через `git mv`/перенос функций без изменения публичного API фасада → диспетчер-`switch` → таблица (данные в `META_TYPES`/спец-реестр infra, поведение — функции поверх) → эталоны golden при этом НЕ редактируются: их правка означает регресс поведения, а не косметику. Для XML-генераторов (`MetadataXmlCreator`, `FormBuilders`) байт-golden обязателен как входное условие (см. запрет №17).
 
 ## Запреты и анти-паттерны
@@ -280,10 +370,11 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
 ## TDD и покрытие
 
 1. **Любое изменение поведения начинается с теста** (красный → код → зелёный).
-2. **Покрытие production-кода — 100%** по строкам, веткам, функциям, операторам.
-3. **Заглушки/фиктивные ассёрты/тесты ради покрытия запрещены.** Тест проверяет реальное поведение на настоящих XML-фикстурах (`example/src/cf`, `example/src/cfe/EVOLC`), реальных временных файлах или реальном процессе; mock/stub допустимы только для внешней недоступной системы с обоснованием.
-4. Непокрываемую из-за VS Code API логику выносить в `domain/`/`infra/` и покрывать unit-тестом; тонкий UI-адаптер — интеграционным тестом.
-5. Перед завершением задачи — `npm test` и `npm run coverage`. Если нельзя выполнить локально — зафиксировать причину, задачу не считать завершённой.
+2. **Покрытие кода, ЗАТРОНУТОГО изменением, — 100%** по строкам, веткам, функциям, операторам. Гейт задачи — `npm run coverage:changed` (проверяет ровно изменённые/новые production-файлы). Глобальный `npm run coverage --100` сейчас красный из-за унаследованного легаси-долга в несвязанных областях (`ui/tree/nodeBuilders/*`, `ExtensionCommandRunner`, `RepositoryCommandRunner`, `InitializeProjectCommand`, `infra/xml/form/*` и др.) — это **известное состояние, не предмет каждой задачи**; не трать время, доказывая это заново через stash/baseline. `Container.ts`/`extension.ts` исполняются в Extension Host и c8 не инструментируются — покрываются интеграционно, из гейта изменённых файлов исключены.
+3. **Заглушки/фиктивные ассёрты/тесты ради покрытия запрещены.** Тест проверяет реальное поведение на настоящих XML-фикстурах (`example/src/cf`, `example/src/cfe/EVOLC`), реальных временных файлах или реальном процессе; mock/stub допустимы только для внешней недоступной системы с обоснованием. Тесты **детерминированы** — без гонок/угадывания таймингов; учитывай фоновое поведение SDK/клиентов.
+4. Непокрываемую из-за VS Code API логику выносить в `domain/`/`infra/` и покрывать unit-тестом; тонкий UI-адаптер — интеграционным тестом. Осознанно недостижимую защитную ветку — `/* c8 ignore */` с обоснованием, а не оставлять пробел для qa.
+5. **Покрытие новых файлов доводится до 100% за один проход автора тестов** (перечислить ветки заранее: ошибки, таймауты, guard'ы, граничные входы; параметризовать по конечным множествам значений — enum/настройки, напр. `host ∈ {127.0.0.1, localhost, ::1}`), чтобы не гонять лишний ре-цикл через qa.
+6. Перед завершением задачи — `npm test` (регресс) и `npm run coverage:changed` (100% на изменённом). Если нельзя выполнить локально — зафиксировать причину, задачу не считать завершённой.
 
 ## Рабочий процесс и отладка
 
@@ -311,6 +402,21 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
 3. Миграция XML-парсинга на `fast-xml-parser` (внутри `infra/xml/*` — регулярки), без изменения публичного API ридеров.
 4. Сильная типизация дерева: `TreeNodeModel` → discriminated union по `kind`.
 5. `ui/views/properties/_types.ts` — окончательно отделить типы панели свойств.
+6. `infra/git/GitStatusReader.ts` дублирует запуск `git status`/поиск корня с `GitMetadataStatusService`
+   (панель «Изменения метаданных» vs декорации навигатора) — кандидат на объединение, см.
+   [git-metadata-changes.md](./docs/git-metadata-changes.md#известные-ограничения).
+7. Панель «Изменения метаданных» показывает дерево навигаторной иерархии, но лист (объект) раскрывается
+   только до глубины «объект → изменённая часть» (модуль/Свойства/форма), без разворота части до
+   атрибута/колонки — см. [git-metadata-changes.md](./docs/git-metadata-changes.md#известные-ограничения).
+8. Панель «Изменения метаданных»: `findNavigatorNode` ищет узел объекта в `MetadataTreeProvider`
+   отдельным DFS-обходом на КАЖДУЮ изменённую группу (O(изменения × размер дерева) на `refresh()`) —
+   кандидат на индексацию дерева одним проходом; `synthesizeAncestors` для удалённых объектов группы
+   `documents-branch` не восстанавливает промежуточную ветвь «Документы» — см.
+   [git-metadata-changes.md](./docs/git-metadata-changes.md#известные-ограничения).
+9. Блок «История» панели «Изменения метаданных»: пагинация графа — полная перераскладка растущего окна
+   `git log --max-count` на каждый `historyLoadMore` (без курсора/`--skip`, осознанно ради детерминизма
+   дорожек); резолвинг принадлежности файлов коммита объектам идёт по ТЕКУЩЕМУ списку `configRoots`, а не
+   по структуре выгрузки на момент коммита — см. [git-history-graph.md](./docs/git-history-graph.md#известные-ограничения).
 
 ## `.cursor/`, `.codex/`, `.claude/skills/` — это доменные 1С-скилы, а не разработка расширения
 

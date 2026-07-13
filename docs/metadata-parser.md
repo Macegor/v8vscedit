@@ -124,3 +124,31 @@ interface ObjectInfo {
 Маппинг типов на папки — 30 типов объектов: `Catalog → Catalogs`, `Document → Documents`, `CommonModule → CommonModules`, `HTTPService → HTTPServices`, `WebService → WebServices`, `FilterCriterion → FilterCriteria`, и т.д.
 
 Если файл не найден по обоим вариантам — возвращает `null`.
+
+## Второй прецедент контейнерного парсинга: URLTemplate → Method
+
+Актуальный ридер объекта — `src/infra/xml/ObjectXmlReader.ts` (на `fast-xml-parser`
+с `preserveOrder`, не regex — в отличие от описания выше, которое относится к
+устаревшему `ConfigParser.ts`). У HTTP-сервиса (`HTTPService`) третий уровень
+вложенности: `HTTPService → URLTemplate → Method`. `URLTemplate` — контейнер
+(свойство `Template`), `Method` — его лист (`HTTPMethod`, `Handler`).
+
+`ObjectXmlReader.parseChildren` обходит `<URLTemplate>` внутри `<ChildObjects>`
+объекта через `toUrlTemplateChild` (по образцу `toTabularSectionChild` для ТЧ),
+а вложенные `<Method>` — тем же `toMetaChild('Method', …)`, что и колонки ТЧ,
+складывая их в `MetaChild.columns` контейнера. Слот `columns` в
+`domain/MetaObject.ts` документирован как переиспользуемый под оба прецедента.
+
+Точечное чтение/правка одного метода по имени (без разбора всего объекта)
+идёт через nesting-aware функции `infra/xml/XmlUtils.ts`:
+`findMethodRangeInUrlTemplate(xml, urlTemplateName, methodName)` и
+`extractMethodXmlFromUrlTemplate(objectXml, urlTemplateName, methodName)` —
+симметрично `findColumnRangeInTabularSection` для колонок ТЧ. Это необходимо,
+потому что в разных `URLTemplate` одного HTTP-сервиса могут быть одноимённые
+`Method` (например, `GET`-обработчик с одинаковым именем метода в двух разных
+шаблонах) — плоский поиск по имени метода без учёта родителя дал бы неверный
+диапазон.
+
+Канон путей (`HTTPСервисы.X.URLШаблон.T.Метод.M`) и состав MCP-инструментов —
+в [mcp-paths.md](./mcp-paths.md); построение дерева — в
+[metadata-navigator.md](./metadata-navigator.md#контейнерные-дочерние-узлы-тчколонка-и-httpсервисurlшаблонметод).

@@ -111,6 +111,37 @@ interface NodeDescriptor {
 | `Dimension` | `Dimension` | Измерения | `Dimension` |
 | `Resource` | `Resource` | Ресурсы | `Resource` |
 | `EnumValue` | `EnumValue` | Значения | `EnumValue` |
+| `URLTemplate` | `URLTemplate` | URL-шаблоны | `URLTemplate` |
+| `Method` | `Method` | Методы | `Method` |
+
+### Контейнерные дочерние узлы: ТЧ→Колонка и HTTPСервис→URLШаблон→Метод
+
+У части дочерних типов есть собственные вложенные листья — контейнерный узел
+хранит список своих детей, а не только простое значение. Первый прецедент —
+табличная часть с колонками, второй — HTTP-сервис с трёхуровневой
+вложенностью `HTTPService → URLTemplate → Method`: `URLTemplate` — контейнер
+(со своими свойствами `Template`), `Method` — его лист (`HTTPMethod`,
+`Handler`).
+
+Оба прецедента переиспользуют один и тот же слот `MetaChild.columns`
+(`domain/MetaObject.ts`): для ТЧ там лежат колонки (`Attribute`), для
+`URLTemplate` — методы (`Method`). Узел дерева для контейнера строится
+**симметрично в двух источниках**:
+- `infra/cache/MetadataCache.ts` — `buildTabularSectionNode`/`buildUrlTemplateNode`,
+  фактический источник дерева основного UI (webview `UniversalPanelViewProvider`);
+- `ui/tree/nodeBuilders/metaObjectTreeBuilder.ts` — те же билдеры для нативного
+  `TreeView` и панели свойств.
+
+Имя родителя-контейнера при обращении к листу передаётся отдельным
+параллельным полем контекста — `tabularSectionName` у колонки, `urlTemplateName`
+у метода (`ui/tree/TreeNodeModel.ts`, `domain/CanonicalNames.ts`). Это
+осознанное дублирование одного и того же смыслового слота под разные
+контейнеры, а не переименование существующего поля и не новый параллельный
+реестр типов (см. запрет №2 в `CLAUDE.md`).
+
+Полный канон путей `HTTPСервисы.X.URLШаблон.T[.Метод.M]` и состав
+MCP-инструментов `v8vscedit_add_url_template`/`v8vscedit_add_method` — в
+[mcp-paths.md](./mcp-paths.md).
 
 ## Команды навигатора (CommandRegistry)
 
@@ -158,3 +189,19 @@ interface NodeDescriptor {
 `getIconUris(nodeKind, ownershipTag, extensionUri)` возвращает пару URI для светлой и тёмной темы. Для заимствованных объектов (`BORROWED`) добавляет суффикс `-borrowed` к имени иконки.
 
 `getIconName(kind)` в `iconMap.ts` читает `descriptor.icon` и возвращает имя SVG-файла. Иконки хранятся в `src/icons/light/` и `src/icons/dark/`.
+
+## Отдельно: панель «Изменения метаданных»
+
+Рядом с навигатором в том же контейнере активности `v8vscedit` есть независимая webview-панель
+`v8vsceditChanges` — семантический `git status` в терминах объектов метаданных (stage/unstage/discard/
+commit/diff). Она держит свою модель данных изменений (`ChangesModel` из `infra/git/*`, а не
+`MetadataCache`), но её дерево **повторяет навигаторную иерархию** этой панели, обрезанную только до
+изменённых объектов и их предков: `MetadataChangesViewProvider` для каждого изменённого объекта находит
+его узел в `MetadataTreeProvider` (`findNode` по `nodeKind`+`textLabel`) и поднимается `getParent` до
+корня конфигурации, собирая реальную цепочку групп (`Общее → Общие модули → ...`, `Справочники → ...` и
+т.д.); для удалённых объектов (уже отсутствующих в дереве) цепочка синтезируется из `META_TYPES`. Секция
+«Прочие» (файлы вне структуры выгрузки) исключение — она остаётся плоской, у таких файлов нет
+владеющего объекта. Переиспользуется и сам Vue-компонент дерева
+(`src-ui/shared/components/tree/UniversalTree*.vue`), что и у `UniversalPanelViewProvider`.
+Подробности, включая ограничения синтеза для удалённых объектов и производительность поиска узла, — в
+[git-metadata-changes.md](./git-metadata-changes.md#известные-ограничения).

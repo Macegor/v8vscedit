@@ -12,6 +12,7 @@ import {
   extractSynonym,
   findChildMetaElementRange,
   findColumnRangeInTabularSection,
+  findMethodRangeInUrlTemplate,
   hasRealChange,
   writeTextFilePreservingBomAndEol,
 } from './XmlUtils';
@@ -148,6 +149,10 @@ export class ObjectXmlReader {
       result.push(this.toTabularSectionChild(element));
     }
 
+    for (const element of findDirectChildren(directChildren, 'URLTemplate')) {
+      result.push(this.toUrlTemplateChild(element));
+    }
+
     for (const tag of ['Form', 'Template'] as const) {
       for (const element of findDirectChildren(directChildren, tag)) {
         const name = extractSimpleTagFromElement(element, 'Name') ?? collectDirectText(getElementChildren(element));
@@ -190,6 +195,27 @@ export class ObjectXmlReader {
 
     return {
       tag: 'TabularSection',
+      name: extractSimpleTagFromElement(element, 'Name') ?? collectDirectText(getElementChildren(element)),
+      synonym: extractSynonymFromElement(element),
+      columns,
+    };
+  }
+
+  /**
+   * URL-шаблон HTTP-сервиса — контейнер методов (третий уровень вложенности).
+   * Переиспользует слот `columns` под вложенные `Method`, как ТЧ под колонки.
+   */
+  private toUrlTemplateChild(element: XmlElementNode): MetaChild {
+    const columns: MetaChild[] = [];
+    const childObjects = findFirstElement(getElementChildren(element), 'ChildObjects');
+    if (childObjects) {
+      for (const method of findDirectChildren(getElementChildren(childObjects), 'Method')) {
+        columns.push(this.toMetaChild('Method', method));
+      }
+    }
+
+    return {
+      tag: 'URLTemplate',
       name: extractSimpleTagFromElement(element, 'Name') ?? collectDirectText(getElementChildren(element)),
       synonym: extractSynonymFromElement(element),
       columns,
@@ -299,9 +325,10 @@ export class ObjectXmlReader {
   updatePropertyInObject(
     xmlPath: string,
     options: {
-      targetKind: 'Self' | 'StandardAttribute' | 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column' | 'TabularSection' | 'Command' | 'EnumValue';
+      targetKind: 'Self' | 'StandardAttribute' | 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column' | 'TabularSection' | 'Command' | 'EnumValue' | 'URLTemplate' | 'Method';
       targetName: string;
       tabularSectionName?: string;
+      urlTemplateName?: string;
       propertyKey: string;
       valueKind: 'string' | 'boolean' | 'localizedString' | 'metadataReferenceList' | 'metadataFieldList';
       value: string | boolean | string[];
@@ -328,6 +355,14 @@ export class ObjectXmlReader {
           return null;
         }
         return findColumnRangeInTabularSection(xml, options.tabularSectionName, options.targetName);
+      }
+      if (options.targetKind === 'Method') {
+        // Метод — третий уровень вложенности: адресуется nesting-aware по имени
+        // URL-шаблона-контейнера (аналог Column по tabularSectionName).
+        if (!options.urlTemplateName) {
+          return null;
+        }
+        return findMethodRangeInUrlTemplate(xml, options.urlTemplateName, options.targetName);
       }
       if (options.targetKind === 'StandardAttribute') {
         const standardXml = extractStandardAttributeXml(xml, options.targetName, options.tabularSectionName);

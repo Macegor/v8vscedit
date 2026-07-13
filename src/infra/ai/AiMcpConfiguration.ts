@@ -511,6 +511,12 @@ export const EXTENSION_MCP_TOOLS: readonly AiMcpToolInfo[] = [
   { profile: 'extension', name: 'v8vscedit_add_column',
     description: 'Добавляет колонку (реквизит) к табличной части.',
     requirement: 'path к табличной части (Справочники.X.КонтактныеЛица), name' },
+  { profile: 'extension', name: 'v8vscedit_add_url_template',
+    description: 'Добавляет URL-шаблон к HTTP-сервису.',
+    requirement: 'path к HTTP-сервису (HTTPСервисы.X), name' },
+  { profile: 'extension', name: 'v8vscedit_add_method',
+    description: 'Добавляет метод к URL-шаблону HTTP-сервиса.',
+    requirement: 'path к URL-шаблону (HTTPСервисы.X.URLШаблон.Y), name' },
   {
     profile: 'extension',
     name: 'v8vscedit_remove_metadata',

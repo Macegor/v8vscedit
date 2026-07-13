@@ -46,6 +46,14 @@ export interface MetaTypeDef {
   /** Дочерние теги, ожидаемые внутри объекта (реквизиты, ТЧ, формы и т.п.) */
   childTags?: readonly ChildTag[];
   /**
+   * Показывать единственный дочерний тег напрямую под объектом, без промежуточной
+   * группы («URL-шаблоны», «Реквизиты» и т.п.). Применимо к типам, у которых
+   * дочерние элементы сами являются под-объектами и в конфигураторе 1С висят
+   * прямо на узле объекта (HTTP-сервис → URL-шаблон). Требует ровно одного
+   * `childTags`; кнопка «Добавить» переезжает на сам узел объекта.
+   */
+  flatChildren?: boolean;
+  /**
    * Допустимые слоты BSL-модулей для этого типа.
    * Если поле задано — только перечисленные слоты разрешено создавать.
    * Если не задано — тип не проверяется (консервативно разрешаем).
@@ -149,7 +157,9 @@ export type MetaKind =
   | 'Template'
   | 'Dimension'
   | 'Resource'
-  | 'EnumValue';
+  | 'EnumValue'
+  | 'URLTemplate'
+  | 'Method';
 
 /** Сокращённый конструктор записи для ReadOnly Record */
 const metaDef = (d: MetaTypeDef): MetaTypeDef => d;
@@ -273,6 +283,7 @@ export const META_TYPES: Readonly<Record<MetaKind, MetaTypeDef>> = {
     pathSegment: 'WebСервисы', englishKind: 'WebService' }),
   HTTPService: metaDef({ kind: 'HTTPService', label: 'HTTP-сервис', pluralLabel: 'HTTP-сервисы',
     folder: 'HTTPServices', icon: 'http', group: 'common', groupOrder: 220,
+    childTags: ['URLTemplate'], flatChildren: true,
     modules: ['Service'], singleClickCommand: 'openServiceModule',
     pathSegment: 'HTTPСервисы', englishKind: 'HTTPService' }),
   WSReference: metaDef({ kind: 'WSReference', label: 'WS-ссылка', pluralLabel: 'WS-ссылки',
@@ -408,6 +419,10 @@ export const META_TYPES: Readonly<Record<MetaKind, MetaTypeDef>> = {
     icon: 'resource', group: 'child', groupOrder: 0, propertySchema: 'typedField' }),
   EnumValue: metaDef({ kind: 'EnumValue', label: 'Значение перечисления', pluralLabel: 'Значения',
     icon: 'enum', group: 'child', groupOrder: 0, propertySchema: 'enumValue' }),
+  URLTemplate: metaDef({ kind: 'URLTemplate', label: 'URL-шаблон', pluralLabel: 'URL-шаблоны',
+    icon: 'http', group: 'child', groupOrder: 0, childTags: ['Method'], propertySchema: 'urlTemplate' }),
+  Method: metaDef({ kind: 'Method', label: 'Метод', pluralLabel: 'Методы',
+    icon: 'command', group: 'child', groupOrder: 0, propertySchema: 'httpMethod' }),
 };
 
 // ── Доступ к реестру ────────────────────────────────────────────────────

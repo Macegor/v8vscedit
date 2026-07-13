@@ -162,7 +162,10 @@ suite('V8McpServer — v8vscedit_edit_role учитывает success резул
       errors: ['Синтетическая ошибка для теста 5b'],
     };
     const { services, spy } = createServices(rightsXmlPath, failedResult);
-    const server = new V8McpServer(services, new ConfigurationXmlEditor());
+    // Доработка жизненного цикла MCP-сервера (5c) добавляет обязательные
+    // projectRoot/version в конструктор — этот тест конструирует V8McpServer
+    // только чтобы вызвать приватный registerTools, поэтому значения фиктивны.
+    const server = new V8McpServer(services, new ConfigurationXmlEditor(), '/tmp/v8vscedit-fixture', '0.0.0-test');
     const { tools, server: mockMcpServer } = createMockMcpServer();
     (server as unknown as { registerTools(mcp: unknown): void }).registerTools(mockMcpServer);
 
@@ -199,7 +202,7 @@ suite('V8McpServer — v8vscedit_edit_role учитывает success резул
       errors: [],
     };
     const { services, spy } = createServices(rightsXmlPath, okResult);
-    const server = new V8McpServer(services, new ConfigurationXmlEditor());
+    const server = new V8McpServer(services, new ConfigurationXmlEditor(), '/tmp/v8vscedit-fixture', '0.0.0-test');
     const { tools, server: mockMcpServer } = createMockMcpServer();
     (server as unknown as { registerTools(mcp: unknown): void }).registerTools(mockMcpServer);
 
@@ -230,7 +233,7 @@ suite('V8McpServer — v8vscedit_edit_role учитывает success резул
       errors: [],
     };
     const { services, spy } = createServices(rightsXmlPath, noopResult);
-    const server = new V8McpServer(services, new ConfigurationXmlEditor());
+    const server = new V8McpServer(services, new ConfigurationXmlEditor(), '/tmp/v8vscedit-fixture', '0.0.0-test');
     const { tools, server: mockMcpServer } = createMockMcpServer();
     (server as unknown as { registerTools(mcp: unknown): void }).registerTools(mockMcpServer);
 

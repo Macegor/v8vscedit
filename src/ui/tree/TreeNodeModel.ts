@@ -17,6 +17,8 @@ export interface MetaTreeNodeContext {
   rootMetaKind: NodeKind;
   /** Имя табличной части для колонки */
   tabularSectionName?: string;
+  /** Имя URL-шаблона-контейнера для метода HTTP-сервиса (аналог tabularSectionName) */
+  urlTemplateName?: string;
   /** Техническое имя стандартного реквизита, если в дереве показано русское представление */
   standardAttributeName?: string;
   /** XML корневого объекта, если текущий узел ссылается на вложенный файл */
@@ -36,6 +38,8 @@ export type AddMetadataTarget =
     readonly ownerObjectXmlPath: string;
     readonly childTag: ChildTag | 'Column';
     readonly tabularSectionName?: string;
+    /** Имя URL-шаблона-контейнера при добавлении метода HTTP-сервиса. */
+    readonly urlTemplateName?: string;
   };
 
 /**

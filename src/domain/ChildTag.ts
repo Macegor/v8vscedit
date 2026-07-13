@@ -12,7 +12,9 @@ export type ChildTag =
   | 'Template'
   | 'Dimension'
   | 'Resource'
-  | 'EnumValue';
+  | 'EnumValue'
+  | 'URLTemplate'
+  | 'Method';
 
 /** Человекочитаемые подписи групп дочерних элементов и типы их узлов дерева */
 export interface ChildTagConfig {
@@ -43,4 +45,6 @@ export const CHILD_TAG_CONFIG: Readonly<Record<ChildTag, ChildTagConfig>> = {
   Dimension: { tag: 'Dimension', label: 'Измерения', kind: 'Dimension', pathSegment: 'Измерение' },
   Resource: { tag: 'Resource', label: 'Ресурсы', kind: 'Resource', pathSegment: 'Ресурс' },
   EnumValue: { tag: 'EnumValue', label: 'Значения', kind: 'EnumValue', pathSegment: 'ЗначениеПеречисления' },
+  URLTemplate: { tag: 'URLTemplate', label: 'URL-шаблоны', kind: 'URLTemplate', pathSegment: 'URLШаблон' },
+  Method: { tag: 'Method', label: 'Методы', kind: 'Method', pathSegment: 'Метод' },
 } as const;

@@ -17,6 +17,7 @@ import * as path from 'path';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import * as vscode from 'vscode';
 import { CHILD_ADD_TOOLS, ROOT_ADD_KINDS, registerAllAddTools, toSnakeCase } from '../../ui/mcp/McpAddToolsRegistration';
+import { EXTENSION_MCP_TOOLS } from '../../infra/ai/AiMcpConfiguration';
 import { META_TYPES } from '../../domain/MetaTypes';
 import { MetadataXmlCreator } from '../../infra/xml/MetadataXmlCreator';
 import { MetadataNode } from '../../ui/tree/TreeNode';
@@ -144,12 +145,31 @@ suite('McpAddToolsRegistration', () => {
       'v8vscedit_add_resource',
       'v8vscedit_add_enum_value',
       'v8vscedit_add_column',
+      'v8vscedit_add_url_template',
+      'v8vscedit_add_method',
     ];
     for (const name of expectedChildTools) {
       assert.ok(server.tools.has(name), `должен быть зарегистрирован ${name}`);
     }
     assert.strictEqual(CHILD_ADD_TOOLS.length, expectedChildTools.length,
       'CHILD_ADD_TOOLS должен содержать ровно столько же дескрипторов');
+  });
+
+  test('ПАРИТЕТ: каждый фактически зарегистрированный tool добавления присутствует в каталоге EXTENSION_MCP_TOOLS', () => {
+    // Реальная сверка перечней: берём рантайм-набор tools добавления (root + child),
+    // как их регистрирует registerAllAddTools, и требуем, чтобы каждый был описан
+    // в EXTENSION_MCP_TOOLS. Ловит рассинхрон вида «новый add-tool забыли внести
+    // в каталог для ИИ-агента» (требование CLAUDE.md, «Перенос новой функции», п.4).
+    const server = createMockServer();
+    registerAllAddTools(server as never, createRegistrationContext());
+
+    const catalogued = new Set(EXTENSION_MCP_TOOLS.map((tool) => tool.name));
+    const missing = [...server.tools.keys()].filter((name) => !catalogued.has(name));
+    assert.deepStrictEqual(
+      missing,
+      [],
+      `эти зарегистрированные add-tools отсутствуют в EXTENSION_MCP_TOOLS: ${missing.join(', ')}`
+    );
   });
 
   test('v8vscedit_add_catalog добавляет справочник в configRoot', async () => {

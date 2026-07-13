@@ -364,6 +364,35 @@ export function findColumnRangeInTabularSection(
   return { start: base + columnRange.start, end: base + columnRange.end };
 }
 
+/**
+ * Возвращает абсолютный диапазон {start,end} метода HTTP-сервиса по имени
+ * URL-шаблона и метода в полном XML объекта. Двойник
+ * {@link extractMethodXmlFromUrlTemplate} — nesting-aware по контейнеру-шаблону,
+ * симметрично {@link findColumnRangeInTabularSection} (ТЧ→Колонка).
+ */
+export function findMethodRangeInUrlTemplate(
+  objectXml: string,
+  urlTemplateName: string,
+  methodName: string
+): { start: number; end: number } | null {
+  const templateRange = findChildMetaElementRange(objectXml, 'URLTemplate', urlTemplateName);
+  if (!templateRange) {
+    return null;
+  }
+  const templateXml = objectXml.slice(templateRange.start, templateRange.end);
+  const childObjectsRange = findFirstElementRange(templateXml, 'ChildObjects');
+  if (!childObjectsRange) {
+    return null;
+  }
+  const childObjectsInner = templateXml.slice(childObjectsRange.openEnd, childObjectsRange.closeStart);
+  const methodRange = findChildElementRangeInBlock(childObjectsInner, 'Method', methodName);
+  if (!methodRange) {
+    return null;
+  }
+  const base = templateRange.start + childObjectsRange.openEnd;
+  return { start: base + methodRange.start, end: base + methodRange.end };
+}
+
 /** Проверяет наличие прямого дочернего элемента по имени или текстовой ссылке. */
 export function hasDirectChildElementNameInBlock(
   block: string,
@@ -444,6 +473,30 @@ export function extractColumnXmlFromTabularSection(
   }
 
   return findChildElementFullXmlInBlock(childObjectsInner, 'Attribute', columnName);
+}
+
+/**
+ * Возвращает XML метода HTTP-сервиса по имени URL-шаблона и метода.
+ * Двойник {@link extractColumnXmlFromTabularSection} для третьего уровня
+ * вложенности `HTTPService → URLTemplate → Method`: различает одноимённые
+ * методы из разных URL-шаблонов (nesting-aware по контейнеру).
+ */
+export function extractMethodXmlFromUrlTemplate(
+  objectXml: string,
+  urlTemplateName: string,
+  methodName: string
+): string | null {
+  const urlTemplateXml = extractChildMetaElementXml(objectXml, 'URLTemplate', urlTemplateName);
+  if (!urlTemplateXml) {
+    return null;
+  }
+
+  const childObjectsInner = extractNestingAwareBlock(urlTemplateXml, 'ChildObjects');
+  if (!childObjectsInner) {
+    return null;
+  }
+
+  return findChildElementFullXmlInBlock(childObjectsInner, 'Method', methodName);
 }
 
 /** Извлекает XML стандартного реквизита из корня объекта или табличной части. */
