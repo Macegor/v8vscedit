@@ -22,6 +22,14 @@ git-декорации навигатора (`infra/git/GitMetadataStatusService
 предков. Секция «Прочие» (нераспознанные/`unresolved` файлы) остаётся плоской — у таких файлов нет
 владеющего объекта метаданных, обрезать их иерархию не по чему.
 
+Итерация 3 (редизайн) абсорбировала в эту же панель то, что раньше было отдельной вкладкой редактора
+«История»: теперь панель состоит из ДВУХ сворачиваемых блоков — «Изменения» (описан этим документом,
+секции `staged`/`unstaged`/`unresolved`) и **«История»** (граф git-коммитов по объектам 1С, полностью
+переиспользующий движок этого документа в read-only режиме) — см.
+[git-history-graph.md](./git-history-graph.md). Блок «История» по умолчанию свёрнут и грузит `git log`
+лениво, только при первом раскрытии; отдельного `WebviewViewProvider`/вкладки/команды открытия для него
+больше нет.
+
 ## Архитектура по слоям
 
 ### `infra/git/` — чистая логика, без `vscode` (не менялась при пивоте презентации)
@@ -74,11 +82,20 @@ git-декорации навигатора (`infra/git/GitMetadataStatusService
   реального навигаторного дерева и синтез цепочки для удалённых объектов в этот модуль не входят, это
   ответственность вызывающей стороны.
 
+- **`changesHistorySection.ts`** — чистый (без `vscode`) helper `ChangesHistorySection`: состояние блока
+  «История» (окно пагинации `pageSize`, выбранный коммит `selectedHash`/`selectedModel`, флаг ленивой
+  загрузки `loaded`), склеивающий уже готовые `historyGraphController`/`historyGraphDtoBuilder`
+  (`ui/views/history/`). Благодаря этому helper'у `MetadataChangesViewProvider` не разрастается логикой
+  графа — полное описание в [git-history-graph.md](./git-history-graph.md#uiviewschangeschangeshistorysectionts--новый-чистый-helper-состояние-графа-истории).
+
 - **`MetadataChangesViewProvider.ts`** — `vscode.WebviewViewProvider` (`viewType = 'v8vsceditChanges'`).
   Конструктору необходим `treeProvider: MetadataTreeProvider` (передаётся через `Container` вместе с
   `gitRoot`/`getConfigRoots` в `MetadataChangesViewServices`) — источник навигаторной иерархии, которую
   повторяет дерево панели. Модель `ChangesModel` вычисляется ЛЕНИВО: при первом `resolveWebviewView`,
   далее — только в `refresh()`/`updateConfigRoots()` (запрет №11, никакого синхронного I/O на hot path).
+  Провайдер также владеет экземпляром `ChangesHistorySection` (блок «История» той же панели) и
+  диспетчеризует его команды протокола (`loadHistory`/`historyLoadMore`/`historyRefresh`/`selectCommit`/
+  `openCommitDiff`) — подробности в [git-history-graph.md](./git-history-graph.md).
 
   Построение секции (`buildNavigatorSection`) для каждой `ObjectChangeGroup`:
   1. `findNavigatorNode` ищет узел объекта в дереве навигатора через `treeProvider.findNode` по
@@ -265,6 +282,14 @@ Diff открывается только для узла с ЕДИНСТВЕНН
 файлы. Расширение протокола (новая команда) описано в `CLAUDE.md` («Инвариант изменений» → «Новая
 git-мутация над панелью изменений»).
 
+Блок «История» той же панели добавляет СВОИ команды/сообщения того же транспорта
+(`loadHistory`/`historyLoadMore`/`historyRefresh`/`selectCommit`/`openCommitDiff` от ui, `history`/
+`commitChanges` от host) — они намеренно вынесены в отдельную таблицу в
+[git-history-graph.md](./git-history-graph.md#формат-сообщений-протокола), а не дублируются здесь.
+`openDiff`/`openCommitDiff` — разные команды с непересекающейся адресацией (первая резолвит `nodeId`
+через модель рабочего дерева, вторая — через модель выбранного коммита), хотя схема `nodeId` у обеих
+одна и та же (`staged#i[.j]`/`other#k`).
+
 ## Соответствие канону имён
 
 `canonicalOwnerPath` в `MetadataChangeResolver` строится через `domain/CanonicalNames.ts`
@@ -326,9 +351,11 @@ git-мутация над панелью изменений»).
   (`GitMetadataStatusService`), к которому эта панель не относится напрямую, но переиспользует общий
   парсер porcelain, общий Vue-компонент дерева и, с итерации 2, саму навигаторную иерархию
   (`MetadataTreeProvider.getParent`).
-- [git-history-graph.md](./git-history-graph.md) — панель «История» (граф git-коммитов по объектам 1С),
-  read-only потребитель движка этой панели: `aggregateMetadataChanges`, `changesDtoBuilder`
-  (`buildObjectNode`/`buildOtherSection`/`resolveChangeAddress`) и `changesTreeAssembler`
-  (`assembleNavigatorSection`/`synthesizeAncestors`) переиспользуются БЕЗ ИЗМЕНЕНИЙ, `synthesizeAncestors`
-  ради этого вынесен из приватного метода `MetadataChangesViewProvider` в отдельный экспортируемый модуль.
+- [git-history-graph.md](./git-history-graph.md) — блок «История» ЭТОЙ ЖЕ панели (граф git-коммитов по
+  объектам 1С, сворачиваемый под блоком «Изменения»), read-only потребитель движка, описанного здесь:
+  `aggregateMetadataChanges`, `changesDtoBuilder` (`buildObjectNode`/`buildOtherSection`/
+  `resolveChangeAddress`) и `changesTreeAssembler` (`assembleNavigatorSection`/`synthesizeAncestors`)
+  переиспользуются БЕЗ ИЗМЕНЕНИЙ; `synthesizeAncestors` ради этого вынесен из приватного метода
+  `MetadataChangesViewProvider` в отдельный экспортируемый модуль, а состояние графа абсорбировано
+  провайдером через `changesHistorySection.ts`.
 - [architecture.md](./architecture.md) — общая раскладка каталогов и слоёв.

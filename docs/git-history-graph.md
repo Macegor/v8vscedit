@@ -2,20 +2,34 @@
 
 ## Назначение
 
-Webview-панель `v8vsceditHistory` — граф истории git (как Git Graph/GitLens), но выбор коммита
-показывает не список файлов, а изменённые ОБЪЕКТЫ метаданных 1С, полностью переиспользуя движок
-панели [«Изменения метаданных»](./git-metadata-changes.md). Презентация отличается от неё
-принципиально: это не `WebviewView` в контейнере активности, а самостоятельная **вкладка редактора**
-(`vscode.WebviewPanel`, singleton) — открывается командой `v8vscedit.history.open`, вызываемой кнопкой
-`view/title` в шапке панели «Изменения метаданных» (`when: view == v8vsceditChanges`).
+Граф истории git (как Git Graph/GitLens), но выбор коммита показывает не список файлов, а изменённые
+ОБЪЕКТЫ метаданных 1С — полностью переиспользуя движок панели
+[«Изменения метаданных»](./git-metadata-changes.md). **Это НЕ отдельная вкладка редактора и не отдельный
+`WebviewViewProvider`** — граф является ВТОРЫМ сворачиваемым блоком («История») внутри уже существующей
+webview-панели `v8vsceditChanges` (провайдер `MetadataChangesViewProvider`), под первым блоком
+(«Изменения»). Изначально спроектированная как самостоятельная вкладка (`vscode.WebviewPanel`, команда
+`v8vscedit.history.open`), фича была РЕДИЗАЙНЕНА: `HistoryGraphViewProvider`, эта команда, кнопка
+`view/title`, activation event `onCommand:v8vscedit.history.open`, vite-entry `history` и всё
+Vue-приложение `src-ui/apps/history/*` **удалены**. Ниже описана только актуальная модель.
 
-Панель read-only: коммит истории нельзя проиндексировать/снять индексацию/закоммитить — только
-посмотреть состав изменений и открыть diff одного файла. Это единственное, что качественно отличает её
-модель данных от `ChangesModel` панели изменений; остальное — прямое переиспользование.
+По умолчанию блок «История» свёрнут. Читать `git log` при открытии панели «Изменения метаданных» не
+требуется — граф грузится **лениво**: только при ПЕРВОМ разворачивании блока пользователем панель шлёт
+команду `loadHistory`, и только тогда `MetadataChangesViewProvider` первый раз обращается к
+`git log` (запрет №11 — никакого синхронного I/O на hot path открытия панели).
+
+Клик по строке графа раскрывает коммит **inline, прямо внутри графа** (а не в отдельной панели снизу, как
+было в вкладке-варианте): под строкой коммита появляется блок деталей (короткий хеш, автор, относительная
+дата с `title`-подсказкой в виде абсолютной, полный текст subject) и read-only дерево изменённых объектов
+1С (переиспользован общий `UniversalTree`). Двойной клик по листу этого дерева открывает diff
+`commit^ ↔ commit`.
+
+Блок «История» read-only: коммит нельзя проиндексировать/снять индексацию/закоммитить — только
+посмотреть состав изменений и открыть diff одного файла. Это единственное, что качественно отличает его
+модель данных от `ChangesModel` блока «Изменения»; остальное — прямое переиспользование.
 
 ## Архитектура по слоям
 
-### `infra/git/` — новые чистые модули графа (без `vscode`)
+### `infra/git/` — чистые модули графа (без `vscode`), не менялись при редизайне презентации
 
 | Модуль | Ответственность |
 |---|---|
@@ -23,12 +37,12 @@ Webview-панель `v8vsceditHistory` — граф истории git (как 
 | `GitLogParser.ts` | `parseGitLog(output) → RawCommit[]` — чистый разбор по разделителям `\x1f`(поле)/`\x1e`(запись). `parseRefs` разбирает `%D`: `HEAD -> refs/heads/<name>` схлопывается в ОДНУ ссылку `kind: 'head'` (не в пару HEAD+localBranch), одиночный detached `HEAD` отбрасывается; `refs/heads/`→`localBranch`, `refs/remotes/`→`remoteBranch`, `refs/tags/`/`tag: refs/tags/`→`tag`. |
 | `GitGraphLayout.ts` | `assignLanes(commits) → GraphLayout { rows, laneCount }` — чистая раскладка коммитов (в топологическом порядке, ребёнок раньше родителя) по дорожкам. Алгоритм и инварианты — см. ниже. |
 | `GitCommitChangesReader.ts` | `readCommitChanges(gitRoot, commit, { root? }) → PorcelainEntry[]` — раннер `git diff-tree --no-commit-id --name-status -r -M --first-parent [--root] <commit>`; `parseNameStatus` разбирает вывод в существующую форму `PorcelainEntry` (переиспользует `unquotePorcelainPath` из `GitPorcelainReader`, без дублей). Единственный статусный символ на строку → `worktree` всегда `' '` (пробел). Мягкий `[]` при недоступном git. |
-| `GitBlobReader.ts` | Дополнен `readBlobAtRef(gitRoot, ref, absFilePath)` — обобщение `readBlobAtHead`/`readBlobAtIndex` на произвольный commit-ish (`git show <ref>:<rel>`). `readBlobAtHead`/`readBlobAtIndex` не изменились (используются панелью изменений). |
+| `GitBlobReader.ts` | Дополнен `readBlobAtRef(gitRoot, ref, absFilePath)` — обобщение `readBlobAtHead`/`readBlobAtIndex` на произвольный commit-ish (`git show <ref>:<rel>`). `readBlobAtHead`/`readBlobAtIndex` не изменились (используются блоком «Изменения»). |
 
-`GitPorcelainReader`, `MetadataChangeResolver`, `MetadataChangeAggregator`, `GitWriteService` панель
+`GitPorcelainReader`, `MetadataChangeResolver`, `MetadataChangeAggregator`, `GitWriteService` блок
 истории переиспользует БЕЗ ИЗМЕНЕНИЙ — см. их описание в
 [git-metadata-changes.md](./git-metadata-changes.md#infragit--чистая-логика-без-vscode-не-менялась-при-пивоте-презентации).
-`GitWriteService` в графе истории вообще не вызывается — панель read-only.
+`GitWriteService` в графе истории вообще не вызывается — блок read-only.
 
 ### Раскладка коммитов по дорожкам (`GitGraphLayout.assignLanes`)
 
@@ -61,10 +75,14 @@ Git Graph/gitk.
 другой `ref` — `readBlobAtRef(gitRoot, ref, absFilePath)`. Пустой/отсутствующий `ref` в URI трактуется
 как `HEAD` — обратная совместимость со старыми URI и защита от «висящего» родителя корневого коммита
 (`<root>^` не существует → `readBlobAtRef` вернёт `null` → пустая сторона diff, а не исключение).
-Панель «Изменения метаданных» по-прежнему передаёт только `'HEAD'`/`'index'` — контракт для неё не
-изменился, обобщение расширило множество допустимых значений, не сузив его.
+Блок «Изменения» по-прежнему передаёт только `'HEAD'`/`'index'` — контракт для него не изменился,
+обобщение расширило множество допустимых значений, не сузив его. Это обобщение сделано ради блока
+«История» и осталось в силе после редизайна презентации.
 
-### `ui/views/history/` — сборка состояния и webview-провайдер
+### `ui/views/history/` — только чистые модули, без vscode-провайдера
+
+После редизайна в этой папке **нет** `vscode`-специфичного кода — `HistoryGraphViewProvider.ts` удалён
+целиком, весь vscode-код графа истории теперь живёт в `ui/views/changes/` (см. ниже).
 
 - **`historyGraphDtoBuilder.ts`** — чистые (без `vscode`) функции:
   - `formatRelativeDate(timestampSec, nowSec)` — относительная дата на русском («только что» для
@@ -77,14 +95,14 @@ Git Graph/gitk.
   - `buildHistoryGraphState(layout, nowSec, hasMore, selectedHash?) → HistoryGraphState` — агрегирует
     `rows`/`laneCount`/`hasMore`/`selectedHash`.
   - `buildCommitChangesSection(model, iconResolver) → ChangesSectionDto` — **read-only** секция
-    «Изменения коммита»: навигаторная иерархия строится ТЕМИ ЖЕ функциями, что и панель изменений
+    «Изменения коммита»: навигаторная иерархия строится ТЕМИ ЖЕ функциями, что и блок «Изменения»
     (`buildObjectNode('staged', …, { readonly: true })`, `synthesizeAncestors`,
     `assembleNavigatorSection('staged', chains, 'Изменения коммита')`), плюс плоские узлы
     `buildOtherSection(model.unresolved)` в конце. Работает только с `model.staged` — см. ниже, почему
     изменения коммита всегда попадают именно в `staged`, а не в `unstaged`.
-  - Как и `changesDtoBuilder.ts`, объявляет ЛОКАЛЬНЫЕ зеркала типов (`RefDto`, `LaneEdgeDto`,
-    `GraphRowDto`, `HistoryGraphState`) по той же причине: `src-ui` исключён из `tsconfig.test.json`.
-    Форма обязана совпадать с `src-ui/shared/types/history.ts`.
+  - Объявляет ЛОКАЛЬНЫЕ зеркала типов (`RefDto`, `LaneEdgeDto`, `GraphRowDto`, `HistoryGraphState`) по
+    той же причине, что и `changesDtoBuilder.ts`: `src-ui` исключён из `tsconfig.test.json`. Форма
+    обязана совпадать с `src-ui/shared/types/history.ts`.
 
 - **`historyGraphController.ts`** — чистый (без `vscode`, `path` допустим только для имени файла в
   заголовке diff) контроллер, склеивающий уже покрытые слои:
@@ -101,93 +119,142 @@ Git Graph/gitk.
     частей) или `nodeId` не резолвится. `CommitDiff = { relFile, leftRef: '<hash>^', rightRef: hash,
     title }` — семантика diff коммита описана ниже отдельно.
 
-- **`HistoryGraphViewProvider.ts`** — тонкая vscode-оболочка. Ключевые отличия от
-  `MetadataChangesViewProvider`:
-  - **Singleton `vscode.WebviewPanel`**, а не `WebviewView`: `open()` создаёт панель один раз
-    (`viewType = 'v8vsceditHistory'`, `ViewColumn.Active`, заголовок «История изменений»), повторный
-    вызов — `panel.reveal(...)`. `onDidDispose` сбрасывает всё внутреннее состояние (`panel`,
-    `selectedHash`, `selectedModel`, `pageSize`) — следующий `open()` начинает с чистого листа.
-  - `refresh()` — **no-op при закрытой панели** (запрет №11: `git log` не читается на hot path, если
-    панель никто не открыл).
-  - `handleMessage(message)` — публичный метод (не приватный колбэк), обработчик команд протокола;
-    тесты вызывают его напрямую, минуя реальное событие `onDidReceiveMessage` (недостижимая для c8
-    ветка помечена `/* c8 ignore */`).
-  - `renderHtml` встраивает НАЧАЛЬНЫЙ граф прямо в HTML (`initialState`), как `MetadataChangesViewProvider`
-    свою модель — граф виден сразу при открытии, без ожидания первого `postMessage`. Обёрнут в
-    `try/catch` (по образцу `SubsystemEditorViewProvider`): при отсутствии/повреждении Vite-манифеста
-    `history` панель остаётся пустой, но не падает; `refresh`/кнопка «Обновить» дошлют граф отдельным
-    сообщением.
-  - Иконка объекта строится через `buildIcon` — тот же источник (`getIconUris` по `META_TYPES`,
-    доведённая до `webview.asWebviewUri`), что у панели изменений; при отсутствии активной панели или
-    ошибке — `{ kind: 'none' }`.
+  Эти два экспорта не изменились при редизайне (сигнатуры и логика — те же, что и у прежней вкладки);
+  изменился только вызывающий их слой.
 
-### `ui/commands/history/` и `Container`
+### `ui/views/changes/changesHistorySection.ts` — новый чистый helper: состояние графа истории
 
-`HistoryCommands.ts` регистрирует ОДНУ команду `v8vscedit.history.open` →
-`services.historyGraphViewProvider.open()`. В `Container.ts`:
+**Ключевой новый модуль редизайна.** `ChangesHistorySection` — чистый (без `vscode`) класс, склеивающий
+`historyGraphController`/`historyGraphDtoBuilder` в состояние, которое раньше по кусочкам хранил
+`HistoryGraphViewProvider` (`pageSize`, `selectedHash`, `selectedModel`, `loaded`). Инкапсулирует именно
+ленивость и пагинацию — `MetadataChangesViewProvider` благодаря этому helper'у остаётся тонким.
 
-- `historyGraphViewProvider` создаётся ПОСЛЕ `metadataChangesViewProvider`, с теми же
-  `gitRoot`/`getConfigRoots` (`changesGitRoot`/`changesConfigRoots`) — единый источник корней,
-  переиспользованный, а не задублированный.
-- Регистрируется как `vscode.Disposable` в `wireMetadataChangesView()` (вместе с
-  `registerWebviewViewProvider` панели изменений и `registerTextDocumentContentProvider` схемы
-  `onec-git`) — единая точка wiring обеих панелей.
-- `refresh()` подвешен на ТЕ ЖЕ триггеры, что и `metadataChangesViewProvider.refresh()`:
-  `onDidChangeWorkspaceFolders`, `refreshTreeCacheForFiles` (после изменений XML/BSL выгрузки),
-  `scheduleDecorationRefresh` (дебаунс 500 мс на `.git/HEAD`/`.git/index`/`.git/packed-refs`/
-  `.git/refs/**`). Оба провайдера обновляются одним и тем же git-событием — история не может
-  «отстать» от панели изменений.
+Конструктор принимает `{ gitRoot, getConfigRoots }` — те же зависимости, что и у блока «Изменения»
+(единый источник, `Container` передаёт одни и те же `changesGitRoot`/`changesConfigRoots` в оба места,
+дублирования нет). Методы:
 
-`package.json`: команда `v8vscedit.history.open` объявлена в `contributes.commands` и в
-`activationEvents` (`onCommand:v8vscedit.history.open` — явная активация для совместимости со старыми
-клиентами, тот же принцип, что у `onView:v8vsceditChanges`, см.
-[vscode-extension-best-practices.md](./vscode-extension-best-practices.md#1-активация-и-производительность)).
-Единственная точка входа в UI — кнопка `view/title` панели изменений (`when: view ==
-v8vsceditChanges`), палитра команд тоже доступна (нет `when: false`, в отличие от скрытых BSL-команд
-surround).
+- `isLoaded()` — загружалась ли история хотя бы раз.
+- `load(nowSec)` — первичная загрузка: помечает `loaded = true`, читает граф текущим `pageSize`.
+- `refresh(nowSec)` — пересчёт ТОЛЬКО если уже загружена, иначе `undefined` (ленивость: watcher-триггеры
+  не должны заставлять читать `git log`, если пользователь ни разу не открывал блок).
+- `loadMore(nowSec)` — увеличивает `pageSize` на `PAGE_SIZE_STEP = 200` и перечитывает граф целиком (см.
+  «Пагинация» ниже), переводя историю в загруженное состояние.
+- `selectCommit(hash, iconResolver)` — определяет корневой ли коммит (по `parents` найденной строки
+  графа), агрегирует состав изменений в `ChangesModel` через `loadCommitChanges`, кеширует
+  `selectedHash`/`selectedModel`, возвращает `{ section: ChangesSectionDto }` через
+  `buildCommitChangesSection`.
+- `resolveDiff(nodeId)` — адрес одиночного файла узла ВЫБРАННОГО коммита для `vscode.diff`; без
+  выбранного коммита — `undefined`.
 
-### `src-ui/apps/history/` — Vue-приложение
+Приватный `readState(nowSec)` — единственная точка вызова `loadHistoryState`, что не позволяет разным
+методам разойтись в параметрах чтения графа.
 
-- **`main.ts`** — entry `history` (добавлен в `vite.webview.config.ts`): `loadInitialState<
-  HistoryGraphState | null>('history')`, `MessageBus`, монтирование `HistoryApp`.
-- **`HistoryApp.vue`** — раскладка «граф сверху / дерево изменений коммита снизу» (`flex-direction:
-  column`, `60%/40%`). Верхняя часть — `CommitGraph`, нижняя — общий `UniversalTree` (переиспользован,
-  не форк — тот же компонент, что у навигатора и панели изменений, см.
-  [git-metadata-changes.md](./git-metadata-changes.md#переиспользование-дерева-навигатора)) с
-  `commitSection.nodes`. `expandSection` раскрывает ВСЮ ветвь дерева коммита при получении
-  `commitChanges` (по образцу `ChangesApp.expandAll`) — те же принципы UX, тот же паттерн кода.
-  Двойной клик по листу (`@default`) → `openDiff`. Кнопка «Обновить» → `refresh`; кнопка «Загрузить
-  ещё» (видна только при `graph.hasMore`) → `loadMore`.
-- **`CommitGraph.vue`** — чистый презентационный компонент: на каждую строку — SVG-ячейка с рёбрами
-  (`<line>` от `laneX(fromLane)` к `laneX(toLane)`, цвет — `laneColor(edge.color)` по модулю
-  8-цветной палитры) и кружком коммита (`<circle>`, цвет — `laneColor(row.laneColor)`), затем тема
-  коммита, «пилюли» refs (иконка codicon по `ref.kind`: `head→target`, `localBranch→git-branch`,
-  `remoteBranch→cloud`, `tag→tag`), автор, относительная дата (title — абсолютная) и короткий хеш.
-  Палитра `LANE_PALETTE` — 8 контрастных тонов, НЕ привязанных к `--vscode-*` переменным (цвет
-  дорожки — семантический идентификатор ветки, устойчивый к смене темы, а не элемент UI-темизации).
-- **`src-ui/shared/types/history.ts`** — ui-зеркало DTO хост-стороны (`RefDto`, `LaneEdgeDto`,
-  `GraphRowDto`, `HistoryGraphState`) — форма обязана совпадать с `historyGraphDtoBuilder.ts`.
-- **`hostMessages.ts`** — варианты `{ type: 'graph'; state: HistoryGraphState }` и
-  `{ type: 'commitChanges'; hash: string; section: ChangesSectionDto }` добавлены в
-  `HostToUiMessage`. `UiToHostMessage` не расширялся — панель истории использует существующий
-  универсальный `{ type: 'command'; command: string; payload?: unknown }`.
+### `MetadataChangesViewProvider.ts` — абсорбировал панель «История»
 
-### Извлечение `synthesizeAncestors` в общий модуль
+Провайдер (`viewType = 'v8vsceditChanges'`) создаёт `private readonly history: ChangesHistorySection` в
+конструкторе с теми же `gitRoot`/`getConfigRoots`, что и сам провайдер. Добавились:
 
-`synthesizeAncestors` (синтез цепочки предков для объекта, которого нет в живом дереве навигатора) был
-приватным методом `MetadataChangesViewProvider`; теперь это экспортируемая чистая функция в
-`ui/views/changes/changesTreeAssembler.ts`, принимающая `buildIcon` инъекцией. `MetadataChangesViewProvider`
-и `historyGraphDtoBuilder.buildCommitChangesSection` вызывают ОДНУ и ту же функцию — никакого
-дублирования логики синтеза между панелью изменений и панелью истории. `buildObjectNode`/`buildPartNode`
-получили опциональный `options.readonly`/`readonly` параметр: при `true` поле `inlineActions` не
-заполняется (`stageUnstageInline` не вызывается) — узлы коммита нельзя проиндексировать/снять
-индексацию, т.к. коммит уже неизменяем.
+- **Команды протокола** (`handleMessage`, ветка `switch (message.command)`):
+  - `loadHistory` → `history.load(nowSec())`, результат уходит как `{ type: 'history', state }`. Шлётся
+    UI ровно один раз — при ПЕРВОМ разворачивании блока «История» (`historyLoaded`-флаг в `ChangesApp.vue`,
+    см. ниже).
+  - `historyLoadMore` → `history.loadMore(nowSec())` — кнопка «Загрузить ещё» (видна только при
+    `history.hasMore`).
+  - `historyRefresh` → `history.load(nowSec())` — явная кнопка «Обновить» блока «История»: в отличие от
+    ленивого watcher-triggered `maybePostHistory`, ВСЕГДА (пере)читает граф (комментарий в коде явно
+    разводит эти два пути).
+  - `selectCommit { hash }` → `history.selectCommit(hash, iconResolver)`, результат — `{ type:
+    'commitChanges', hash, section }`.
+  - `openCommitDiff { nodeId }` → `history.resolveDiff(nodeId)` → `vscode.diff` между `<hash>^` и
+    `<hash>` (см. «Семантика diff» ниже).
+- **`maybePostHistory()`** — вызывается в конце `refresh()` (той же точке, что и `postState()` для
+  секций «Изменения»): пере-излучает граф `{ type: 'history', state }` ТОЛЬКО если `history.isLoaded()`
+  вернёт `true` (иначе `history.refresh()` возвращает `undefined` и `postHistory` тихо ничего не шлёт).
+  Это единственный автоматический (не по команде пользователя) путь обновления графа — например, после
+  `git commit`, сделанного этой же панелью, или после срабатывания `scheduleDecorationRefresh` на
+  `.git/HEAD`.
+- **`openCommitDiff` — ОТДЕЛЬНАЯ команда от `openDiff`.** Причина не косметическая, а разводка коллизии
+  адресации: узлы дерева «Изменения коммита» строятся тем же `buildObjectNode('staged', …)`, что и
+  секция `staged` рабочего дерева, поэтому их `nodeId` — из ТОЙ ЖЕ схемы (`staged#0`, `staged#0.1`).
+  Единая команда `openDiff` резолвила бы такой `nodeId` через `this.model` (модель рабочего дерева
+  HEAD/индекс) — для коммита это был бы неверный (либо вовсе отсутствующий) адрес. `openCommitDiff`
+  резолвит `nodeId` через `history.resolveDiff` (т.е. через `this.selectedModel` внутри
+  `ChangesHistorySection`, модель ИМЕННО выбранного коммита) и строит diff `hash^ ↔ hash`, а не
+  `HEAD ↔ индекс`/`индекс ↔ рабочее дерево`.
+
+Никакого отдельного `Container`-сервиса, команды `package.json → contributes.commands` или
+activation event для истории больше нет — всё wiring осталось прежним (одна регистрация
+`MetadataChangesViewProvider` в `wireMetadataChangesView()`), просто провайдер стал «шире» по
+ответственности внутри своего файла за счёт вынесенного `ChangesHistorySection`.
+
+### Извлечение `synthesizeAncestors` в общий модуль (актуально и после редизайна)
+
+`synthesizeAncestors` — экспортируемая чистая функция в `ui/views/changes/changesTreeAssembler.ts`,
+принимающая `buildIcon` инъекцией. И `MetadataChangesViewProvider.resolveAncestors` (для рабочего
+дерева), и `historyGraphDtoBuilder.buildCommitChangesSection` (для дерева коммита) вызывают ОДНУ и ту же
+функцию — дублирования логики синтеза предков нет. `buildObjectNode`/`buildPartNode` получили
+опциональный `options.readonly`/`readonly` параметр: при `true` поле `inlineActions` не заполняется
+(`stageUnstageInline` не вызывается) — узлы коммита нельзя проиндексировать/снять индексацию, т.к.
+коммит уже неизменяем.
+
+### `src-ui/apps/changes/` — Vue-приложение с двумя блоками
+
+Отдельного приложения `src-ui/apps/history/*` больше нет — граф целиком встроен в приложение `changes`.
+
+- **`ChangesApp.vue`** — два сворачиваемых блока (`.panel-block`), каждый со своим заголовком-кнопкой
+  (`toggleChanges`/`toggleHistory`) и шевроном:
+  - **«Изменения»** (`changesOpen`, по умолчанию `true`) — прежнее содержимое: `ChangesCommitBox` +
+    секции `staged`/`unstaged`/`unresolved` через `UniversalTree`. Не изменилось при редизайне.
+  - **«История»** (`historyOpen`, по умолчанию `false`) — `CommitGraph` со слотом `#details`. Заголовок
+    блока при раскрытии показывает кнопки «Обновить» (`historyRefresh`) и, если `history.hasMore`,
+    «Загрузить ещё» (`historyLoadMore`).
+  - **Ленивость на стороне UI**: `toggleHistory()` шлёт `loadHistory` ТОЛЬКО если `historyOpen` стало
+    `true` и `historyLoaded === false`; повторные сворачивания/разворачивания блока после первой загрузки
+    команду больше не шлют — `historyLoaded` защищает от повторного чтения `git log` при простом
+    сворачивании/разворачивании блока пользователем.
+  - **Inline-раскрытие коммита**: клик по строке графа (`onSelectCommit`) шлёт `selectCommit`; ответ
+    `{ type: 'commitChanges', hash, section }` кладётся в `commitSection`, дерево раскрывается целиком
+    (`expandCommitSection`, по образцу `expandAll` для секций «Изменения»). Блок деталей рендерится через
+    именованный слот `CommitGraph`'а (`#details="{ row }"`) НЕПОСРЕДСТВЕННО под выбранной строкой графа —
+    хеш/автор/дата/полный subject + `UniversalTree` дерева изменений.
+  - **Изолированное состояние дерева коммита**: `commitOpenIds`/`commitSelectedId`/`commitLoadingIds`
+    заведены ОТДЕЛЬНО от `openIds`/`selectedId`/`loadingIds` дерева секций «Изменения» — id узлов обеих
+    моделей совпадают по форме (`staged#N[.M]`), смешивание раскрытия двух разных деревьев в одном
+    reactive-объекте перепутало бы их состояние.
+  - Двойной клик по листу дерева коммита (`onCommitDefault`) → `openCommitDiff` (не `openDiff`).
+- **`CommitGraph.vue`** — компактная строка на коммит (одна строка, без отдельных колонок даты/хеша):
+  SVG-ячейка дорожек+рёбер, тема коммита (`commit-subject`, растягивается), приглушённый автор
+  (`commit-author`, `color: var(--vscode-descriptionForeground)`), «пилюли» refs (иконка codicon по
+  `ref.kind`: `head→target`, `localBranch→git-branch`, `remoteBranch→cloud`, `tag→tag`). Дата и короткий
+  хеш из отдельных колонок строки графа УБРАНЫ — они переехали в inline-блок деталей выбранного коммита
+  (`.commit-meta`), т.к. в узкой ширине сайдбар-панели (в отличие от прежней полноширинной вкладки
+  редактора) колонкам не хватало места; при клике коммит всё равно раскрывает эти данные. Палитра
+  `LANE_PALETTE` — 8 контрастных тонов, НЕ привязанных к `--vscode-*` переменным (цвет дорожки —
+  семантический идентификатор ветки, устойчивый к смене темы, а не элемент UI-темизации), не изменилась.
+  Компонент принимает именованный слот `#details` и рендерит его содержимое сразу под выбранной строкой
+  (`v-if="isSelected(row)"`), с отступом `detailsIndent()` под ширину дорожек и левой чертой в цвет
+  дорожки коммита.
+- **`src-ui/shared/types/history.ts`** — ui-зеркало DTO (`RefDto`, `LaneEdgeDto`, `GraphRowDto`,
+  `HistoryGraphState`), не изменилось при редизайне — форма обязана совпадать с
+  `historyGraphDtoBuilder.ts`.
+- **`hostMessages.ts`** — варианты `{ type: 'history'; state: HistoryGraphState }` (переименован из
+  `'graph'` времён вкладки — в актуальном протоколе тип сообщения `'history'`, единообразно с командой
+  `loadHistory`/`historyRefresh`) и `{ type: 'commitChanges'; hash: string; section: ChangesSectionDto }`
+  добавлены в `HostToUiMessage`. `UiToHostMessage` не расширялся — блок «История» использует тот же
+  универсальный `{ type: 'command'; command: string; payload?: unknown }`, что и остальной протокол
+  панели `changes`.
 
 ## Поток данных
 
-### Граф (при открытии панели / `loadMore` / `refresh`)
+### Граф (при первом раскрытии блока / `historyLoadMore` / `historyRefresh` / watcher-refresh при уже загруженной истории)
 
 ```
+{ type: 'command', command: 'loadHistory' | 'historyLoadMore' | 'historyRefresh' }
+        │                                            (ChangesApp.vue → MessageBus)
+        ▼
+MetadataChangesViewProvider.handleMessage → ChangesHistorySection.load/loadMore
+        │
+        ▼
 git log --all --decorate=full --parents --topo-order --pretty=format:'…' [--max-count=N]
         │                                          (GitLogReader.readGitLog)
         ▼
@@ -199,13 +266,19 @@ GraphLayout { rows: GraphRow[], laneCount }           (GitGraphLayout.assignLane
         ▼
 HistoryGraphState { rows: GraphRowDto[], laneCount, hasMore, selectedHash? }
         │                            (historyGraphDtoBuilder.buildHistoryGraphState)
-        ▼  postMessage({ type: 'graph', state })  /  либо встроено в initialState HTML
+        ▼  postMessage({ type: 'history', state })
 CommitGraph.vue — отрисовка дорожек/рёбер/refs
 ```
+
+Помимо явных команд, `refresh()` провайдера в конце вызывает `maybePostHistory()` — тот же путь, но
+БЕЗ повторного захода со стороны UI, и только если `history.isLoaded()`.
 
 ### Изменения коммита (по клику на строку графа — `selectCommit`)
 
 ```
+{ type: 'command', command: 'selectCommit', payload: { hash } }
+        │
+        ▼
 git diff-tree --no-commit-id --name-status -r -M --first-parent [--root] <hash>
         │                                    (GitCommitChangesReader.readCommitChanges)
         ▼
@@ -219,32 +292,34 @@ ChangesSectionDto «Изменения коммита»     (historyGraphDtoBuil
         │  buildObjectNode(readonly: true) + synthesizeAncestors + assembleNavigatorSection
         │  + buildOtherSection(unresolved) в конце
         ▼  postMessage({ type: 'commitChanges', hash, section })
-HistoryApp.vue → UniversalTree (та же навигаторная форма, что и в панели изменений)
+ChangesApp.vue (слот #details внутри CommitGraph) → UniversalTree (навигаторная форма)
 ```
 
 Изменения коммита строятся из `git diff-tree`, а не из `git status` — поэтому в `ChangesModel`
 задействована только сторона `staged` (единственный статусный символ `diff-tree --name-status`
-трактуется существующим `MetadataChangeAggregator` как X-статус индекса; `unstaged` у панели истории
+трактуется существующим `MetadataChangeAggregator` как X-статус индекса; `unstaged` у блока истории
 всегда пуст). `buildCommitChangesSection` явно читает только `model.staged` + `model.unresolved`.
 
 ## Синтез предков вместо живого дерева навигатора
 
 **Ключевое архитектурное решение.** Предки объекта в дереве коммита ВСЕГДА строятся синтезом из
 `META_TYPES` (`synthesizeAncestors`), а НЕ через `treeProvider.findNode`/`getParent` по живому дереву
-навигатора (как это делает `MetadataChangesViewProvider` для панели изменений). Причина: живое дерево
-отражает ТОЛЬКО текущую рабочую копию. Для исторического коммита это давало бы неверный результат —
-объект мог быть с тех пор переименован, перемещён между подсистемами, вообще удалён из текущей выгрузки,
-либо, наоборот, ещё не существовать (при разглядывании коммита в прошлом, где путь к объекту иной).
-Синтез по типу объекта (`META_TYPES[group.rootKind]`) — единственный способ построить непротиворечивую
-иерархию «Общие модули»/«Справочники»/… для ЛЮБОГО коммита истории, не полагаясь на состояние, которого
-уже (или ещё) нет. Плата за это — ограничения синтеза (см. «Известные ограничения» ниже) те же, что у
-`synthesizeAncestors` в панели изменений: без промежуточной ветви «Документы» для `documents-branch`.
+навигатора (как это делает `MetadataChangesViewProvider.resolveAncestors` для секций «Изменения»).
+Причина: живое дерево отражает ТОЛЬКО текущую рабочую копию. Для исторического коммита это давало бы
+неверный результат — объект мог быть с тех пор переименован, перемещён между подсистемами, вообще удалён
+из текущей выгрузки, либо, наоборот, ещё не существовать (при разглядывании коммита в прошлом, где путь к
+объекту иной). Синтез по типу объекта (`META_TYPES[group.rootKind]`) — единственный способ построить
+непротиворечивую иерархию «Общие модули»/«Справочники»/… для ЛЮБОГО коммита истории, не полагаясь на
+состояние, которого уже (или ещё) нет. Плата за это — ограничения синтеза (см. «Известные ограничения»
+ниже) те же, что у `synthesizeAncestors` для удалённых объектов рабочего дерева: без промежуточной ветви
+«Документы» для `documents-branch`.
 
 ## Семантика diff коммита: `<commit>^ ↔ <commit>`
 
-Двойной клик по одиночному листу дерева изменений коммита открывает `vscode.diff` между СОСТОЯНИЕМ
-ПЕРЕД коммитом и состоянием коммита — классический per-commit diff, отличный от diff'ов панели
-изменений (индекс/рабочее дерево/HEAD):
+Двойной клик по одиночному листу дерева изменений коммита (`openCommitDiff`) открывает `vscode.diff`
+между СОСТОЯНИЕМ ПЕРЕД коммитом и состоянием коммита — классический per-commit diff, отличный от diff'ов
+блока «Изменения» (индекс/рабочее дерево/HEAD, команда `openDiff`, см.
+[git-metadata-changes.md](./git-metadata-changes.md#семантика-stagedunstaged-и-diff--модель-трёх-деревьев-git)):
 
 - **left** = `onec-git`-URI с `ref = '<hash>^'` (родитель коммита через `readBlobAtRef`);
 - **right** = `onec-git`-URI с `ref = hash` (сам коммит);
@@ -253,20 +328,21 @@ HistoryApp.vue → UniversalTree (та же навигаторная форма,
 **Корневой коммит.** `<root-hash>^` не существует как ref — `git show <root-hash>^:<path>` завершится с
 ошибкой, `readBlobAtRef` мягко вернёт `null`, `OnecGitContentProvider` отдаст пустую строку. Левая
 сторона diff для корневого коммита автоматически пуста (файл «появился с нуля»), без специального кода
-на стороне `resolveCommitDiff`/`HistoryGraphViewProvider` — обобщённый `OnecGitContentProvider`
-обрабатывает это как частный случай отсутствующего blob-а, тем же путём, что и untracked-файл в панели
-изменений.
+на стороне `resolveCommitDiff`/`MetadataChangesViewProvider` — обобщённый `OnecGitContentProvider`
+обрабатывает это как частный случай отсутствующего blob-а, тем же путём, что и untracked-файл в блоке
+«Изменения».
 
-Как и в панели изменений, diff открывается только для узла с ЕДИНСТВЕННЫМ представляющим файлом
+Как и в блоке «Изменения», diff открывается только для узла с ЕДИНСТВЕННЫМ представляющим файлом
 (`resolveChangeAddress(...).single === true`) — многофайловые объектные узлы diff не предлагают
 (`resolveCommitDiff` вернёт `undefined`, обработчик тихо не сработает).
 
 ## Пагинация: полная перераскладка окна, без курсора
 
-`pageSize` начинается с `PAGE_SIZE_STEP = 200` и растёт на тот же шаг при каждом `loadMore`. При
-КАЖДОМ построении графа (открытие панели, `loadMore`, `refresh`, `selectCommit`, смена рабочих папок)
-`loadHistoryState` заново читает `git log --max-count=<pageSize>` С НАЧАЛА (топологически от самых
-свежих коммитов) и заново прогоняет ВСЮ выборку через `assignLanes` — курсор/`--skip` не используется.
+`pageSize` начинается с `PAGE_SIZE_STEP = 200` и растёт на тот же шаг при каждом `historyLoadMore`. При
+КАЖДОМ построении графа (первая загрузка, `historyLoadMore`, `historyRefresh`, `selectCommit`, смена
+рабочих папок) `loadHistoryState` заново читает `git log --max-count=<pageSize>` С НАЧАЛА (топологически
+от самых свежих коммитов) и заново прогоняет ВСЮ выборку через `assignLanes` — курсор/`--skip` не
+используется.
 
 Осознанный выбор, а не недосмотр: раскладка по дорожкам («левейшая свободная дорожка») зависит от ВСЕГО
 предшествующего окна — при инкрементальной подгрузке через `--skip` новые более старые коммиты могли бы
@@ -276,27 +352,32 @@ HistoryApp.vue → UniversalTree (та же навигаторная форма,
 
 `hasMore = layout.rows.length === pageSize` — эвристика «возможно есть ещё»: если `git log
 --max-count=N` вернул РОВНО `N` строк, история, вероятно, не исчерпана (может оказаться, что коммитов
-ровно `N` — тогда следующий `loadMore` вернёт тот же список и `hasMore` станет `false`). Разумный
+ровно `N` — тогда следующий `historyLoadMore` вернёт тот же список и `hasMore` станет `false`). Разумный
 компромисс без дополнительного `git rev-list --count`.
 
 ## Формат сообщений протокола
 
-Панель — обычный `WebviewHtmlFactory`-webview (entry `history`, `viewKind: 'history'`), базовый
-транспорт (`MessageBus`, `loadInitialState`) общий с остальными панелями `src-ui`.
+История использует тот же транспорт, что и остальная панель `v8vsceditChanges` (`MessageBus`,
+`{ type: 'command', command, payload? }` от UI, единый `postMessage` от хоста) — полное описание базового
+протокола и команд секций «Изменения» см.
+[git-metadata-changes.md](./git-metadata-changes.md#формат-сообщений-протокола). Ниже — только
+команды/сообщения, специфичные для блока «История»:
 
 | Направление | Форма | Когда |
 |---|---|---|
+| ui → host | `{ type: 'command', command: 'loadHistory' }` | первое разворачивание блока «История» (`historyLoaded === false`) |
+| ui → host | `{ type: 'command', command: 'historyLoadMore' }` | кнопка «Загрузить ещё» (видна при `history.hasMore`) |
+| ui → host | `{ type: 'command', command: 'historyRefresh' }` | кнопка «Обновить» заголовка блока |
 | ui → host | `{ type: 'command', command: 'selectCommit', payload: { hash } }` | клик по строке графа |
-| ui → host | `{ type: 'command', command: 'openDiff', payload: { nodeId } }` | двойной клик по листу дерева изменений коммита |
-| ui → host | `{ type: 'command', command: 'loadMore' }` | кнопка «Загрузить ещё» (видна при `hasMore`) |
-| ui → host | `{ type: 'command', command: 'refresh' }` | кнопка «Обновить» |
-| host → ui | `{ type: 'graph', state: HistoryGraphState }` | после `open()` (плюс встроено в HTML), после `loadMore`/`refresh` |
+| ui → host | `{ type: 'command', command: 'openCommitDiff', payload: { nodeId } }` | двойной клик по листу дерева изменений коммита |
+| host → ui | `{ type: 'history', state: HistoryGraphState }` | ответ на `loadHistory`/`historyLoadMore`/`historyRefresh`, а также после любого `refresh()` панели, ЕСЛИ история уже была загружена (`maybePostHistory`) |
 | host → ui | `{ type: 'commitChanges', hash, section: ChangesSectionDto }` | после `selectCommit` |
 
-`nodeId` в `openDiff` — тот же `id`-контракт, что и в панели изменений (`staged#<i>[.<j>]` либо
+`nodeId` в `openCommitDiff` — тот же `id`-контракт, что и в секции «Изменения» (`staged#<i>[.<j>]` либо
 `other#<k>`), т.к. `buildCommitChangesSection` строит дерево через `buildObjectNode`/`buildOtherSection`
 c той же схемой id; `resolveChangeAddress` (переиспользован из `changesDtoBuilder`) — та же единственная
-точка расшифровки `nodeId` в файлы, что и там.
+точка расшифровки `nodeId` в файлы, что и там. Именно из-за совпадения схемы id `openCommitDiff` заведена
+ОТДЕЛЬНОЙ командой от `openDiff` — см. раздел про `MetadataChangesViewProvider` выше.
 
 ## Известные ограничения
 
@@ -305,7 +386,7 @@ c той же схемой id; `resolveChangeAddress` (переиспользо�
 - **Переименования (`R`) сводятся к `M`.** `git diff-tree -M --name-status` даёт `R100\t<old>\t<new>`,
   но `parseNameStatus` кладёт в `PorcelainEntry` только НОВЫЙ путь (`index: 'R'`, `oldRelPath`
   отбрасывается на уровне `MetadataChangeAggregator`, который трактует `R` как `M`) — то же
-  ограничение, что у панели изменений (см.
+  ограничение, что у блока «Изменения» (см.
   [git-metadata-changes.md](./git-metadata-changes.md#известные-ограничения)), унаследованное через
   переиспользованный агрегатор.
 - **Синтез предков не даёт «живой» иерархии исторического состояния.** Объект, переименованный/
@@ -315,16 +396,23 @@ c той же схемой id; `resolveChangeAddress` (переиспользо�
   коммит истории (см. раздел «Синтез предков» выше) — альтернатива (парсинг Configuration.xml на
   историческом ref) не реализована.
 - **`documents-branch` без промежуточной ветви «Документы».** Наследуется от `synthesizeAncestors`
-  (общий модуль с панелью изменений) — для объектов группы `documents-branch` (например
+  (общий модуль с блоком «Изменения») — для объектов группы `documents-branch` (например
   `DocumentNumerator`, `Sequence`, `DocumentJournal`) синтезированная цепочка — одна коллекция своего
   типа, без промежуточного узла «Документы», который показал бы живой навигатор.
-- **Пагинация без курсора — полная перераскладка окна на каждый `loadMore`.** Осознанный выбор ради
-  детерминизма графа (см. «Пагинация» выше), но на очень больших репозиториях (десятки тысяч коммитов)
-  повторное чтение `git log --max-count` растущего окна на каждый `loadMore` — О(итоговый размер окна)
-  работы `git log`, а не O(шаг подгрузки). Кандидат на оптимизацию — стабильная раскладка с курсором,
-  если производительность станет проблемой на практике.
+- **Пагинация без курсора — полная перераскладка окна на каждый `historyLoadMore`.** Осознанный выбор
+  ради детерминизма графа (см. «Пагинация» выше), но на очень больших репозиториях (десятки тысяч
+  коммитов) повторное чтение `git log --max-count` растущего окна на каждый `historyLoadMore` —
+  О(итоговый размер окна) работы `git log`, а не O(шаг подгрузки). Кандидат на оптимизацию — стабильная
+  раскладка с курсором, если производительность станет проблемой на практике.
+- **Синхронное чтение `git log` в сайдбар-панели гасится только ленивостью первого раскрытия.**
+  В отличие от прежней отдельной вкладки (где чтение графа было привязано к явному `open()`), блок
+  «История» теперь физически часть панели `v8vsceditChanges`; при неаккуратном изменении кода (например,
+  вызове `history.load` из `resolveWebviewView` вместо реакции на команду `loadHistory`) синхронный
+  `git log` попал бы на hot path открытия ЛЮБОЙ панели сайдбара, а не только графа. Единственная защита —
+  дисциплина: `history.load`/`loadMore` вызываются ТОЛЬКО из `handleMessage` по явной команде, `refresh()`
+  панели вызывает исключительно `history.refresh()` (no-op при `!isLoaded()`).
 - **Гранулярность — объект → часть, глубже часть не раскрывается.** Дерево изменений коммита строится
-  ТЕМИ ЖЕ функциями (`buildObjectNode`/`buildPartNode`), что и панель изменений, поэтому наследует то же
+  ТЕМИ ЖЕ функциями (`buildObjectNode`/`buildPartNode`), что и блок «Изменения», поэтому наследует то же
   ограничение: узел части (модуль/Свойства/форма) терминален (`hasChildren: false`) — до конкретного
   реквизита/колонки не раскрывается, см.
   [git-metadata-changes.md](./git-metadata-changes.md#известные-ограничения).
@@ -332,19 +420,20 @@ c той же схемой id; `resolveChangeAddress` (переиспользо�
   ИСКЛЮЧИТЕЛЬНО веткой, слитой в merge (а не переприменённые в первом родителе), в состав изменений
   merge-коммита не попадают — то же соглашение, что у большинства git-инструментов для «сводного» diff
   merge-коммита.
-- **Исторические config-roots не пересчитываются под коммит.** `loadCommitChanges` резолвит
-  принадлежность файлов объектам через ТЕКУЩИЙ список `configRoots` (`Container.changesConfigRoots`).
-  Если структура выгрузки конфигурации переехала (сменился корень `Configuration.xml`) уже ПОСЛЕ
-  рассматриваемого коммита, файлы под старым корнем попадут в `unresolved`, а не будут привязаны к
-  объекту — резолвинг «как сейчас», а не «как на момент коммита».
-- **Конфликты (`U`) вне области** — то же ограничение, что у панели изменений.
+- **Исторические config-roots не пересчитываются под коммит.** `ChangesHistorySection.selectCommit` (через
+  `loadCommitChanges`) резолвит принадлежность файлов объектам через ТЕКУЩИЙ список `configRoots`
+  (`Container.changesConfigRoots`, тот же, что и у секций «Изменения»). Если структура выгрузки
+  конфигурации переехала (сменился корень `Configuration.xml`) уже ПОСЛЕ рассматриваемого коммита, файлы
+  под старым корнем попадут в `unresolved`, а не будут привязаны к объекту — резолвинг «как сейчас», а не
+  «как на момент коммита».
+- **Конфликты (`U`) вне области** — то же ограничение, что у блока «Изменения».
 
 ## Связанные документы
 
-- [git-metadata-changes.md](./git-metadata-changes.md) — движок (`ChangesModel`,
-  `MetadataChangeAggregator`, `changesDtoBuilder`, `changesTreeAssembler`, общий Vue-компонент дерева),
-  который эта панель переиспользует целиком; там же — исходное описание модели трёх деревьев git и
-  канона путей.
+- [git-metadata-changes.md](./git-metadata-changes.md) — панель `v8vsceditChanges` целиком: движок
+  (`ChangesModel`, `MetadataChangeAggregator`, `changesDtoBuilder`, `changesTreeAssembler`, общий
+  Vue-компонент дерева), который блок «История» переиспользует; там же — исходное описание модели трёх
+  деревьев git, канона путей и базового протокола панели.
 - [mcp-paths.md](./mcp-paths.md) — канон путей, общий с `canonicalRootPath`, на котором строится
   `canonicalPath` объектных узлов.
 - [architecture.md](./architecture.md) — общая раскладка каталогов и слоёв.
