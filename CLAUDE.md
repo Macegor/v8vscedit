@@ -10,7 +10,7 @@
 1. **Навигатор метаданных** — дерево объектов из XML-выгрузки (CF и CFE), свойства, чтение/создание/редактирование метаданных, открытие BSL-модулей.
 2. **Языковая поддержка BSL** — LSP-клиент для внешнего `bsl-analyzer`.
 
-Подробная документация — в `./docs` (`architecture.md`, `metadata-navigator.md`, `metadata-parser.md`, `bsl-language-support.md`, `mcp-paths.md`, `xml-format-rulesets.md`, `agentic-pipeline.md`, `vscode-extension-best-practices.md`, `git-metadata-changes.md`, `git-history-graph.md`).
+Подробная документация — в `./docs` (`architecture.md`, `metadata-navigator.md`, `metadata-parser.md`, `bsl-language-support.md`, `mcp-paths.md`, `mcp-server-lifecycle.md`, `xml-format-rulesets.md`, `agentic-pipeline.md`, `vscode-extension-best-practices.md`, `git-metadata-changes.md`, `git-history-graph.md`).
 
 ## Язык общения
 
@@ -48,6 +48,19 @@
 с конкретными замечаниями; после доработки — повторный `qa-e2e` и `reviewer`. При сомнении в размере
 задачи оркестратор выбирает FULL-трек.
 
+**Эффективность конвейера (обязанности оркестратора):**
+
+- **Не дроби `test-writer`.** Один брифинг = все тесты задачи сразу: покрытие новых файлов до 100% (все
+  ветки), параметризация по конечным множествам значений (enum/настройки, напр. `host`), helper'ы
+  диалогов и т.п. Отдельные вызовы «дописать тест на X», «добрать покрытие Y» — это лишние ре-циклы;
+  включай их в первый бриф. Исключение — реальный возврат от reviewer/qa по новому дефекту.
+- **Гейт покрытия — `coverage:changed`, не глобальный `coverage`.** qa-e2e проверяет 100% на изменённых
+  файлах; глобальный порог красный из-за легаси и НЕ основание для RED. Не давай агентам гонять
+  stash/baseline-сравнения и десятки повторов «на стабильность».
+- **Флейк = дефект теста, а не окружения.** Возврат автору тестов, а не бесконечные повторы.
+- **Быстрый цикл на промежуточных стадиях:** `test:compile` → `MOCHA_GREP=… test:fast`; полный `npm test`
+  — один раз на стадии qa-e2e.
+
 ## Команды
 
 ```bash
@@ -56,13 +69,15 @@ npm run watch         # параллельный watch node + webview (scripts/v
 npm run typecheck     # tsc (расширение) + vue-tsc (webview); = npm run compile
 npm run lint          # eslint . --max-warnings=0
 npm test              # запуск всех тестов через @vscode/test-electron (out/test/runTests.js)
-npm run coverage      # c8 с порогом 100%
+npm run test:fast     # прогон без pretest-пересборки; фильтр: MOCHA_GREP='<regex>' npm run test:fast
+npm run coverage:changed # 100% ТОЛЬКО по изменённым production-файлам (гейт задачи; scripts/patch-coverage.mjs)
+npm run coverage      # c8 с глобальным порогом 100% (аспирационный; сейчас RED из-за легаси-долга — не гейт задачи)
 npm run coverage:report  # покрытие без падения по порогу (диагностика)
 ```
 
-- **`npm test` требует предварительной сборки.** Скрипт `pretest` уже делает `typecheck → build → test:compile` (компиляция тестов в `out/` через `tsconfig.test.json`). Тестовый runner берётся из `out/`, т.к. Mocha грузит `out/test/suite/*.js`.
+- **`npm test` требует предварительной сборки.** Скрипт `pretest` делает `typecheck → build:node → build:webview → test:compile` (без `clean` — сборка инкрементальная; компиляция тестов в `out/` через `tsconfig.test.json`). Тестовый runner берётся из `out/`, т.к. Mocha грузит `out/test/suite/*.js`.
 - Запуск под конкретной версией VS Code: `VSCODE_TEST_VERSION=1.85.0 npm test`.
-- **Отдельный тест:** runner (`src/test/suite/index.ts`) грузит все `**/*.test.js` без grep-фильтра. Чтобы прогнать один — временно `test.only(...)` / `suite.only(...)` (Mocha UI — `tdd`), затем пересобрать тесты (`npm run test:compile`).
+- **Отдельный тест — быстро и без `.only`.** Runner (`src/test/suite/index.ts`) читает `MOCHA_GREP` и применяет `mocha.grep()`. Итерация: правка теста → `npm run test:compile` → `MOCHA_GREP='<regex по имени suite/теста>' npm run test:fast` (`test:fast` НЕ запускает `pretest`, т.е. не пересобирает Vite — на порядок быстрее полного `npm test`). `.only` больше не нужен.
 - Перед любым коммитом: `npm run compile` и **`npm run lint`** должны проходить без ошибок и предупреждений.
 - Точки входа: `main` = `./dist/extension.js`; CLI — `dist/cli/onec-tools.js`. Целевая среда — VS Code API ≥ 1.85, TypeScript ≥ 5.3, strict, ES2020.
 
@@ -141,6 +156,10 @@ src/
 │   │                                  # «Изменения метаданных», отдельного webview/вкладки нет)
 │   ├── environment/                  # bsl-analyzer.toml, окружение проекта, реестр баз
 │   ├── process/                      # поиск платформы, spawn, декодер OEM/Win1251
+│   ├── mcp/                          # McpServerIdentity/McpStartDecision/McpPortProbe/
+│   │                                  # McpConflictPrompt/McpHost — чистая логика жизненного цикла
+│   │                                  # встроенного MCP-сервера (bind/reuse/conflict, закрытие порта),
+│   │                                  # без vscode; см. docs/mcp-server-lifecycle.md
 │   └── skills/                       # AiSkillsInstaller — установка ИИ-навыков
 │
 ├── ui/                               # Всё, что знает про vscode API
@@ -163,7 +182,10 @@ src/
 │   │   └── subsystem|search|repository|environment|standalone|…
 │   ├── commands/                     # CommandRegistry.registerAll + подпапки по доменам
 │   ├── git/                          # OnecGitContentProvider — схема onec-git для diff HEAD/индекс
-│   ├── mcp/                          # V8McpServer, McpNodeRegistry, McpPropertyService
+│   ├── mcp/                          # V8McpServer (тонкий HTTP-фасад: транспорт MCP, служебные
+│   │                                  # эндпоинты /identity+/shutdown — не MCP-инструменты,
+│   │                                  # см. docs/mcp-server-lifecycle.md), McpNodeRegistry,
+│   │                                  # McpPropertyService
 │   └── readonly/                     # BslReadonlyGuard
 │
 ├── lsp/                              # LspManager + analyzer/ (внешний bsl-analyzer; встроенного сервера нет)
@@ -224,7 +246,7 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
 
 ## MCP-сервер для ИИ-агентов
 
-`src/ui/mcp/V8McpServer.ts` — локальный MCP-сервер, официальный канал автоматизации. Запускается только после `reloadEntries()`, слушает loopback, не даёт агенту прямой доступ к shell/произвольным путям/произвольным VS Code командам.
+`src/ui/mcp/V8McpServer.ts` — локальный MCP-сервер, официальный канал автоматизации. Запускается только после `reloadEntries()`, слушает loopback, не даёт агенту прямой доступ к shell/произвольным путям/произвольным VS Code командам. Старт/остановка, гарантированное освобождение порта и разрешение конфликта порта с другим инстансом/проектом — отдельный слой `infra/mcp/`, см. [mcp-server-lifecycle.md](./docs/mcp-server-lifecycle.md) (не путать с каноном путей инструментов ниже).
 
 Правила:
 - SDK: production-ветка `@modelcontextprotocol/sdk` v1.x. Транспорт: Streamable HTTP на `127.0.0.1`/`localhost`/`::1`; удалённый bind запрещён.
@@ -269,6 +291,12 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
 - **Новый watcher:** `FileSystemWatcher` — только в `Container` или `ui/support/`; обработчик делегирует в сервис.
 - **Внешняя интеграция (vrunner):** запуск процесса в `ui/commands/ext/`; декодирование OEM/Win1251 через `iconv-lite`; прогресс/отмена через `vscode.window.withProgress`.
 - **Открытие BSL-модулей:** только реальные `file://` документы (виртуальная схема `onec://` удалена). Readonly — через `ui/readonly/BslReadonlyGuard.ts`.
+- **Изменение жизненного цикла/безопасности встроенного MCP-сервера** (порт, идентичность процесса,
+  graceful shutdown, Host/Origin, отличается от «новый MCP-инструмент» из раздела выше): чистая логика —
+  в `infra/mcp/` (`McpServerIdentity`, `McpStartDecision`, `McpPortProbe`, `McpConflictPrompt`, `McpHost`,
+  без `vscode`) → тонкий адаптер конкретного эндпоинта/диалога — `ui/mcp/V8McpServer.ts` (HTTP-роутинг,
+  служебные `/identity`+`/shutdown` — не MCP-инструменты) и `Container` (чтение настроек `v8vscedit.mcp.*`,
+  показ диалога конфликта порта). См. [mcp-server-lifecycle.md](./docs/mcp-server-lifecycle.md).
 - **Новая часть объекта в панели «Изменения метаданных»** (`MetadataPartKind`, см.
   [git-metadata-changes.md](./docs/git-metadata-changes.md)): случай в
   `infra/git/MetadataChangeResolver.ts` (`resolveSubPath`/дизамбигуация слота через
@@ -342,10 +370,11 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
 ## TDD и покрытие
 
 1. **Любое изменение поведения начинается с теста** (красный → код → зелёный).
-2. **Покрытие production-кода — 100%** по строкам, веткам, функциям, операторам.
-3. **Заглушки/фиктивные ассёрты/тесты ради покрытия запрещены.** Тест проверяет реальное поведение на настоящих XML-фикстурах (`example/src/cf`, `example/src/cfe/EVOLC`), реальных временных файлах или реальном процессе; mock/stub допустимы только для внешней недоступной системы с обоснованием.
-4. Непокрываемую из-за VS Code API логику выносить в `domain/`/`infra/` и покрывать unit-тестом; тонкий UI-адаптер — интеграционным тестом.
-5. Перед завершением задачи — `npm test` и `npm run coverage`. Если нельзя выполнить локально — зафиксировать причину, задачу не считать завершённой.
+2. **Покрытие кода, ЗАТРОНУТОГО изменением, — 100%** по строкам, веткам, функциям, операторам. Гейт задачи — `npm run coverage:changed` (проверяет ровно изменённые/новые production-файлы). Глобальный `npm run coverage --100` сейчас красный из-за унаследованного легаси-долга в несвязанных областях (`ui/tree/nodeBuilders/*`, `ExtensionCommandRunner`, `RepositoryCommandRunner`, `InitializeProjectCommand`, `infra/xml/form/*` и др.) — это **известное состояние, не предмет каждой задачи**; не трать время, доказывая это заново через stash/baseline. `Container.ts`/`extension.ts` исполняются в Extension Host и c8 не инструментируются — покрываются интеграционно, из гейта изменённых файлов исключены.
+3. **Заглушки/фиктивные ассёрты/тесты ради покрытия запрещены.** Тест проверяет реальное поведение на настоящих XML-фикстурах (`example/src/cf`, `example/src/cfe/EVOLC`), реальных временных файлах или реальном процессе; mock/stub допустимы только для внешней недоступной системы с обоснованием. Тесты **детерминированы** — без гонок/угадывания таймингов; учитывай фоновое поведение SDK/клиентов.
+4. Непокрываемую из-за VS Code API логику выносить в `domain/`/`infra/` и покрывать unit-тестом; тонкий UI-адаптер — интеграционным тестом. Осознанно недостижимую защитную ветку — `/* c8 ignore */` с обоснованием, а не оставлять пробел для qa.
+5. **Покрытие новых файлов доводится до 100% за один проход автора тестов** (перечислить ветки заранее: ошибки, таймауты, guard'ы, граничные входы; параметризовать по конечным множествам значений — enum/настройки, напр. `host ∈ {127.0.0.1, localhost, ::1}`), чтобы не гонять лишний ре-цикл через qa.
+6. Перед завершением задачи — `npm test` (регресс) и `npm run coverage:changed` (100% на изменённом). Если нельзя выполнить локально — зафиксировать причину, задачу не считать завершённой.
 
 ## Рабочий процесс и отладка
 

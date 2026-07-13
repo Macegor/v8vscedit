@@ -705,7 +705,7 @@
         "v8vscedit.mcp.port": {
           "type": "number",
           "default": 38481,
-          "description": "Порт локального MCP-сервера. Если порт занят, расширение попробует следующие порты"
+          "description": "Порт локального MCP-сервера. Если порт занят сервером этого же проекта — используется он; если чужим процессом — расширение предложит закрыть его или сменить порт"
         },
         "v8vscedit.aiMcp.bslAnalyzer.autoStart": {
           "type": "boolean",
@@ -888,9 +888,11 @@
     "clean": "node scripts/clean-dist.mjs",
     "lint": "eslint . --max-warnings=0",
     "test": "node ./out/test/runTests.js",
+    "test:fast": "node ./out/test/runTests.js",
     "coverage": "c8 --check-coverage --100 npm test",
     "coverage:report": "c8 npm test",
-    "pretest": "npm run typecheck && npm run build && npm run test:compile",
+    "coverage:changed": "node scripts/patch-coverage.mjs",
+    "pretest": "npm run typecheck && npm run build:node && npm run build:webview && npm run test:compile",
     "pretest:e2e": "npm run build && npm run test:compile",
     "test:e2e": "node ./out/test/e2e/runE2ETests.js"
   },
