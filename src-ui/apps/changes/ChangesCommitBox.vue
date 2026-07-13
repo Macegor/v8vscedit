@@ -8,8 +8,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   commit: [message: string];
-  refresh: [];
-  stageAll: [];
 }>();
 
 const message = ref(props.initialMessage);
@@ -35,27 +33,6 @@ function onCommit(): void {
 
 <template>
   <div class="commit-box">
-    <div class="commit-toolbar">
-      <button
-        class="toolbar-button"
-        type="button"
-        title="Проиндексировать все изменения"
-        aria-label="Проиндексировать все изменения"
-        @click="emit('stageAll')"
-      >
-        <span class="codicon codicon-add" aria-hidden="true" />
-      </button>
-      <button
-        class="toolbar-button"
-        type="button"
-        title="Обновить список изменений"
-        aria-label="Обновить список изменений"
-        @click="emit('refresh')"
-      >
-        <span class="codicon codicon-refresh" aria-hidden="true" />
-      </button>
-    </div>
-
     <textarea
       class="commit-message"
       :value="message"
@@ -85,27 +62,6 @@ function onCommit(): void {
   gap: 6px;
   padding: 8px;
   border-bottom: 1px solid var(--vscode-panel-border, transparent);
-}
-.commit-toolbar {
-  display: flex;
-  justify-content: flex-end;
-  gap: 2px;
-}
-.toolbar-button {
-  width: 24px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  color: var(--vscode-icon-foreground);
-  background: transparent;
-  cursor: pointer;
-}
-.toolbar-button:hover {
-  background: var(--vscode-toolbar-hoverBackground);
 }
 .commit-message {
   width: 100%;

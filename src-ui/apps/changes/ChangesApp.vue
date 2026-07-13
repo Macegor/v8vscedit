@@ -186,9 +186,10 @@ function onRefresh(): void {
 }
 
 function onStageAll(): void {
-  for (const node of state.value.unstaged.nodes) {
-    sendCommand('stage', { nodeId: node.id });
-  }
+  // Индексацию всех изменений выполняет host по модели (объектные части +
+  // «Прочие»): перебирать здесь узлы секции нельзя — верхнеуровневые узлы
+  // навигаторные (group-узлы), их id не адресуют файлы.
+  sendCommand('stageAll');
 }
 
 function toggleChanges(): void {
@@ -281,22 +282,38 @@ onUnmounted(() => {
 
 <template>
   <div class="changes-panel">
-    <div class="scroll-area">
-      <section class="panel-block">
-        <button type="button" class="block-header" @click="toggleChanges">
-          <span class="codicon" :class="changesOpen ? 'codicon-chevron-down' : 'codicon-chevron-right'" />
-          <span class="block-title">Изменения</span>
-        </button>
+    <section class="panel-block changes-block" :class="changesOpen ? 'expanded' : 'collapsed'">
+      <button type="button" class="block-header" @click="toggleChanges">
+        <span class="codicon" :class="changesOpen ? 'codicon-chevron-down' : 'codicon-chevron-right'" />
+        <span class="block-title">Изменения</span>
+        <span v-if="changesOpen" class="block-actions">
+          <button
+            type="button"
+            class="header-button"
+            title="Проиндексировать все изменения"
+            @click.stop="onStageAll"
+          >
+            <span class="codicon codicon-add" />
+          </button>
+          <button
+            type="button"
+            class="header-button"
+            title="Обновить"
+            @click.stop="onRefresh"
+          >
+            <span class="codicon codicon-refresh" />
+          </button>
+        </span>
+      </button>
 
-        <div v-if="changesOpen" class="block-body">
-          <ChangesCommitBox
-            :can-commit="state.canCommit"
-            :initial-message="state.commitMessage"
-            @commit="onCommit"
-            @refresh="onRefresh"
-            @stage-all="onStageAll"
-          />
+      <div v-if="changesOpen" class="block-body">
+        <ChangesCommitBox
+          :can-commit="state.canCommit"
+          :initial-message="state.commitMessage"
+          @commit="onCommit"
+        />
 
+        <div class="block-scroll">
           <div v-if="hasChanges" class="changes-content">
             <section v-for="section in visibleSections" :key="section.kind" class="changes-section">
               <div class="section-header">{{ section.label }}</div>
@@ -319,34 +336,36 @@ onUnmounted(() => {
             <p class="empty-title">Нет изменений метаданных</p>
           </div>
         </div>
-      </section>
+      </div>
+    </section>
 
-      <section class="panel-block">
-        <button type="button" class="block-header" @click="toggleHistory">
-          <span class="codicon" :class="historyOpen ? 'codicon-chevron-down' : 'codicon-chevron-right'" />
-          <span class="block-title">История</span>
-          <span v-if="historyOpen" class="block-actions">
-            <button
-              type="button"
-              class="header-button"
-              title="Обновить"
-              @click.stop="onHistoryRefresh"
-            >
-              <span class="codicon codicon-refresh" />
-            </button>
-            <button
-              v-if="history.hasMore"
-              type="button"
-              class="header-button"
-              title="Загрузить ещё"
-              @click.stop="onHistoryLoadMore"
-            >
-              <span class="codicon codicon-chevron-down" />
-            </button>
-          </span>
-        </button>
+    <section class="panel-block history-block" :class="historyOpen ? 'expanded' : 'collapsed'">
+      <button type="button" class="block-header" @click="toggleHistory">
+        <span class="codicon" :class="historyOpen ? 'codicon-chevron-down' : 'codicon-chevron-right'" />
+        <span class="block-title">История</span>
+        <span v-if="historyOpen" class="block-actions">
+          <button
+            type="button"
+            class="header-button"
+            title="Обновить"
+            @click.stop="onHistoryRefresh"
+          >
+            <span class="codicon codicon-refresh" />
+          </button>
+          <button
+            v-if="history.hasMore"
+            type="button"
+            class="header-button"
+            title="Загрузить ещё"
+            @click.stop="onHistoryLoadMore"
+          >
+            <span class="codicon codicon-chevron-down" />
+          </button>
+        </span>
+      </button>
 
-        <div v-if="historyOpen" class="block-body">
+      <div v-if="historyOpen" class="block-body">
+        <div class="block-scroll">
           <CommitGraph
             :rows="history.rows"
             :lane-count="history.laneCount"
@@ -376,8 +395,8 @@ onUnmounted(() => {
             </template>
           </CommitGraph>
         </div>
-      </section>
-    </div>
+      </div>
+    </section>
 
     <AppContextMenu
       :visible="contextMenu.visible"
@@ -409,16 +428,26 @@ onUnmounted(() => {
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size, 13px);
 }
-.scroll-area {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-}
+/* Два блока делят высоту 60/40, каждый скроллится независимо. Свёрнутый блок
+   ужимается до высоты шапки, раскрытый занимает оставшееся пространство. */
 .panel-block {
   display: flex;
   flex-direction: column;
+  min-height: 0;
+}
+.panel-block.collapsed {
+  flex: 0 0 auto;
+}
+.changes-block.expanded {
+  flex: 3 1 0;
+}
+.history-block.expanded {
+  flex: 2 1 0;
+}
+.block-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 .block-header {
   display: flex;
@@ -464,6 +493,8 @@ onUnmounted(() => {
 .block-body {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .changes-content {
   display: flex;

@@ -324,6 +324,34 @@ suite('MetadataChangesViewProvider — webview-презентация предс
     assert.strictEqual(after.unstaged.nodes.length, 0, 'unstaged должен опустеть');
   });
 
+  test('команда stageAll индексирует ВСЕ непроиндексированные файлы и пере-постит state', async () => {
+    // Две независимые unstaged-правки: модуль объекта и файл вне структуры выгрузки.
+    appendLine(fixture.objectModuleBsl, '// unstaged-правка для stageAll');
+    const looseRel = 'loose-for-stage-all.txt';
+    const loosePath = path.join(fixture.gitRoot, looseRel);
+    fs.writeFileSync(loosePath, 'файл вне структуры\n', 'utf-8');
+    resolve();
+    const relModule = path.relative(fixture.gitRoot, fixture.objectModuleBsl);
+
+    await fakeWebview.receiveMessage({ type: 'command', command: 'stageAll' });
+
+    assert.strictEqual(statusOf(fixture.gitRoot, relModule), `M  ${relModule}`, 'модуль объекта должен проиндексироваться');
+    assert.strictEqual(statusOf(fixture.gitRoot, looseRel), `A  ${looseRel}`, 'файл вне структуры должен проиндексироваться');
+    const after = lastState(fakeWebview.postedMessages);
+    // Модуль объекта уходит в staged (секция «Не проиндексировано» пустеет); файл
+    // вне структуры остаётся в «Прочих», но уже застейдженным (эта секция
+    // показывает и staged-, и unstaged-файлы вне структуры выгрузки).
+    assert.strictEqual(after.unstaged.nodes.length, 0, 'unstaged должен опустеть');
+    assert.strictEqual(after.staged.nodes.length, 1, 'модуль объекта должен переместиться в staged');
+  });
+
+  test('команда stageAll без непроиндексированных файлов — no-op, не бросает', async () => {
+    resolve();
+    await assert.doesNotReject(async () => {
+      await fakeWebview.receiveMessage({ type: 'command', command: 'stageAll' });
+    });
+  });
+
   test('команда unstage возвращает застейдженный файл в рабочее дерево, не теряя правку', async () => {
     appendLine(fixture.objectModuleBsl, '// правка, которую застейджим вручную');
     const relPath = path.relative(fixture.gitRoot, fixture.objectModuleBsl);
