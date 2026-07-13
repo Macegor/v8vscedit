@@ -320,6 +320,29 @@ suite('CLI и запуск процессов', () => {
     assert.strictEqual(result.timedOut, true);
     assert.strictEqual(result.exitCode, 0);
   });
+
+  // `dist/cli/onec-tools.js` — реальная точка входа CLI: выполняет `void main()`
+  // безусловно на верхнем уровне модуля и завершает процесс через `process.exit`,
+  // поэтому её нельзя импортировать напрямую в тестовом процессе (оборвёт весь
+  // прогон мокки) — единственный безопасный способ проверить её поведение,
+  // включая текст usage со списком команд, — реальный дочерний процесс на
+  // собранном артефакте (pretest уже выполняет build:node перед тестами).
+  test('собранный CLI без аргументов печатает usage со списком команд и завершается кодом 1', async () => {
+    const cliPath = path.join(__dirname, '..', '..', '..', 'dist', 'cli', 'onec-tools.js');
+    assert.ok(fs.existsSync(cliPath), `собранный CLI не найден: ${cliPath} (ожидается build:node из pretest)`);
+
+    const stdoutLines: string[] = [];
+    const result = await runProcess({
+      command: process.execPath,
+      args: [cliPath],
+      onStdout: (line) => stdoutLines.push(line),
+    });
+
+    assert.strictEqual(result.exitCode, 1);
+    const usage = stdoutLines.join('\n');
+    assert.match(usage, /Usage: node dist\/cli\/onec-tools\.js <command>/);
+    assert.match(usage, /list-db-extensions/);
+  });
 });
 
 /**

@@ -17,7 +17,9 @@ import {
   updateConfigurationOperationStatus,
   runUpdateMainConfiguration,
   runUpdateExtension,
+  listConnectedDatabaseExtensions,
 } from './ExtensionCommandRunner';
+import { planExtensionChoices } from '../../../infra/environment';
 
 interface ActionItem extends vscode.QuickPickItem {
   actionId: 'import' | 'update' | 'compileAndUpdateExt';
@@ -207,13 +209,8 @@ export function registerExtensionCommands(
     }),
 
     vscode.commands.registerCommand('v8vscedit.connectExtension', async () => {
-      const extensionName = await vscode.window.showInputBox({
-        title: 'Подключить расширение',
-        prompt: 'Введите имя расширения как оно называется в базе',
-        placeHolder: 'ИмяРасширения',
-        validateInput: validateExtensionName,
-      });
-      const normalizedExtensionName = extensionName?.trim();
+      /* c8 ignore next -- строка вызова vscode-команды; не юнит-тестируется без полного харнесса CommandServices, ветвящаяся логика выбора имени — в planExtensionChoices (покрыта на 100%) */
+      const normalizedExtensionName = await resolveExtensionNameToConnect(services);
       if (!normalizedExtensionName) {
         return;
       }
@@ -585,16 +582,55 @@ function isDirectory(directoryPath: string): boolean {
   }
 }
 
-function validateExtensionName(value: string): string | undefined {
-  const name = value.trim();
-  if (!name) {
-    return 'Укажите имя расширения.';
+
+/**
+ * Определяет имя расширения для подключения ТОЛЬКО из списка расширений базы,
+ * полученного через `DumpDBCfgList` (уже подключённые отфильтрованы). Ручного
+ * ввода нет: если список недоступен (нет подключения к базе / старая платформа),
+ * в базе нет расширений или все они уже подключены — подключение невозможно, и
+ * причина явно сообщается пользователю. Ветвящаяся логика выбора вынесена в
+ * чистую `planExtensionChoices`; здесь — только диалоги vscode.
+ */
+/* c8 ignore start -- диалоги vscode (QuickPick) и чтение ФС списка подключённых расширений; не юнит-тестируется (правило CLAUDE.md №4), решающая логика — в planExtensionChoices */
+async function resolveExtensionNameToConnect(services: CommandServices): Promise<string | undefined> {
+  const workspaceRoot = services.workspaceFolder.uri.fsPath;
+  const dbNames = await listConnectedDatabaseExtensions(services.workspaceFolder, services.outputChannel);
+
+  if (dbNames === undefined) {
+    await vscode.window.showErrorMessage(
+      'Не удалось получить список расширений из базы. Проверьте подключение к базе (env.json) и версию платформы — список расширений доступен начиная с 8.3.11.'
+    );
+    return undefined;
   }
-  if (/[\\/:*?"<>|]/.test(name) || name === '.' || name === '..') {
-    return 'Имя не должно содержать символов пути.';
+  if (dbNames.length === 0) {
+    await vscode.window.showInformationMessage('В подключённой базе нет расширений.');
+    return undefined;
   }
-  return undefined;
+
+  const connectedNames = readConnectedExtensionFolderNames(workspaceRoot);
+  const plan = planExtensionChoices(dbNames, connectedNames);
+  if (plan.allConnected) {
+    await vscode.window.showInformationMessage('Все расширения базы уже подключены.');
+    return undefined;
+  }
+
+  return vscode.window.showQuickPick(plan.selectable, {
+    title: 'Подключить расширение',
+    placeHolder: 'Выберите расширение из базы',
+  });
 }
+
+function readConnectedExtensionFolderNames(workspaceRoot: string): string[] {
+  const cfeRoot = path.join(workspaceRoot, 'src', 'cfe');
+  try {
+    return fs
+      .readdirSync(cfeRoot)
+      .filter((name) => isDirectory(path.join(cfeRoot, name)));
+  } catch {
+    return [];
+  }
+}
+/* c8 ignore stop */
 
 function isPathInside(filePath: string, rootPath: string): boolean {
   const normalizedFilePath = path.resolve(filePath).toLowerCase();
