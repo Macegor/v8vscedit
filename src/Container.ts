@@ -41,7 +41,6 @@ import { ensureEnvJson } from './infra/repository/envJsonTemplate';
 import { GitMetadataStatusService } from './infra/git/GitMetadataStatusService';
 import { resolveGitRoot } from './infra/git/GitStatusReader';
 import { MetadataChangesViewProvider } from './ui/views/changes/MetadataChangesViewProvider';
-import { HistoryGraphViewProvider } from './ui/views/history/HistoryGraphViewProvider';
 import { OnecGitContentProvider, ONEC_GIT_SCHEME } from './ui/git/OnecGitContentProvider';
 import { AiSkillsInstaller } from './infra/skills/AiSkillsInstaller';
 import { StandaloneServerService } from './infra/standalone';
@@ -90,7 +89,6 @@ export class Container {
   readonly gitMetadataStatusService: GitMetadataStatusService;
   readonly gitMetadataDecorationProvider: GitMetadataDecorationProvider;
   readonly metadataChangesViewProvider: MetadataChangesViewProvider;
-  readonly historyGraphViewProvider: HistoryGraphViewProvider;
   readonly onecGitContentProvider: OnecGitContentProvider;
   readonly changesGitRoot: string;
   private changesConfigRoots: readonly ConfigEntry[] = [];
@@ -193,13 +191,6 @@ export class Container {
       gitRoot: this.changesGitRoot,
       getConfigRoots: () => this.changesConfigRoots,
       treeProvider: this.treeProvider,
-    });
-
-    // Панель «История» (граф истории git) — самостоятельный WebviewPanel;
-    // корни git/выгрузки те же, что у панели изменений.
-    this.historyGraphViewProvider = new HistoryGraphViewProvider(context.extensionUri, {
-      gitRoot: this.changesGitRoot,
-      getConfigRoots: () => this.changesConfigRoots,
     });
 
     this.subsystemXmlService = new SubsystemXmlService();
@@ -465,7 +456,6 @@ export class Container {
       reloadEntries: () => this.reloadEntries(),
       dynamicPanelController: this.dynamicPanelController,
       subsystemEditorViewProvider: this.subsystemEditorViewProvider,
-      historyGraphViewProvider: this.historyGraphViewProvider,
       outputChannel: this.outputChannel,
       supportService: this.supportService,
       repositoryService: this.repositoryService,
@@ -608,10 +598,8 @@ export class Container {
         { webviewOptions: { retainContextWhenHidden: true } }
       ),
       vscode.workspace.registerTextDocumentContentProvider(ONEC_GIT_SCHEME, this.onecGitContentProvider),
-      this.historyGraphViewProvider,
       vscode.workspace.onDidChangeWorkspaceFolders(() => {
         this.metadataChangesViewProvider.refresh();
-        this.historyGraphViewProvider.refresh();
       })
     );
   }
@@ -684,7 +672,6 @@ export class Container {
       const refreshed = this.treeProvider.refreshCacheForFiles(filePaths);
       this.gitMetadataDecorationProvider.refresh();
       this.metadataChangesViewProvider.refresh();
-      this.historyGraphViewProvider.refresh();
       return refreshed;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -703,7 +690,6 @@ export class Container {
       this.gitMetadataDecorationProvider.refresh();
       this.treeProvider.refreshDecorations();
       this.metadataChangesViewProvider.refresh();
-      this.historyGraphViewProvider.refresh();
     }, 500);
   }
 

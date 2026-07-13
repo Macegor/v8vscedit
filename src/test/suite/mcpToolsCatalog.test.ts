@@ -137,7 +137,6 @@ function createBaselineServices(overrides: Partial<CommandServices> = {}): Comma
     reloadEntries: () => undefined,
     dynamicPanelController: { handleMetadataRemoved: () => undefined } as never,
     subsystemEditorViewProvider: { handleMetadataRemoved: () => undefined } as never,
-    historyGraphViewProvider: { open: notImplemented('historyGraphViewProvider.open'), refresh: () => undefined, dispose: () => undefined } as never,
     outputChannel: { appendLine: () => undefined } as unknown as vscode.OutputChannel,
     supportService: undefined,
     repositoryService: { isEditRestricted: () => false } as never,

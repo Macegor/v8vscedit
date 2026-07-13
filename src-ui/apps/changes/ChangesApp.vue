@@ -3,9 +3,12 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { MessageBus } from '@ui-shared/api/messageBus';
 import type { HostToUiMessage } from '@ui-shared/protocol/hostMessages';
 import type { ChangesSectionDto, ChangesViewState } from '@ui-shared/types/changes';
+import type { HistoryGraphState } from '@ui-shared/types/history';
+import type { TreeNodeDto } from '@ui-shared/types/tree';
 import UniversalTree from '@ui-shared/components/tree/UniversalTree.vue';
 import AppContextMenu, { type ContextMenuItem } from '@ui-shared/components/AppContextMenu.vue';
 import ChangesCommitBox from './ChangesCommitBox.vue';
+import CommitGraph from './CommitGraph.vue';
 
 const props = defineProps<{
   initialState: ChangesViewState | null;
@@ -31,6 +34,22 @@ const state = ref<ChangesViewState>(
 const openIds = reactive<Record<string, true>>({});
 const loadingIds = reactive<Record<string, true>>({});
 const selectedId = ref<string | null>(null);
+
+// Сворачиваемые блоки панели: «Изменения» открыт по умолчанию, «История» — по требованию.
+const changesOpen = ref(true);
+const historyOpen = ref(false);
+const historyLoaded = ref(false);
+
+const history = ref<HistoryGraphState>({ rows: [], laneCount: 0, hasMore: false });
+const commitSection = ref<ChangesSectionDto | null>(null);
+const commitSelectedHash = ref<string | undefined>(undefined);
+
+// Состояние дерева изменений выбранного коммита. Держим ОТДЕЛЬНО от `openIds`
+// дерева блока «Изменения»: id узлов (`staged#…`) совпадают по форме, смешивание
+// раскрытия двух деревьев ломало бы отображение.
+const commitOpenIds = reactive<Record<string, true>>({});
+const commitSelectedId = ref<string | null>(null);
+const commitLoadingIds = reactive<Record<string, true>>({});
 
 const sections = computed<ChangesSectionDto[]>(() => [
   state.value.staged,
@@ -63,6 +82,25 @@ function expandAll(): void {
 }
 
 expandAll();
+
+/** Раскрывает всю навигаторную ветвь секции выбранного коммита. */
+function expandCommitSection(): void {
+  const section = commitSection.value;
+  if (!section) {
+    return;
+  }
+  const visit = (nodes: readonly TreeNodeDto[]): void => {
+    for (const node of nodes) {
+      if (node.hasChildren) {
+        commitOpenIds[node.id] = true;
+      }
+      if (node.children) {
+        visit(node.children);
+      }
+    }
+  };
+  visit(section.nodes);
+}
 
 const contextMenu = reactive<{ visible: boolean; x: number; y: number; items: ContextMenuItem[]; nodeId: string | null }>(
   { visible: false, x: 0, y: 0, items: [], nodeId: null },
@@ -153,6 +191,56 @@ function onStageAll(): void {
   }
 }
 
+function toggleChanges(): void {
+  changesOpen.value = !changesOpen.value;
+}
+
+function toggleHistory(): void {
+  historyOpen.value = !historyOpen.value;
+  if (historyOpen.value && !historyLoaded.value) {
+    sendCommand('loadHistory');
+    historyLoaded.value = true;
+  }
+}
+
+function onSelectCommit(hash: string): void {
+  commitSelectedHash.value = hash;
+  sendCommand('selectCommit', { hash });
+}
+
+function onCommitToggle(nodeId: string, open: boolean): void {
+  if (open) {
+    commitOpenIds[nodeId] = true;
+  } else {
+    delete commitOpenIds[nodeId];
+  }
+}
+
+function onCommitSelect(nodeId: string | null): void {
+  commitSelectedId.value = nodeId;
+}
+
+function onCommitDefault(nodeId: string): void {
+  sendCommand('openCommitDiff', { nodeId });
+}
+
+function onHistoryRefresh(): void {
+  sendCommand('historyRefresh');
+}
+
+function onHistoryLoadMore(): void {
+  sendCommand('historyLoadMore');
+}
+
+/** Короткая относительная дата выбранного коммита в блоке деталей. */
+const commitRow = computed(() => {
+  const hash = commitSelectedHash.value;
+  if (!hash) {
+    return null;
+  }
+  return history.value.rows.find((row) => row.hash === hash) ?? null;
+});
+
 function handleState(message: HostToUiMessage<ChangesViewState>): void {
   if (message.type === 'state') {
     state.value = message.state;
@@ -160,45 +248,135 @@ function handleState(message: HostToUiMessage<ChangesViewState>): void {
   }
 }
 
+function handleHistory(message: HostToUiMessage): void {
+  if (message.type === 'history') {
+    history.value = message.state;
+    commitSelectedHash.value = message.state.selectedHash;
+  }
+}
+
+function handleCommitChanges(message: HostToUiMessage): void {
+  if (message.type === 'commitChanges') {
+    commitSection.value = message.section;
+    commitSelectedHash.value = message.hash;
+    for (const key of Object.keys(commitOpenIds)) {
+      delete commitOpenIds[key];
+    }
+    expandCommitSection();
+  }
+}
+
 onMounted(() => {
   props.messageBus.on('state', handleState);
+  props.messageBus.on('history', handleHistory);
+  props.messageBus.on('commitChanges', handleCommitChanges);
 });
 
 onUnmounted(() => {
   props.messageBus.off('state', handleState);
+  props.messageBus.off('history', handleHistory);
+  props.messageBus.off('commitChanges', handleCommitChanges);
 });
 </script>
 
 <template>
   <div class="changes-panel">
-    <ChangesCommitBox
-      :can-commit="state.canCommit"
-      :initial-message="state.commitMessage"
-      @commit="onCommit"
-      @refresh="onRefresh"
-      @stage-all="onStageAll"
-    />
+    <div class="scroll-area">
+      <section class="panel-block">
+        <button type="button" class="block-header" @click="toggleChanges">
+          <span class="codicon" :class="changesOpen ? 'codicon-chevron-down' : 'codicon-chevron-right'" />
+          <span class="block-title">Изменения</span>
+        </button>
 
-    <div v-if="hasChanges" class="changes-content">
-      <section v-for="section in visibleSections" :key="section.kind" class="changes-section">
-        <div class="section-header">{{ section.label }}</div>
-        <UniversalTree
-          :nodes="section.nodes"
-          :selected-id="selectedId"
-          :open-ids="openIds"
-          :loading-ids="loadingIds"
-          @toggle="onToggle"
-          @select="onSelect"
-          @default="onDefault"
-          @action="onAction"
-          @context-menu="(nodeId: string, event: MouseEvent) => onContextMenu(section.kind, nodeId, event)"
-        />
+        <div v-if="changesOpen" class="block-body">
+          <ChangesCommitBox
+            :can-commit="state.canCommit"
+            :initial-message="state.commitMessage"
+            @commit="onCommit"
+            @refresh="onRefresh"
+            @stage-all="onStageAll"
+          />
+
+          <div v-if="hasChanges" class="changes-content">
+            <section v-for="section in visibleSections" :key="section.kind" class="changes-section">
+              <div class="section-header">{{ section.label }}</div>
+              <UniversalTree
+                :nodes="section.nodes"
+                :selected-id="selectedId"
+                :open-ids="openIds"
+                :loading-ids="loadingIds"
+                @toggle="onToggle"
+                @select="onSelect"
+                @default="onDefault"
+                @action="onAction"
+                @context-menu="(nodeId: string, event: MouseEvent) => onContextMenu(section.kind, nodeId, event)"
+              />
+            </section>
+          </div>
+
+          <div v-else class="changes-empty">
+            <div class="empty-icon codicon codicon-git-commit" />
+            <p class="empty-title">Нет изменений метаданных</p>
+          </div>
+        </div>
       </section>
-    </div>
 
-    <div v-else class="changes-empty">
-      <div class="empty-icon codicon codicon-git-commit" />
-      <p class="empty-title">Нет изменений метаданных</p>
+      <section class="panel-block">
+        <button type="button" class="block-header" @click="toggleHistory">
+          <span class="codicon" :class="historyOpen ? 'codicon-chevron-down' : 'codicon-chevron-right'" />
+          <span class="block-title">История</span>
+          <span v-if="historyOpen" class="block-actions">
+            <button
+              type="button"
+              class="header-button"
+              title="Обновить"
+              @click.stop="onHistoryRefresh"
+            >
+              <span class="codicon codicon-refresh" />
+            </button>
+            <button
+              v-if="history.hasMore"
+              type="button"
+              class="header-button"
+              title="Загрузить ещё"
+              @click.stop="onHistoryLoadMore"
+            >
+              <span class="codicon codicon-chevron-down" />
+            </button>
+          </span>
+        </button>
+
+        <div v-if="historyOpen" class="block-body">
+          <CommitGraph
+            :rows="history.rows"
+            :lane-count="history.laneCount"
+            :selected-hash="commitSelectedHash"
+            @select="onSelectCommit"
+          >
+            <template #details="{ row }">
+              <div v-if="row.hash === commitSelectedHash && commitSection" class="commit-details-content">
+                <div class="commit-meta">
+                  <span class="meta-hash">{{ commitRow?.shortHash ?? row.shortHash }}</span>
+                  <span class="meta-author">{{ commitRow?.author ?? row.author }}</span>
+                  <span class="meta-date" :title="commitRow?.absoluteDate ?? row.absoluteDate">
+                    {{ commitRow?.relativeDate ?? row.relativeDate }}
+                  </span>
+                </div>
+                <div class="commit-subject-full">{{ commitRow?.subject ?? row.subject }}</div>
+                <UniversalTree
+                  :nodes="commitSection.nodes"
+                  :selected-id="commitSelectedId"
+                  :open-ids="commitOpenIds"
+                  :loading-ids="commitLoadingIds"
+                  @toggle="onCommitToggle"
+                  @select="onCommitSelect"
+                  @default="onCommitDefault"
+                />
+              </div>
+            </template>
+          </CommitGraph>
+        </div>
+      </section>
     </div>
 
     <AppContextMenu
@@ -231,10 +409,65 @@ onUnmounted(() => {
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size, 13px);
 }
-.changes-content {
+.scroll-area {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.panel-block {
+  display: flex;
+  flex-direction: column;
+}
+.block-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 4px 8px;
+  background: transparent;
+  border: none;
+  color: var(--vscode-sideBarSectionHeader-foreground, var(--vscode-foreground));
+  cursor: pointer;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.block-header:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+.block-title {
+  flex: 1 1 auto;
+}
+.block-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 2px;
+}
+.header-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  background: transparent;
+  border: none;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  border-radius: 3px;
+}
+.header-button:hover {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
+.block-body {
+  display: flex;
+  flex-direction: column;
+}
+.changes-content {
+  display: flex;
+  flex-direction: column;
 }
 .changes-section {
   display: flex;
@@ -249,12 +482,12 @@ onUnmounted(() => {
   color: var(--vscode-descriptionForeground);
 }
 .changes-empty {
-  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 8px;
+  padding: 24px 8px;
   color: var(--vscode-descriptionForeground);
 }
 .empty-icon {
@@ -264,5 +497,31 @@ onUnmounted(() => {
 .empty-title {
   margin: 0;
   font-size: 12px;
+}
+.commit-details-content {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 8px 8px 0;
+}
+.commit-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}
+.meta-hash {
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+.meta-author {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.commit-subject-full {
+  margin: 2px 0 4px;
+  color: var(--vscode-foreground);
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 </style>

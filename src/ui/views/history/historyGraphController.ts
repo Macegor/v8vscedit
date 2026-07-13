@@ -14,7 +14,8 @@ import { buildHistoryGraphState, type HistoryGraphState } from './historyGraphDt
  * (`historyGraphDtoBuilder`, Слой 3a). Собственной бизнес-логики не несёт —
  * только передаёт параметры и пробрасывает результат; `vscode` и мутации ФС
  * здесь запрещены, `path` допустим (лишь построение имени файла для заголовка
- * diff). Тонкая vscode-оболочка над ним — {@link HistoryGraphViewProvider}.
+ * diff). Тонкая vscode-оболочка над ним — секция истории панели «Изменения
+ * метаданных» (`ChangesHistorySection` + `MetadataChangesViewProvider`).
  */
 
 /** Адрес одиночного файла для `vscode.diff`: ref-диапазон коммит^..коммит. */

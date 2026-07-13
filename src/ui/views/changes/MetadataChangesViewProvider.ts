@@ -31,6 +31,8 @@ import {
   type ChangeChain,
   type NavAncestorDto,
 } from './changesTreeAssembler';
+import { ChangesHistorySection } from './changesHistorySection';
+import type { HistoryGraphState } from '../history/historyGraphDtoBuilder';
 
 /** Внешние зависимости провайдера: корень git, корни выгрузки и навигаторное дерево. */
 export interface MetadataChangesViewServices {
@@ -40,11 +42,11 @@ export interface MetadataChangesViewServices {
   readonly treeProvider: MetadataTreeProvider;
 }
 
-/** Сообщение ui → host: команда над узлом либо коммит/refresh. */
+/** Сообщение ui → host: команда над узлом/коммитом (изменения либо история). */
 interface ChangesCommandMessage {
   readonly type: string;
   readonly command: string;
-  readonly payload?: { readonly nodeId?: string; readonly message?: string };
+  readonly payload?: { readonly nodeId?: string; readonly message?: string; readonly hash?: string };
 }
 
 const DISCARD_CONFIRM_LABEL = 'Отменить изменения';
@@ -66,12 +68,18 @@ export class MetadataChangesViewProvider implements vscode.WebviewViewProvider {
   private readonly htmlFactory: WebviewHtmlFactory;
   private model: ChangesModel | undefined;
   private commitMessage = '';
+  /** Граф истории git (абсорбированная панель «История») — читается лениво. */
+  private readonly history: ChangesHistorySection;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly services: MetadataChangesViewServices,
   ) {
     this.htmlFactory = new WebviewHtmlFactory(extensionUri);
+    this.history = new ChangesHistorySection({
+      gitRoot: services.gitRoot,
+      getConfigRoots: services.getConfigRoots,
+    });
   }
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -93,6 +101,7 @@ export class MetadataChangesViewProvider implements vscode.WebviewViewProvider {
   refresh(): void {
     this.model = this.computeModel();
     this.postState();
+    this.maybePostHistory();
   }
 
   /** Смена состава корней выгрузки — пересчёт с новой моделью. */
@@ -318,8 +327,58 @@ export class MetadataChangesViewProvider implements vscode.WebviewViewProvider {
       case 'refresh':
         this.refresh();
         return;
+      case 'loadHistory':
+        this.postHistory(this.history.load(nowSec()));
+        return;
+      case 'historyLoadMore':
+        this.postHistory(this.history.loadMore(nowSec()));
+        return;
+      case 'historyRefresh':
+        // Явная команда пользователя из панели истории: в отличие от ленивого
+        // watcher-refresh ({@link maybePostHistory}) всегда (пере)читает граф.
+        this.postHistory(this.history.load(nowSec()));
+        return;
+      case 'selectCommit':
+        this.selectCommit(message.payload?.hash);
+        return;
+      case 'openCommitDiff':
+        await this.openCommitDiff(message.payload?.nodeId);
+        return;
       default:
         return;
+    }
+  }
+
+  private selectCommit(hash: string | undefined): void {
+    if (!hash) {
+      return;
+    }
+    const { section } = this.history.selectCommit(hash, (kind) => this.buildIcon(kind));
+    void this.view?.webview.postMessage({ type: 'commitChanges', hash, section });
+  }
+
+  private async openCommitDiff(nodeId: string | undefined): Promise<void> {
+    if (!nodeId) {
+      return;
+    }
+    const diff = this.history.resolveDiff(nodeId);
+    if (!diff) {
+      return;
+    }
+    const abs = path.resolve(this.services.gitRoot, diff.relFile);
+    const left = buildOnecGitUri(this.services.gitRoot, abs, diff.leftRef);
+    const right = buildOnecGitUri(this.services.gitRoot, abs, diff.rightRef);
+    await vscode.commands.executeCommand('vscode.diff', left, right, diff.title);
+  }
+
+  /** Пере-излучает граф истории при уже загруженной истории; иначе тихо ничего (ленивость). */
+  private maybePostHistory(): void {
+    this.postHistory(this.history.refresh(nowSec()));
+  }
+
+  private postHistory(state: HistoryGraphState | undefined): void {
+    if (state) {
+      void this.view?.webview.postMessage({ type: 'history', state });
     }
   }
 
@@ -404,6 +463,11 @@ export class MetadataChangesViewProvider implements vscode.WebviewViewProvider {
   private absFiles(address: ChangeAddress): string[] {
     return address.relFiles.map((rel) => path.resolve(this.services.gitRoot, rel));
   }
+}
+
+/** Текущее время в секундах Unix (для относительных дат графа истории). */
+function nowSec(): number {
+  return Math.floor(Date.now() / 1000);
 }
 
 /** Число уникальных изменённых файлов в модели (части объектов + «Прочие») — для бейджа. */

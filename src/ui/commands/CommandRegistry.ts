@@ -8,7 +8,6 @@ import { registerBorrowToExtensionCommand } from './ext/BorrowToExtensionCommand
 import { registerCfeToolsCommands } from './ext/CfeToolsCommands';
 import { registerExtensionCommands } from './ext/ExtensionCommands';
 import { registerFormToolsCommands } from './form/FormToolsCommands';
-import { registerHistoryCommands } from './history/HistoryCommands';
 import { registerAddMetadataCommand } from './metadata/AddMetadataCommand';
 import { registerMetadataReportCommands } from './metadata/MetadataReportCommands';
 import { registerRemoveMetadataCommand } from './metadata/RemoveMetadataCommand';
@@ -61,5 +60,4 @@ export function registerCommands(
   registerInstallAiSkillsCommand(context, services);
   registerExtensionCommands(context, services);
   registerRepositoryCommands(context, services);
-  registerHistoryCommands(context, services);
 }

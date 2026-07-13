@@ -28,7 +28,12 @@ import {
   MetadataChangesViewProvider,
   type MetadataChangesViewServices,
 } from '../../ui/views/changes/MetadataChangesViewProvider';
-import type { ChangesViewState, TreeNodeDto } from '../../ui/views/changes/changesDtoBuilder';
+import type { ChangesSectionDto, ChangesViewState, TreeNodeDto } from '../../ui/views/changes/changesDtoBuilder';
+// Редизайн графа истории (host-часть): панель «Изменения метаданных» абсорбирует
+// протокол истории (`loadHistory`/`selectCommit`/`historyLoadMore`/`historyRefresh`/
+// `openCommitDiff`) — тип состояния графа переиспользуется из уже реализованного
+// `historyGraphDtoBuilder.ts` (сам протокол в MetadataChangesViewProvider ещё не реализован).
+import type { HistoryGraphState } from '../../ui/views/history/historyGraphDtoBuilder';
 import {
   appendLine,
   buildChangesBaselineRepo,
@@ -160,6 +165,22 @@ function lastState(posted: readonly unknown[]): ChangesViewState {
   const states = stateMessages(posted);
   assert.ok(states.length > 0, `ожидалось хотя бы одно сообщение состояния, отправлены: ${JSON.stringify(posted)}`);
   return states[states.length - 1];
+}
+
+/** Все запощенные сообщения графа истории ({type:'history', state}) — для проверки ленивости. */
+function historyMessages(posted: readonly unknown[]): HistoryGraphState[] {
+  return posted
+    .filter((m): m is { type: string; state: HistoryGraphState } =>
+      typeof m === 'object' && m !== null && (m as { type?: string }).type === 'history')
+    .map((m) => m.state);
+}
+
+/** Все запощенные сообщения изменений выбранного коммита ({type:'commitChanges', hash, section}). */
+function commitChangesMessages(posted: readonly unknown[]): { hash: string; section: ChangesSectionDto }[] {
+  return posted
+    .filter((m): m is { type: string; hash: string; section: ChangesSectionDto } =>
+      typeof m === 'object' && m !== null && (m as { type?: string }).type === 'commitChanges')
+    .map((m) => ({ hash: m.hash, section: m.section }));
 }
 
 suite('MetadataChangesViewProvider — webview-презентация представления «Изменения метаданных»', () => {
@@ -798,5 +819,148 @@ suite('MetadataChangesViewProvider — webview-презентация предс
 
     assert.strictEqual(statusOf(fixture.gitRoot, relPath), statusBefore, 'group-узел не адресует ни один файл — git-статус не должен измениться');
     assert.strictEqual(fakeWebview.postedMessages.length, postedBefore, 'при отсутствии адреса повторного postState быть не должно');
+  });
+
+  // ─── Редизайн графа истории: панель абсорбирует протокол «История» ─────
+  //
+  // Граф истории git (ранее отдельная вкладка `v8vsceditHistory`) переезжает
+  // внутрь ЭТОЙ панели. Модель графа читается ЛЕНИВО (как и модель изменений):
+  // ни resolveWebviewView, ни общий refresh() без предварительного
+  // loadHistory не обязаны запускать git log истории (запрет №11).
+
+  test('граф истории НЕ грузится вхолостую: ни resolveWebviewView, ни refresh() без предварительного loadHistory не постят "history"', () => {
+    resolve();
+    assert.strictEqual(historyMessages(fakeWebview.postedMessages).length, 0, 'resolveWebviewView не должен читать git log истории');
+
+    provider.refresh();
+
+    assert.strictEqual(historyMessages(fakeWebview.postedMessages).length, 0, 'refresh() без предварительного loadHistory не должен читать git log истории');
+  });
+
+  test('handleMessage loadHistory — постит {type:"history", state} с непустыми rows', async () => {
+    resolve();
+
+    await fakeWebview.receiveMessage({ type: 'command', command: 'loadHistory' });
+
+    const history = historyMessages(fakeWebview.postedMessages);
+    assert.ok(history.length > 0, 'ожидалось хотя бы одно сообщение истории после loadHistory');
+    const last = history[history.length - 1];
+    assert.ok(last.rows.length > 0, `ожидались непустые rows графа истории, получено: ${String(last.rows.length)}`);
+  });
+
+  test('после loadHistory вызов provider.refresh() снова постит "history" (ветка isLoaded())', async () => {
+    resolve();
+    await fakeWebview.receiveMessage({ type: 'command', command: 'loadHistory' });
+    const postedBefore = fakeWebview.postedMessages.length;
+
+    provider.refresh();
+
+    assert.ok(fakeWebview.postedMessages.length > postedBefore, 'refresh() после loadHistory обязан пере-постить состояние (включая историю)');
+    assert.ok(historyMessages(fakeWebview.postedMessages).length > 0);
+  });
+
+  test('handleMessage selectCommit по реальному коммиту — постит {type:"commitChanges", hash, section} с ожидаемым объектным узлом', async () => {
+    appendLine(fixture.objectModuleBsl, '// правка модуля объекта для истории коммитов панели изменений');
+    git(fixture.gitRoot, ['add', path.relative(fixture.gitRoot, fixture.objectModuleBsl)]);
+    git(fixture.gitRoot, ['commit', '-q', '-m', 'правка для панели «История» внутри «Изменения метаданных»']);
+    const editCommit = git(fixture.gitRoot, ['rev-parse', 'HEAD']).trim();
+    resolve();
+
+    await fakeWebview.receiveMessage({ type: 'command', command: 'selectCommit', payload: { hash: editCommit } });
+
+    const commitChanges = commitChangesMessages(fakeWebview.postedMessages);
+    assert.ok(commitChanges.length > 0, 'ожидалось сообщение commitChanges после selectCommit');
+    const last = commitChanges[commitChanges.length - 1];
+    assert.strictEqual(last.hash, editCommit);
+    const objectNode = collectAllNodes(last.section.nodes).find((n) => n.label === 'ПричиныВозврата');
+    assert.ok(objectNode, `ожидался объектный узел «ПричиныВозврата» в секции коммита, получено: ${JSON.stringify(last.section.nodes)}`);
+  });
+
+  test('handleMessage selectCommit без hash в payload — commitChanges НЕ постится (guard !hash)', async () => {
+    resolve();
+    const before = commitChangesMessages(fakeWebview.postedMessages).length;
+
+    await fakeWebview.receiveMessage({ type: 'command', command: 'selectCommit', payload: {} });
+
+    assert.strictEqual(commitChangesMessages(fakeWebview.postedMessages).length, before, 'без hash выбирать нечего — commitChanges не отправляется');
+  });
+
+  test('handleMessage openCommitDiff без nodeId в payload после selectCommit — vscode.diff НЕ вызывается (guard !nodeId)', async () => {
+    const rootCommit = git(fixture.gitRoot, ['rev-parse', 'HEAD']).trim();
+    resolve();
+    await fakeWebview.receiveMessage({ type: 'command', command: 'selectCommit', payload: { hash: rootCommit } });
+
+    await fakeWebview.receiveMessage({ type: 'command', command: 'openCommitDiff', payload: {} });
+
+    assert.strictEqual(executeCommandCalls.length, 0, 'без nodeId адресовать diff нечем');
+  });
+
+  test('handleMessage historyLoadMore — постит "history"', async () => {
+    resolve();
+
+    await fakeWebview.receiveMessage({ type: 'command', command: 'historyLoadMore' });
+
+    assert.ok(historyMessages(fakeWebview.postedMessages).length > 0, 'historyLoadMore обязан пере-послать состояние графа');
+  });
+
+  test('handleMessage historyRefresh — постит "history"', async () => {
+    resolve();
+
+    await fakeWebview.receiveMessage({ type: 'command', command: 'historyRefresh' });
+
+    assert.ok(historyMessages(fakeWebview.postedMessages).length > 0, 'historyRefresh обязан пере-послать состояние графа');
+  });
+
+  test('handleMessage openCommitDiff по одиночному файлу после selectCommit — vscode.diff с ref-диапазоном коммит^..коммит (не HEAD/index)', async () => {
+    appendLine(fixture.objectModuleBsl, '// правка модуля объекта для openCommitDiff');
+    git(fixture.gitRoot, ['add', path.relative(fixture.gitRoot, fixture.objectModuleBsl)]);
+    git(fixture.gitRoot, ['commit', '-q', '-m', 'правка для openCommitDiff']);
+    const editCommit = git(fixture.gitRoot, ['rev-parse', 'HEAD']).trim();
+    resolve();
+    await fakeWebview.receiveMessage({ type: 'command', command: 'selectCommit', payload: { hash: editCommit } });
+
+    await fakeWebview.receiveMessage({ type: 'command', command: 'openCommitDiff', payload: { nodeId: 'staged#0.0' } });
+
+    assert.strictEqual(executeCommandCalls.length, 1, 'openCommitDiff по одиночному файлу обязан вызвать vscode.diff ровно один раз');
+    const [cmdName, leftUri, rightUri] = executeCommandCalls[0] as [string, vscode.Uri, vscode.Uri];
+    assert.strictEqual(cmdName, 'vscode.diff');
+    assert.strictEqual(leftUri.scheme, ONEC_GIT_SCHEME);
+    assert.strictEqual(rightUri.scheme, ONEC_GIT_SCHEME);
+    const leftRef = new URLSearchParams(leftUri.query).get('ref');
+    const rightRef = new URLSearchParams(rightUri.query).get('ref');
+    assert.strictEqual(leftRef, `${editCommit}^`, `слева обязан быть родитель коммита (${editCommit}^), а не HEAD/index, получено: ${String(leftRef)}`);
+    assert.strictEqual(rightRef, editCommit, `справа обязан быть сам коммит, а не index, получено: ${String(rightRef)}`);
+  });
+
+  test('handleMessage openCommitDiff БЕЗ предварительного selectCommit — vscode.diff НЕ вызывается', async () => {
+    resolve();
+
+    await fakeWebview.receiveMessage({ type: 'command', command: 'openCommitDiff', payload: { nodeId: 'staged#0.0' } });
+
+    assert.strictEqual(executeCommandCalls.length, 0, 'без выбранного коммита адресовать diff нечем');
+  });
+
+  test('handleMessage openCommitDiff по nodeId целого объекта из нескольких частей (не single) — vscode.diff НЕ вызывается', async () => {
+    appendLine(fixture.objectModuleBsl, '// правка модуля объекта');
+    appendLine(fixture.commandModuleBsl, '// правка модуля команды того же объекта');
+    git(fixture.gitRoot, ['add', '-A']);
+    git(fixture.gitRoot, ['commit', '-q', '-m', 'правка модуля и команды объекта для openCommitDiff']);
+    const editCommit = git(fixture.gitRoot, ['rev-parse', 'HEAD']).trim();
+    resolve();
+    await fakeWebview.receiveMessage({ type: 'command', command: 'selectCommit', payload: { hash: editCommit } });
+
+    await fakeWebview.receiveMessage({ type: 'command', command: 'openCommitDiff', payload: { nodeId: 'staged#0' } });
+
+    assert.strictEqual(executeCommandCalls.length, 0, 'nodeId без единственного файла не обязан вызывать vscode.diff');
+  });
+
+  test('handleMessage openCommitDiff с нераспознаваемым/битым nodeId после selectCommit — vscode.diff НЕ вызывается', async () => {
+    const rootCommit = git(fixture.gitRoot, ['rev-parse', 'HEAD']).trim();
+    resolve();
+    await fakeWebview.receiveMessage({ type: 'command', command: 'selectCommit', payload: { hash: rootCommit } });
+
+    await fakeWebview.receiveMessage({ type: 'command', command: 'openCommitDiff', payload: { nodeId: 'не-похоже-на-id' } });
+
+    assert.strictEqual(executeCommandCalls.length, 0);
   });
 });

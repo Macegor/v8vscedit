@@ -68,62 +68,72 @@ function edgeKey(edge: LaneEdgeDto, index: number): string {
 function isSelected(row: GraphRowDto): boolean {
   return row.hash === props.selectedHash;
 }
+
+/** Левый отступ блока деталей: под ширину дорожек выбранного коммита. */
+function detailsIndent(): number {
+  return svgWidth() + 8;
+}
 </script>
 
 <template>
   <div class="commit-graph" role="list">
-    <div
-      v-for="row in props.rows"
-      :key="row.hash"
-      class="commit-row"
-      :class="{ selected: isSelected(row) }"
-      role="listitem"
-      @click="emit('select', row.hash)"
-    >
-      <svg
-        class="graph-cell"
-        :width="svgWidth()"
-        :height="ROW_HEIGHT"
-        :viewBox="`0 0 ${svgWidth()} ${ROW_HEIGHT}`"
+    <template v-for="row in props.rows" :key="row.hash">
+      <div
+        class="commit-row"
+        :class="{ selected: isSelected(row) }"
+        role="listitem"
+        @click="emit('select', row.hash)"
       >
-        <line
-          v-for="(edge, index) in row.edges"
-          :key="edgeKey(edge, index)"
-          :x1="laneX(edge.fromLane)"
-          :y1="0"
-          :x2="laneX(edge.toLane)"
-          :y2="ROW_HEIGHT"
-          :stroke="laneColor(edge.color)"
-          stroke-width="1.5"
-          fill="none"
-        />
-        <circle
-          :cx="laneX(row.lane)"
-          :cy="ROW_HEIGHT / 2"
-          :r="DOT_RADIUS"
-          :fill="laneColor(row.laneColor)"
-        />
-      </svg>
-
-      <span class="commit-subject" :title="row.subject">{{ row.subject }}</span>
-
-      <span class="commit-refs">
-        <span
-          v-for="ref in row.refs"
-          :key="ref.kind + ':' + ref.name"
-          class="ref-pill"
-          :class="ref.kind"
-          :title="ref.name"
+        <svg
+          class="graph-cell"
+          :width="svgWidth()"
+          :height="ROW_HEIGHT"
+          :viewBox="`0 0 ${svgWidth()} ${ROW_HEIGHT}`"
         >
-          <span class="codicon" :class="`codicon-${refIcon(ref)}`" />
-          <span class="ref-name">{{ ref.name }}</span>
-        </span>
-      </span>
+          <line
+            v-for="(edge, index) in row.edges"
+            :key="edgeKey(edge, index)"
+            :x1="laneX(edge.fromLane)"
+            :y1="0"
+            :x2="laneX(edge.toLane)"
+            :y2="ROW_HEIGHT"
+            :stroke="laneColor(edge.color)"
+            stroke-width="1.5"
+            fill="none"
+          />
+          <circle
+            :cx="laneX(row.lane)"
+            :cy="ROW_HEIGHT / 2"
+            :r="DOT_RADIUS"
+            :fill="laneColor(row.laneColor)"
+          />
+        </svg>
 
-      <span class="commit-author" :title="row.author">{{ row.author }}</span>
-      <span class="commit-date" :title="row.absoluteDate">{{ row.relativeDate }}</span>
-      <span class="commit-hash">{{ row.shortHash }}</span>
-    </div>
+        <span class="commit-subject" :title="row.subject">{{ row.subject }}</span>
+        <span class="commit-author" :title="row.author">{{ row.author }}</span>
+
+        <span class="commit-refs">
+          <span
+            v-for="ref in row.refs"
+            :key="ref.kind + ':' + ref.name"
+            class="ref-pill"
+            :class="ref.kind"
+            :title="ref.name"
+          >
+            <span class="codicon" :class="`codicon-${refIcon(ref)}`" />
+            <span class="ref-name">{{ ref.name }}</span>
+          </span>
+        </span>
+      </div>
+
+      <div
+        v-if="isSelected(row)"
+        class="commit-details"
+        :style="{ paddingLeft: `${String(detailsIndent())}px`, borderLeftColor: laneColor(row.laneColor) }"
+      >
+        <slot name="details" :row="row" />
+      </div>
+    </template>
     <div v-if="!props.rows.length" class="graph-empty">Нет коммитов</div>
   </div>
 </template>
@@ -159,6 +169,14 @@ function isSelected(row: GraphRowDto): boolean {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.commit-author {
+  flex: 0 0 auto;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}
 .commit-refs {
   flex: 0 0 auto;
   display: inline-flex;
@@ -191,24 +209,8 @@ function isSelected(row: GraphRowDto): boolean {
   background: var(--vscode-charts-yellow, var(--vscode-badge-background));
   color: var(--vscode-editor-background);
 }
-.commit-author {
-  flex: 0 0 auto;
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--vscode-descriptionForeground);
-  font-size: 12px;
-}
-.commit-date {
-  flex: 0 0 auto;
-  color: var(--vscode-descriptionForeground);
-  font-size: 12px;
-}
-.commit-hash {
-  flex: 0 0 auto;
-  font-family: var(--vscode-editor-font-family, monospace);
-  color: var(--vscode-descriptionForeground);
-  font-size: 12px;
+.commit-details {
+  border-left: 2px solid transparent;
 }
 .graph-empty {
   padding: 24px;
