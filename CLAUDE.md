@@ -140,7 +140,10 @@ src/
 │   │       └── formatRegistry.ts     # реестр «версия → ruleset» + version-guard
 │   ├── fs/
 │   │   ├── ConfigLocator.ts          # рекурсивный поиск Configuration.xml
-│   │   └── MetaPathResolver.ts       # единый resolver: XML + все модули по ModuleSlot
+│   │   ├── MetaPathResolver.ts       # единый resolver: XML + все модули по ModuleSlot
+│   │   └── ConfigurationCleanWindow.ts # окно тишины по корню конфигурации после
+│   │                                  # импорта/обновления БД (Container.markConfigurationsClean,
+│   │                                  # см. docs/architecture.md)
 │   ├── cfe/                          # расширения: CfeBorrowService, CfeDiffService, CfePatchMethodService
 │   ├── support/                      # SupportInfoReader/Service (ParentConfigurations.bin), Logger
 │   ├── cache/                        # MetadataCache, hashCache (CLI)

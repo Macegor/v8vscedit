@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import type { ConfigEntry } from './domain/Configuration';
 import { findConfigurations } from './infra/fs/ConfigLocator';
 import { type ChangedConfiguration, ConfigurationChangeDetector } from './infra/fs/ConfigurationChangeDetector';
+import { ConfigurationCleanWindow } from './infra/fs/ConfigurationCleanWindow';
 import { MetadataTreeProvider } from './ui/tree/MetadataTreeProvider';
 import { registerCommands } from './ui/commands/CommandRegistry';
 import type { CommandServices } from './ui/commands/_shared';
@@ -141,7 +142,13 @@ export class Container {
   private readonly pendingTreeCacheFiles = new Set<string>();
   private changedConfigurations: ChangedConfiguration[] = [];
   private treeProcessingState: UniversalPanelProcessingState = { active: false };
+  // Два разных механизма подавления собственных записей, не путать:
+  // suppressedConfigurationReloads — пофайловый, гасит ПЕРЕСТРОЙКУ КЭША дерева по
+  // конкретным записанным файлам; cleanWindow — по корню конфигурации, гасит
+  // пометку «изменена» на хвосте запоздавших событий watcher после операции с базой.
   private readonly suppressedConfigurationReloads = new Map<string, number>();
+  private readonly cleanWindow = new ConfigurationCleanWindow();
+  private cleanWindowSettleTimer: NodeJS.Timeout | undefined;
 
   private constructor(
     private readonly context: vscode.ExtensionContext,
@@ -149,6 +156,16 @@ export class Container {
   ) {
     this.outputChannel = vscode.window.createOutputChannel('1С Редактор');
     context.subscriptions.push(this.outputChannel);
+    // Отложенный пересчёт состояния живёт дольше окна тишины: если расширение
+    // выгрузят в это время, обратный вызов дёрнул бы уже мёртвые сервисы.
+    context.subscriptions.push({
+      dispose: () => {
+        if (this.cleanWindowSettleTimer) {
+          clearTimeout(this.cleanWindowSettleTimer);
+          this.cleanWindowSettleTimer = undefined;
+        }
+      },
+    });
     this.outputChannel.appendLine('[init] Расширение активировано');
 
     this.supportService = new SupportInfoService(this.outputChannel);
@@ -673,6 +690,15 @@ export class Container {
   }
 
   private scheduleChangedConfigurationStateRefresh(uri?: vscode.Uri): void {
+    // События файлов, записанных самим импортом/обновлением, watcher доставляет с
+    // задержкой — уже после markConfigurationsClean. Пока окно тишины открыто,
+    // такое событие игнорируется целиком: хеш-кэш операция только что
+    // актуализировала, а полный пересчёт (detect обходит и хеширует всю выгрузку)
+    // на каждое из тысяч событий заблокировал бы Extension Host на минуты.
+    // Единственный авторитетный пересчёт по окончании окна ставит markConfigurationsClean.
+    if (uri && this.cleanWindow.isOpenFor(uri.fsPath)) {
+      return;
+    }
     if (uri && this.markChangedConfigurationByFile(uri.fsPath)) {
       return;
     }
@@ -777,6 +803,18 @@ export class Container {
     if (rootPaths.length === 0) {
       return;
     }
+    // Watcher доставит события файлов, записанных операцией, уже после этой точки.
+    // Окно тишины гасит их, а по его закрытии ровно один раз пересчитывается
+    // фактическое состояние по хеш-кэшу — так правка, сделанная пользователем
+    // во время окна, не теряется, а полный пересчёт выполняется единожды.
+    this.cleanWindow.open(rootPaths);
+    if (this.cleanWindowSettleTimer) {
+      clearTimeout(this.cleanWindowSettleTimer);
+    }
+    this.cleanWindowSettleTimer = setTimeout(() => {
+      this.cleanWindowSettleTimer = undefined;
+      this.refreshChangedConfigurationState();
+    }, ConfigurationCleanWindow.defaultDurationMs + 1_000);
     const clean = new Set(rootPaths.map((item) => path.resolve(item).toLowerCase()));
     this.changedConfigurations = this.changedConfigurations.filter(
       (item) => !clean.has(path.resolve(item.rootPath).toLowerCase())
