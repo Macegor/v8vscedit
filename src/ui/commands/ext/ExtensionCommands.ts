@@ -143,7 +143,11 @@ export function registerExtensionCommands(
 
         if (changed.length === 0) {
           setConfigurationProgress(services, 'Обновление конфигураций', 'изменений нет', false);
-          await vscode.window.showInformationMessage('Изменений в конфигурациях не обнаружено.');
+          // Уведомление показываем без await: `await` внутри критической секции
+          // держал бы isUpdatingConfigurations=true до закрытия нотификации
+          // пользователем, а до тех пор любая операция отбивалась сообщением
+          // «уже выполняется» (состояние «идёт обновление» залипало).
+          void vscode.window.showInformationMessage('Изменений в конфигурациях не обнаружено.');
           return true;
         }
 
