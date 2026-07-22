@@ -42,6 +42,7 @@ git-декорации навигатора (`infra/git/GitMetadataStatusService
 | `GitBlobReader.ts` | `readBlobAtHead`/`readBlobAtIndex` (`git show HEAD:<path>` / `git show :<path>`) — левая/правая сторона diff без мутаций; мягкий `null`, если blob отсутствует или git недоступен. |
 | `GitStatusReader.ts` | `readPorcelainEntries`/`resolveGitRoot` — раннер git-процесса для UI-слоя (провайдер сам процессов не запускает). |
 | `GitWriteService.ts` | Мутации над НАБОРОМ файлов: `stage`/`unstage`/`discard`/`commit` + обмен с remote `push`/`pull`. `discard` различает `modified`/`deleted` (`git checkout --`) и `untracked` (удаление файла с диска). `pull` идёт с `--no-rebase --no-edit` (явная стратегия слияния — иначе git ≥2.27 падает на разошедшихся ветках; без открытия редактора merge-сообщения). |
+| `GitRepositorySelector.ts` | `selectGitRepository(repoRoots, gitRoot)`/`normalizeGitPath(path)` — точное (без ancestor-fallback) сравнение нормализованных путей git toplevel; используется `GitStateObserver` (см. «Триггеры обновления» ниже) для выбора репозитория Git Extension API, чей корень совпадает с `changesGitRoot`. |
 
 `ChangesModel` — единственная граница между движком и презентацией: всё, что ниже, про webview ничего
 не знает, а всё, что выше, про git-процессы ничего не знает.
@@ -124,13 +125,17 @@ git-декорации навигатора (`infra/git/GitMetadataStatusService
   CSP `{ allowStyles: true, allowImages: true }`, `localResourceRoots` через
   `resolveWebviewLocalResourceRoots(extensionUri, { includeIcons: true })`.
 
-### `ui/git/` — тонкая обёртка diff-схемы
+### `ui/git/` — тонкая обёртка diff-схемы + наблюдатель Git Extension API
 
 `OnecGitContentProvider.ts` — `TextDocumentContentProvider` со схемой `onec-git`; URI самодостаточен
 (`gitRoot` + `ref` в query), поэтому не зависит от глобального состояния. `buildOnecGitUri(gitRoot,
 absFilePath, ref)` строит URI для `HEAD`/`index` либо (после обобщения ради панели «История», см.
 [git-history-graph.md](./git-history-graph.md#uigit--обобщение-diff-схемы-на-произвольный-ref)) любого
 commit-ish. Эта панель по-прежнему передаёт только `'HEAD'`/`'index'` — контракт для неё не изменился.
+
+`gitExtensionApi.ts` (минимальный типовой фасад `GitApiLike`/`RepositoryLike`/`GitExtensionLike` над
+встроенным расширением `vscode.git`) и `GitStateObserver.ts` (vscode-facing наблюдатель, реализует
+`Disposable`) — см. подробное описание в разделе «Триггеры обновления панели и декораций» ниже.
 
 ### `src-ui/apps/changes/` — Vue-приложение панели
 
@@ -184,14 +189,53 @@ commit-ish. Эта панель по-прежнему передаёт толь�
 3. `registerTextDocumentContentProvider(ONEC_GIT_SCHEME, onecGitContentProvider)`.
 4. `onDidChangeWorkspaceFolders(() => metadataChangesViewProvider.refresh())`.
 
-Всё — в `context.subscriptions`. Обновление панели подвешено на ТЕ ЖЕ пути, что и git-декорации
-навигатора: `scheduleDecorationRefresh()` (дебаунс 500 мс на `.git/HEAD`, `.git/index`,
-`.git/packed-refs`, `.git/refs/**`, а также на изменения XML/BSL-файлов выгрузки через `onSourceChange`)
-в конце вызывает `metadataChangesViewProvider.refresh()` — так же, как `gitMetadataDecorationProvider.refresh()`
-и `treeProvider.refreshDecorations()`. Дополнительно `reloadEntries()` вызывает
+Всё — в `context.subscriptions`. Дополнительно `reloadEntries()` вызывает
 `metadataChangesViewProvider.updateConfigRoots()` при смене состава найденных конфигураций/расширений.
 Модель `git status` никогда не пересчитывается на старте расширения и не пересчитывается в конструкторе
 провайдера — только лениво при первом `resolveWebviewView` или явном `refresh()`.
+
+### Триггеры обновления панели и декораций: Git Extension API + fallback fs-вотчер
+
+И панель `v8vsceditChanges`, и git-декорации навигатора (`GitMetadataDecorationProvider`) должны
+пересчитываться на ЛЮБОЕ git-событие — включая внешние операции из терминала/другого клиента
+(stage/unstage/commit/push/pull/checkout/rebase), а не только на правку рабочих файлов выгрузки. Раньше
+единственным источником сигнала были fs-вотчеры на служебные файлы `.git/*`, которые ловят не все
+операции надёжно (например, некоторые команды не трогают наблюдаемый файл заметным для FS-watcher
+образом). Сейчас источников два, оба сходятся в одном месте:
+
+1. **Основной — Git Extension API.** `Container.wireGitStateWatcher()` получает
+   `vscode.extensions.getExtension<GitExtensionLike['exports']>('vscode.git')` → активирует расширение
+   при необходимости → `ext.exports.getAPI(1)` → создаёт `GitStateObserver` (`ui/git/GitStateObserver.ts`)
+   и вызывает `start()`. Наблюдатель ищет среди `api.repositories` тот, чей корень (`rootUri.fsPath`)
+   совпадает с `changesGitRoot` (`GitRepositorySelector.selectGitRepository` — чистое точное сравнение
+   нормализованных путей, БЕЗ ancestor-fallback: обе стороны заведомо git toplevel, подстрочное совпадение
+   ложно задело бы вложенный репозиторий-подкаталог), и подписывается на `repository.state.onDidChange`
+   этого репозитория — событие Git-расширения дёргается при stage/unstage/commit/checkout/rebase и
+   внешних изменениях, обнаруженных самим расширением. Учтены:
+   - ленивая инициализация API (`api.state === 'uninitialized'` → ждём `onDidChangeState('initialized')`);
+   - позднее открытие репозитория (`onDidOpenRepository`, независимо от `state`);
+   - несколько репозиториев в мультирепо-воркспейсе — выбирается ТОЛЬКО совпадающий по корню;
+   - guard двойной подписки — `subscribedRoot` не даёт подписаться на один и тот же репозиторий дважды.
+   - недоступность/отсутствие расширения `vscode.git` — все ошибки уходят в лог (`[git-state]`),
+     наблюдатель тихо остаётся no-op, активацию расширения `wireGitStateWatcher` не блокирует.
+
+   Файлы: `infra/git/GitRepositorySelector.ts` (`selectGitRepository`/`normalizeGitPath`, без `vscode`) +
+   `ui/git/gitExtensionApi.ts` (минимальный типовой фасад `GitApiLike`/`RepositoryLike`/
+   `GitExtensionLike` — полный `git.d.ts` расширения не подключается, нужны только три вещи: состояние
+   API, `onDidOpenRepository`, `repository.state.onDidChange`) + `ui/git/GitStateObserver.ts`
+   (`vscode.Disposable`, кладётся в `context.subscriptions`).
+2. **Fallback — fs-вотчер `.git/*`.** `Container.wireGitDecorationWatcher()` остаётся, ничего не убрано:
+   `.git/HEAD`, `.git/index`, `.git/packed-refs`, `.git/refs/**`, а также добавленный `.git/logs/HEAD`
+   (ловит commit/reset/checkout, которые не всегда трогают `HEAD`/`index` заметным fs-событием) — все
+   наблюдаются от РЕАЛЬНОГО `changesGitRoot` (а не от `workspaceFolder`: выгрузка 1С может лежать в
+   подкаталоге репозитория, тогда `.git` находится выше корня рабочей папки). Это единственный источник,
+   когда встроенное Git-расширение недоступно, отключено пользователем или несовместимо по версии API.
+
+Оба триггера дёргают ОДИН И ТОТ ЖЕ `Container.scheduleDecorationRefresh()` (дебаунс 500 мс), который в
+конце обновляет и панель, и декорации разом: `gitMetadataDecorationProvider.refresh()` →
+`treeProvider.refreshDecorations()` → `metadataChangesViewProvider.refresh()`. Благодаря общему
+debounce-пути двойное срабатывание (Git Extension API и fs-вотчер отреагировали на одно и то же событие)
+не даёт двойного пересчёта — таймер уже взведён первым сработавшим триггером.
 
 `package.json`: `viewsContainers.activitybar` → `v8vscedit` содержит `v8vsceditUniversal` и
 `v8vsceditChanges` — ОБА `type: "webview"`. Активация — через `onView:v8vsceditChanges` в
@@ -349,6 +393,17 @@ git-мутация над панелью изменений»).
   логику `GitMetadataStatusService.ensureStatusMap`/получения корня git — кандидат на объединение,
   явно вынесенное сюда, а не скрытое.
 - **Конфликты (`U`) не обрабатываются** — вне текущей области.
+- **`GitStateObserver` не переустанавливает подписку при закрытии/переоткрытии репозитория.**
+  `GitApiLike` (`ui/git/gitExtensionApi.ts`) намеренно не объявляет `onDidCloseRepository` — фасад
+  минимален под текущую потребность, — поэтому при закрытии репозитория (например, удаление воркспейса
+  из мультирепо-окна и его повторное открытие) поле `subscribedRoot` не сбрасывается, а новый объект
+  `Repository`, который Git-расширение создаёт при повторном открытии того же корня, не получает
+  подписки на `state.onDidChange`. В этом окне надёжный сигнал Git Extension API для данного корня
+  теряется, панель и декорации продолжают обновляться через fallback fs-вотчер `.git/*` (см. выше) —
+  функциональность не пропадает, но событие commit/checkout из терминала может отработать с задержкой до
+  срабатывания fs-вотчера, а не мгновенно. Дизайн панели одно-корневой (`changesGitRoot` фиксирован на
+  весь сеанс), поэтому смена корня в рамках жизни `Container` не ожидается — кандидат на доработку, если
+  практика покажет обратное: подписка на `onDidCloseRepository` со сбросом `subscribedRoot`.
 
 ## Связанные документы
 

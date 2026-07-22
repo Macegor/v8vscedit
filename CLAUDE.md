@@ -327,6 +327,13 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
   команд `package.json → contributes.commands`/меню `view/item/context` для этой панели не заводится —
   весь UI-контракт живёт во внутреннем протоколе webview (см.
   [git-metadata-changes.md](./docs/git-metadata-changes.md#формат-сообщений-протокола)).
+- **Новый триггер обновления панели изменений/декораций по git-событию** (аналог Git Extension API):
+  чистый селектор репозитория — `infra/git/GitRepositorySelector.ts` (без `vscode`) → тонкий наблюдатель
+  поверх события — `ui/git/` (образец `GitStateObserver.ts` + типовой фасад `gitExtensionApi.ts`) →
+  подключение в `Container` (образец `wireGitStateWatcher()`), с обязательным fallback fs-вотчером на
+  случай недоступности источника → единственный выход обоих триггеров —
+  `Container.scheduleDecorationRefresh()` (не заводить параллельный debounce/refresh-путь). См.
+  [git-metadata-changes.md](./docs/git-metadata-changes.md#триггеры-обновления-панели-и-декораций-git-extension-api--fallback-fs-вотчер).
 - **Новая возможность блока «История»** (граф git-коммитов внутри панели «Изменения метаданных», НЕ
   отдельная вкладка/провайдер, см. [git-history-graph.md](./docs/git-history-graph.md)), в зависимости от
   слоя:
