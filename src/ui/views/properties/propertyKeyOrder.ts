@@ -2,7 +2,7 @@ import type { NodeKind } from '../../tree/TreeNode';
 import type { ObjectPropertiesCollection } from './_types';
 import { extractOpeningTagName } from '../../../infra/xml';
 import {
-  getTypedFieldPropertyKeys,
+  getDisplayTypedFieldPropertyKeys,
   type TypeAwarePropertyOwnerKind,
 } from '../../../infra/xml/TypedFieldPropertyRules';
 import { stripXmlTagNamespacePrefix, summarizeTypeBlock } from './propertyExtractors';
@@ -621,8 +621,9 @@ export const TYPED_FIELD_PROPERTY_KEYS: string[] = [
   'DataHistory',
   'LinkByType',
   'DenyIncompleteValues',
-  'RoundingMode',
-  'ShowInTotal',
+  // RoundingMode/ShowInTotal сюда не входят: в эталонных выгрузках их нет ни у
+  // одного типизированного поля, а панель показывает недостающие ключи
+  // редактируемыми и дописала бы их в XML — платформа такой файл отклоняет.
 ];
 
 export const STANDARD_ATTRIBUTE_PROPERTY_KEYS: string[] = TYPED_FIELD_PROPERTY_KEYS.filter((key) => key !== 'Type');
@@ -920,7 +921,7 @@ export function isTypeAwareRootKind(rootMetaKind: NodeKind): rootMetaKind is 'Co
   return rootMetaKind === 'Constant' || rootMetaKind === 'CommonAttribute';
 }
 
-export function getTypedFieldPropertyKeyOrder(elementFullXml: string): string[] {
+export function getTypedFieldPropertyKeyOrder(elementFullXml: string, ownerKind?: string): string[] {
   const openingTag = extractOpeningTagName(elementFullXml);
   const tag = openingTag ? stripXmlTagNamespacePrefix(openingTag) : '';
   const typeInner = summarizeTypeBlock(elementFullXml);
@@ -928,7 +929,13 @@ export function getTypedFieldPropertyKeyOrder(elementFullXml: string): string[] 
     typeInner &&
     (tag === 'Attribute' || tag === 'AddressingAttribute' || tag === 'Dimension' || tag === 'Resource' || tag === 'Column')
   ) {
-    return ['Name', 'Synonym', 'Comment', 'Type', ...getTypedFieldPropertyKeys(toTypedFieldOwnerKind(tag), typeInner)];
+    return [
+      'Name',
+      'Synonym',
+      'Comment',
+      'Type',
+      ...getDisplayTypedFieldPropertyKeys(toTypedFieldOwnerKind(tag), typeInner, ownerKind, elementFullXml),
+    ];
   }
   return TYPED_FIELD_PROPERTY_KEYS;
 }
@@ -942,7 +949,7 @@ export function getTypeAwarePropertyKeyOrder(elementFullXml: string, kind: TypeA
   if (!typeInner) {
     return ['Name', 'Synonym', 'Comment', 'Type'];
   }
-  return ['Name', 'Synonym', 'Comment', 'Type', ...getTypedFieldPropertyKeys(kind, typeInner)];
+  return ['Name', 'Synonym', 'Comment', 'Type', ...getDisplayTypedFieldPropertyKeys(kind, typeInner)];
 }
 
 function mergePropertyKeys(...groups: string[][]): string[] {

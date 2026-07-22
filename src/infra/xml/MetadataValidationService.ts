@@ -4,6 +4,7 @@ import { META_TYPES, type MetaKind } from '../../domain/MetaTypes';
 import type { MetaChild } from '../../domain/MetaObject';
 import { ObjectXmlReader } from './ObjectXmlReader';
 import { escapeRegExp, extractMainChildObjectsInnerXml, findChildElementsFullXmlInBlock } from './XmlUtils';
+import { findDisallowedTypedFieldProperties, type TypeAwarePropertyOwnerKind } from './TypedFieldPropertyRules';
 import { resolveMetadataObjectPath } from './MetadataInfoService';
 
 export type MetadataValidationSeverity = 'error' | 'warning' | 'info';
@@ -121,6 +122,7 @@ export class MetadataValidationService {
 
     validateChildTags(object.tag, object.children, add, xmlPath);
     validateDuplicateChildren(object.children, add, xmlPath);
+    validateTypedFieldProperties(object.tag, xml, add, xmlPath);
     validateAuxiliaryFiles(xmlPath, object.children, add);
     if (options.detailed) {
       add({ severity: 'info', code: 'parsed', message: `Объект прочитан: ${object.tag}.${object.name}`, path: xmlPath });
@@ -158,6 +160,62 @@ function validateChildTags(
         message: `Для ${kind} не разрешён дочерний элемент ${child.tag}.${child.name}.`,
         path: xmlPath,
       });
+    }
+  }
+}
+
+/** Теги дочерних элементов, состав свойств которых определяется блоком `<Type>`. */
+const TYPED_FIELD_CHILD_TAGS: readonly TypeAwarePropertyOwnerKind[] = [
+  'Attribute',
+  'AddressingAttribute',
+  'Dimension',
+  'Resource',
+];
+
+/**
+ * Проверяет принадлежность свойств типизированных полей виду метаданных и типу.
+ * Структурных ошибок здесь нет — XML остаётся синтаксически корректным, — но
+ * платформа 1С отказывается грузить конфигурацию со свойством чужого вида
+ * («Свойство UseInTotals не входит в состав объекта метаданных Dimension»),
+ * поэтому severity — error.
+ */
+function validateTypedFieldProperties(
+  ownerKind: string,
+  xml: string,
+  add: (issue: MetadataValidationIssue) => void,
+  xmlPath: string
+): void {
+  const childObjects = extractMainChildObjectsInnerXml(xml);
+  if (!childObjects) {
+    return;
+  }
+
+  const report = (tag: string, name: string, disallowed: readonly string[], ownerLabel: string): void => {
+    for (const key of disallowed) {
+      add({
+        severity: 'error',
+        code: 'property-not-allowed',
+        message: `Свойство ${key} не входит в состав объекта метаданных ${tag} (${ownerLabel}.${name}).`,
+        path: xmlPath,
+      });
+    }
+  };
+
+  for (const tag of TYPED_FIELD_CHILD_TAGS) {
+    for (const element of findChildElementsFullXmlInBlock(childObjects, tag)) {
+      report(tag, element.name, findDisallowedTypedFieldProperties(element.xml, tag, ownerKind), ownerKind);
+    }
+  }
+
+  // Колонка ТЧ сериализуется как <Attribute> внутри <TabularSection> и имеет
+  // собственный набор свойств (без свойств заполнения объекта).
+  for (const section of findChildElementsFullXmlInBlock(childObjects, 'TabularSection')) {
+    const sectionChildren = extractMainChildObjectsInnerXml(section.xml);
+    if (!sectionChildren) {
+      continue;
+    }
+    for (const column of findChildElementsFullXmlInBlock(sectionChildren, 'Attribute')) {
+      report('Attribute', column.name, findDisallowedTypedFieldProperties(column.xml, 'Column'), section.name);
     }
   }
 }

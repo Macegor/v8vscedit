@@ -81,7 +81,8 @@ export const structuredMetaChildHandler: ObjectHandler = {
           return propsFromElementXml(
             extractChildMetaElementXml(objectXml, 'Attribute', label),
             'typed',
-            inheritedObjectXml ? extractChildMetaElementXml(inheritedObjectXml, 'Attribute', label) : null
+            inheritedObjectXml ? extractChildMetaElementXml(inheritedObjectXml, 'Attribute', label) : null,
+            node.metaContext.rootMetaKind
           );
         case 'StandardAttribute': {
           const standardAttributeName = node.metaContext.standardAttributeName ?? label;
@@ -97,19 +98,22 @@ export const structuredMetaChildHandler: ObjectHandler = {
           return propsFromElementXml(
             extractChildMetaElementXml(objectXml, 'AddressingAttribute', label),
             'typed',
-            inheritedObjectXml ? extractChildMetaElementXml(inheritedObjectXml, 'AddressingAttribute', label) : null
+            inheritedObjectXml ? extractChildMetaElementXml(inheritedObjectXml, 'AddressingAttribute', label) : null,
+            node.metaContext.rootMetaKind
           );
         case 'Dimension':
           return propsFromElementXml(
             extractChildMetaElementXml(objectXml, 'Dimension', label),
             'typed',
-            inheritedObjectXml ? extractChildMetaElementXml(inheritedObjectXml, 'Dimension', label) : null
+            inheritedObjectXml ? extractChildMetaElementXml(inheritedObjectXml, 'Dimension', label) : null,
+            node.metaContext.rootMetaKind
           );
         case 'Resource':
           return propsFromElementXml(
             extractChildMetaElementXml(objectXml, 'Resource', label),
             'typed',
-            inheritedObjectXml ? extractChildMetaElementXml(inheritedObjectXml, 'Resource', label) : null
+            inheritedObjectXml ? extractChildMetaElementXml(inheritedObjectXml, 'Resource', label) : null,
+            node.metaContext.rootMetaKind
           );
         case 'EnumValue':
           return propsFromElementXml(
@@ -130,7 +134,8 @@ export const structuredMetaChildHandler: ObjectHandler = {
           return propsFromElementXml(
             extractColumnXmlFromTabularSection(objectXml, tsName, label),
             'typed',
-            inheritedObjectXml ? extractColumnXmlFromTabularSection(inheritedObjectXml, tsName, label) : null
+            inheritedObjectXml ? extractColumnXmlFromTabularSection(inheritedObjectXml, tsName, label) : null,
+            node.metaContext.rootMetaKind
           );
         }
         case 'Form': {
@@ -208,7 +213,8 @@ export const structuredMetaChildHandler: ObjectHandler = {
 function propsFromElementXml(
   elementXml: string | null,
   mode: 'typed' | 'tabular' | 'enumValue' | 'standardAttribute' = 'typed',
-  inheritedElementXml: string | null = null
+  inheritedElementXml: string | null = null,
+  ownerKind?: string
 ): ObjectPropertiesCollection {
   if (!elementXml && !inheritedElementXml) {
     return [];
@@ -222,7 +228,7 @@ function propsFromElementXml(
   if (mode === 'standardAttribute') {
     return buildStandardAttributeProperties(elementXml ?? '', inheritedElementXml);
   }
-  return buildTypedFieldProperties(elementXml ?? '', inheritedElementXml);
+  return buildTypedFieldProperties(elementXml ?? '', inheritedElementXml, ownerKind);
 }
 
 function notFoundProps(message: string): ObjectPropertiesCollection {

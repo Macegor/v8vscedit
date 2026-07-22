@@ -403,7 +403,9 @@ suite('metadataXmlCreator', () => {
     assert.ok(!nextXml.includes('<PasswordMode>false</PasswordMode>'));
     assert.ok(!nextXml.includes('<LegacyProperty>old</LegacyProperty>'));
     assert.ok(nextXml.includes('<MarkNegatives>false</MarkNegatives>'));
-    assert.ok(nextXml.includes('<RoundingMode>Round15as20</RoundingMode>'));
+    // RoundingMode не входит в состав реквизита: свойства нет ни у одного
+    // типизированного поля эталонных выгрузок example/2.20 и example/2.21.
+    assert.ok(!nextXml.includes('<RoundingMode>'));
     assert.ok(nextXml.includes('<FillChecking>ShowError</FillChecking>'));
     assert.ok(nextXml.includes('<DataHistory>DontUse</DataHistory>'));
 
@@ -416,7 +418,7 @@ suite('metadataXmlCreator', () => {
     assert.strictEqual(refChanged, true);
     const refXml = fs.readFileSync(xmlPath, 'utf-8');
     assert.ok(refXml.includes('d5p1:DocumentRef.ЗаказПокупателя'));
-    assert.ok(!refXml.includes('<RoundingMode>Round15as20</RoundingMode>'));
+    assert.ok(!refXml.includes('<RoundingMode>'));
     assert.ok(refXml.includes('<ChoiceParameterLinks/>'));
     assert.ok(refXml.includes('<ChoiceParameters/>'));
     assert.ok(refXml.includes('<ChoiceForm/>'));
@@ -572,7 +574,7 @@ suite('metadataXmlCreator', () => {
     assert.ok(nextXml.includes('<FillChecking>ShowError</FillChecking>'));
     assert.ok(nextXml.includes('<DataHistory>DontUse</DataHistory>'));
     assert.ok(nextXml.includes('<MarkNegatives>false</MarkNegatives>'));
-    assert.ok(nextXml.includes('<RoundingMode>Round15as20</RoundingMode>'));
+    assert.ok(!nextXml.includes('<RoundingMode>'));
     assert.ok(!nextXml.includes('<ChoiceForm/>'));
     assert.ok(!nextXml.includes('<LinkByType/>'));
     assert.ok(!nextXml.includes('<PasswordMode>false</PasswordMode>'));

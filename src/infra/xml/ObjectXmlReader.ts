@@ -305,7 +305,14 @@ export class ObjectXmlReader {
     }
 
     const targetXml = xml.slice(targetRange.start, targetRange.end);
-    const updatedTarget = updateTypeInElement(targetXml, normalizedType, options.propertyName ?? 'Type');
+    // Вид владельца берём из корня файла: состав ролевых свойств измерения/ресурса
+    // определяется именно им (у РС нет UseInTotals, у ресурса РС — Balance).
+    const updatedTarget = updateTypeInElement(
+      targetXml,
+      normalizedType,
+      options.propertyName ?? 'Type',
+      detectRootObjectKind(xml)
+    );
     if (updatedTarget === targetXml) {
       return false;
     }
@@ -519,18 +526,19 @@ function visitFieldRefs(nodes: XmlNodeList, visitor: (ref: string) => void): voi
 function updateTypeInElement(
   elementXml: string,
   typeInnerXml: string,
-  propertyName: 'Type' | 'Source' | 'CommandParameterType' = 'Type'
+  propertyName: 'Type' | 'Source' | 'CommandParameterType' = 'Type',
+  ownerKind?: string
 ): string {
   const typeBlock = `<${propertyName}>\n${typeInnerXml}\n</${propertyName}>`;
   const propertyRe = new RegExp(`<${propertyName}>[\\s\\S]*?<\\/${propertyName}>`);
   if (propertyRe.test(elementXml)) {
     const updated = elementXml.replace(propertyRe, () => typeBlock);
-    return propertyName === 'Type' ? normalizeTypedFieldProperties(updated, typeInnerXml) : updated;
+    return propertyName === 'Type' ? normalizeTypedFieldProperties(updated, typeInnerXml, ownerKind) : updated;
   }
   const selfClosingRe = new RegExp(`<${propertyName}(?:\\s[^>]*)?\\/>`);
   if (selfClosingRe.test(elementXml)) {
     const updated = elementXml.replace(selfClosingRe, () => typeBlock);
-    return propertyName === 'Type' ? normalizeTypedFieldProperties(updated, typeInnerXml) : updated;
+    return propertyName === 'Type' ? normalizeTypedFieldProperties(updated, typeInnerXml, ownerKind) : updated;
   }
   const propertiesMatch = /<Properties>([\s\S]*?)<\/Properties>/.exec(elementXml);
   if (!propertiesMatch) {
@@ -543,10 +551,10 @@ function updateTypeInElement(
     ? propsInner.replace(/(<Name[\s\S]*?<\/Name>)/, (_m, g1: string) => `${g1}\n${typeBlock}`)
     : `${propsInner}\n${typeBlock}`;
   const updated = elementXml.replace(propsInner, () => nextPropsInner);
-  return propertyName === 'Type' ? normalizeTypedFieldProperties(updated, typeInnerXml) : updated;
+  return propertyName === 'Type' ? normalizeTypedFieldProperties(updated, typeInnerXml, ownerKind) : updated;
 }
 
-function normalizeTypedFieldProperties(elementXml: string, typeInnerXml: string): string {
+function normalizeTypedFieldProperties(elementXml: string, typeInnerXml: string, ownerKind?: string): string {
   const tag = detectNormalizedTypeOwnerTag(elementXml);
   if (
     tag === 'Attribute' ||
@@ -556,9 +564,19 @@ function normalizeTypedFieldProperties(elementXml: string, typeInnerXml: string)
     tag === 'Constant' ||
     tag === 'CommonAttribute'
   ) {
-    return normalizeTypedFieldPropertiesAfterTypeChange(elementXml, tag, typeInnerXml);
+    return normalizeTypedFieldPropertiesAfterTypeChange(elementXml, tag, typeInnerXml, ownerKind);
   }
   return elementXml;
+}
+
+/**
+ * Вид объекта из корня ФАЙЛА (`InformationRegister`, `Catalog`, …) — им задаётся
+ * состав ролевых свойств дочерних полей. Технически это тот же разбор первого
+ * тега, что и {@link detectNormalizedTypeOwnerTag}, но смысл другой: там —
+ * собственный тег элемента, здесь — его владелец.
+ */
+function detectRootObjectKind(xml: string): string | undefined {
+  return detectNormalizedTypeOwnerTag(xml);
 }
 
 function detectNormalizedTypeOwnerTag(elementXml: string): string | undefined {
