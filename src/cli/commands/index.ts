@@ -2,6 +2,7 @@ import type { CliArgs } from '../core/types';
 import { exportConfiguration } from './exportConfiguration';
 import { importConfiguration } from './importConfiguration';
 import { importGitChanges } from './importGitChanges';
+import { listDbExtensions } from './listDbExtensions';
 import { refreshHashCache } from './refreshHashCache';
 import {
   addRepositoryUser,
@@ -26,6 +27,7 @@ export const CLI_COMMANDS: Partial<Record<string, CommandHandler>> = {
   'export-configuration': exportConfiguration,
   'import-configuration': importConfiguration,
   'import-git-changes': importGitChanges,
+  'list-db-extensions': listDbExtensions,
   'refresh-hash-cache': refreshHashCache,
   'update-configuration': updateConfiguration,
   'sync-configuration-partial': syncConfigurationPartial,

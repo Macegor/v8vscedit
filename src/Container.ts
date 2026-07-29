@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import type { ConfigEntry } from './domain/Configuration';
 import { findConfigurations } from './infra/fs/ConfigLocator';
 import { type ChangedConfiguration, ConfigurationChangeDetector } from './infra/fs/ConfigurationChangeDetector';
+import { ConfigurationCleanWindow } from './infra/fs/ConfigurationCleanWindow';
 import { MetadataTreeProvider } from './ui/tree/MetadataTreeProvider';
 import { registerCommands } from './ui/commands/CommandRegistry';
 import type { CommandServices } from './ui/commands/_shared';
@@ -68,6 +69,8 @@ import { AiMcpViewProvider } from './ui/views/ai/AiMcpViewProvider';
 import { AiSecretStorage } from './infra/ai/AiSecretStorage';
 import { disposeCachedAgentOperationServices, setProjectSecretStorage } from './ui/commands/ext/ExtensionCommandRunner';
 import { disposeRepositoryCommandStatusBar } from './ui/commands/repository/RepositoryCommandRunner';
+import { GitStateObserver } from './ui/git/GitStateObserver';
+import type { GitApiLike, GitExtensionLike } from './ui/git/gitExtensionApi';
 
 /**
  * Композиционный корень расширения. Собирает зависимости в одном месте,
@@ -139,7 +142,13 @@ export class Container {
   private readonly pendingTreeCacheFiles = new Set<string>();
   private changedConfigurations: ChangedConfiguration[] = [];
   private treeProcessingState: UniversalPanelProcessingState = { active: false };
+  // Два разных механизма подавления собственных записей, не путать:
+  // suppressedConfigurationReloads — пофайловый, гасит ПЕРЕСТРОЙКУ КЭША дерева по
+  // конкретным записанным файлам; cleanWindow — по корню конфигурации, гасит
+  // пометку «изменена» на хвосте запоздавших событий watcher после операции с базой.
   private readonly suppressedConfigurationReloads = new Map<string, number>();
+  private readonly cleanWindow = new ConfigurationCleanWindow();
+  private cleanWindowSettleTimer: NodeJS.Timeout | undefined;
 
   private constructor(
     private readonly context: vscode.ExtensionContext,
@@ -147,6 +156,16 @@ export class Container {
   ) {
     this.outputChannel = vscode.window.createOutputChannel('1С Редактор');
     context.subscriptions.push(this.outputChannel);
+    // Отложенный пересчёт состояния живёт дольше окна тишины: если расширение
+    // выгрузят в это время, обратный вызов дёрнул бы уже мёртвые сервисы.
+    context.subscriptions.push({
+      dispose: () => {
+        if (this.cleanWindowSettleTimer) {
+          clearTimeout(this.cleanWindowSettleTimer);
+          this.cleanWindowSettleTimer = undefined;
+        }
+      },
+    });
     this.outputChannel.appendLine('[init] Расширение активировано');
 
     this.supportService = new SupportInfoService(this.outputChannel);
@@ -334,6 +353,7 @@ export class Container {
     c.wireConfigurationWatcher();
     c.wireConfigurationSourceWatcher();
     c.wireGitDecorationWatcher();
+    void c.wireGitStateWatcher();
     c.wireMetadataChangesView();
     c.wireCommands();
     c.wireReadonlyGuard();
@@ -612,11 +632,17 @@ export class Container {
   }
 
   private wireGitDecorationWatcher(): void {
+    // База — реальный git toplevel (`changesGitRoot`), а не корень рабочей папки:
+    // выгрузка 1С может лежать в подкаталоге репозитория, тогда `.git` находится
+    // выше `workspaceFolder`. `.git/logs/HEAD` ловит commit/reset/checkout,
+    // которые не всегда трогают `HEAD`/`index` наблюдаемым fs-событием.
+    const gitBase = vscode.Uri.file(this.changesGitRoot);
     const watchers = [
-      new vscode.RelativePattern(this.workspaceFolder, '.git/HEAD'),
-      new vscode.RelativePattern(this.workspaceFolder, '.git/index'),
-      new vscode.RelativePattern(this.workspaceFolder, '.git/packed-refs'),
-      new vscode.RelativePattern(this.workspaceFolder, '.git/refs/**'),
+      new vscode.RelativePattern(gitBase, '.git/HEAD'),
+      new vscode.RelativePattern(gitBase, '.git/index'),
+      new vscode.RelativePattern(gitBase, '.git/packed-refs'),
+      new vscode.RelativePattern(gitBase, '.git/logs/HEAD'),
+      new vscode.RelativePattern(gitBase, '.git/refs/**'),
     ].map((pattern) => vscode.workspace.createFileSystemWatcher(pattern, false, false, false));
 
     for (const watcher of watchers) {
@@ -625,6 +651,33 @@ export class Container {
       watcher.onDidChange(() => this.scheduleDecorationRefresh(), null, this.context.subscriptions);
       this.context.subscriptions.push(watcher);
     }
+  }
+
+  /**
+   * Подписывается на события встроенного Git-расширения (`vscode.git`) —
+   * надёжный сигнал stage/unstage/commit/checkout/rebase, который fs-вотчер
+   * `.git/*` ловит не всегда. Fs-вотчер остаётся fallback'ом; активацию
+   * расширения не блокирует (все ошибки — только в лог).
+   */
+  private async wireGitStateWatcher(): Promise<void> {
+    let api: GitApiLike | undefined;
+    try {
+      const ext = vscode.extensions.getExtension<GitExtensionLike['exports']>('vscode.git');
+      if (ext) {
+        if (!ext.isActive) {
+          await ext.activate();
+        }
+        api = ext.exports.getAPI(1);
+      }
+    } catch (error) {
+      // Старое/отсутствующее расширение либо несовместимый API — остаёмся на
+      // fs-вотчере, наблюдатель станет no-op при api === undefined.
+      this.outputChannel.appendLine(`[git-state] Git Extension API недоступен: ${String(error)}`);
+      api = undefined;
+    }
+    const observer = new GitStateObserver(api, this.changesGitRoot, () => this.scheduleDecorationRefresh());
+    observer.start();
+    this.context.subscriptions.push(observer);
   }
 
   private ensureHashCaches(entries: ConfigEntry[]): void {
@@ -637,6 +690,15 @@ export class Container {
   }
 
   private scheduleChangedConfigurationStateRefresh(uri?: vscode.Uri): void {
+    // События файлов, записанных самим импортом/обновлением, watcher доставляет с
+    // задержкой — уже после markConfigurationsClean. Пока окно тишины открыто,
+    // такое событие игнорируется целиком: хеш-кэш операция только что
+    // актуализировала, а полный пересчёт (detect обходит и хеширует всю выгрузку)
+    // на каждое из тысяч событий заблокировал бы Extension Host на минуты.
+    // Единственный авторитетный пересчёт по окончании окна ставит markConfigurationsClean.
+    if (uri && this.cleanWindow.isOpenFor(uri.fsPath)) {
+      return;
+    }
     if (uri && this.markChangedConfigurationByFile(uri.fsPath)) {
       return;
     }
@@ -741,6 +803,18 @@ export class Container {
     if (rootPaths.length === 0) {
       return;
     }
+    // Watcher доставит события файлов, записанных операцией, уже после этой точки.
+    // Окно тишины гасит их, а по его закрытии ровно один раз пересчитывается
+    // фактическое состояние по хеш-кэшу — так правка, сделанная пользователем
+    // во время окна, не теряется, а полный пересчёт выполняется единожды.
+    this.cleanWindow.open(rootPaths);
+    if (this.cleanWindowSettleTimer) {
+      clearTimeout(this.cleanWindowSettleTimer);
+    }
+    this.cleanWindowSettleTimer = setTimeout(() => {
+      this.cleanWindowSettleTimer = undefined;
+      this.refreshChangedConfigurationState();
+    }, ConfigurationCleanWindow.defaultDurationMs + 1_000);
     const clean = new Set(rootPaths.map((item) => path.resolve(item).toLowerCase()));
     this.changedConfigurations = this.changedConfigurations.filter(
       (item) => !clean.has(path.resolve(item.rootPath).toLowerCase())

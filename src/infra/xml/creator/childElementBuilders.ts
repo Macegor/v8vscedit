@@ -3,7 +3,7 @@ import * as path from 'path';
 import type { ChildTag } from '../../../domain/ChildTag';
 import { getObjectLocationFromXml } from '../../fs/MetaPathResolver';
 import type { FormatRuleset } from '../format/FormatRuleset';
-import type { RegisterOwnerKind } from '../TypedFieldPropertyRules';
+import { type RegisterOwnerKind, toRegisterOwnerKind } from '../TypedFieldPropertyRules';
 import {
   escapeRegExp,
   findChildMetaElementRange,
@@ -116,11 +116,6 @@ function addMethodToUrlTemplateXml(xml: string, urlTemplateName: string, methodN
     changed: true,
     xml: `${xml.slice(0, template.start)}${nextTemplateXml}${xml.slice(template.end)}`,
   };
-}
-
-/** Сужает тип владельца до известных типов регистров; для прочих — undefined (общий набор свойств). */
-function toRegisterOwnerKind(ownerKind?: string): RegisterOwnerKind | undefined {
-  return ownerKind === 'InformationRegister' || ownerKind === 'AccumulationRegister' ? ownerKind : undefined;
 }
 
 function buildChildFragment(

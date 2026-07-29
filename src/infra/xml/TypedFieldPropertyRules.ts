@@ -1,3 +1,4 @@
+import { META_TYPES } from '../../domain/MetaTypes';
 import { findNestingAwareElementRange } from './XmlUtils';
 
 export type TypeAwarePropertyOwnerKind =
@@ -16,7 +17,7 @@ export type TypeAwarePropertyOwnerKind =
  * `Balance` у ресурса ИР), и при недопустимом значении перечисления (`Auto` у
  * `QuickChoice`/`CreateOnInput` ресурса ИР).
  */
-export type RegisterOwnerKind = 'InformationRegister' | 'AccumulationRegister';
+export type RegisterOwnerKind = 'InformationRegister' | 'AccumulationRegister' | 'AccountingRegister';
 
 type FieldTypeCategory =
   | 'string'
@@ -29,6 +30,18 @@ type FieldTypeCategory =
   | 'other'
   | 'none';
 
+/**
+ * Порядок свойств в `<Properties>`. Схема 1С — `xs:sequence`, платформа
+ * чувствительна к порядку (см. комментарий в `ObjectXmlReader.updatePropertyInElement`
+ * про `ServerCall` у общего модуля), поэтому список — не произвольный, а единая
+ * последовательность, подпоследовательностями которой являются ВСЕ наблюдаемые
+ * в `example/2.20`+`example/2.21` порядки: реквизит справочника, адресный
+ * реквизит задачи, измерение/ресурс регистров сведений, накопления и бухгалтерии.
+ *
+ * Ключевое следствие: ролевые свойства владельца (`Master`/`MainFilter`/`Balance`/
+ * `AccountingFlag`) идут ДО `Indexing`/`FullTextSearch`/`DataHistory`, а
+ * `UseInTotals`/`TypeReductionMode` — после них.
+ */
 const CONTROLLED_PROPERTY_KEYS = [
   'PasswordMode',
   'Format',
@@ -51,19 +64,23 @@ const CONTROLLED_PROPERTY_KEYS = [
   'ChoiceForm',
   'LinkByType',
   'ChoiceHistoryOnInput',
-  'Indexing',
-  'FullTextSearch',
-  'DataHistory',
-  'DenyIncompleteValues',
-  'RoundingMode',
-  'ShowInTotal',
   'Master',
   'MainFilter',
-  'TypeReductionMode',
-  'UseInTotals',
   'Balance',
   'AccountingFlag',
+  'ExtDimensionAccountingFlag',
+  'DenyIncompleteValues',
+  'Indexing',
   'AddressingDimension',
+  'FullTextSearch',
+  'DataHistory',
+  'UseInTotals',
+  'TypeReductionMode',
+  // Ниже — свойства, которые генератор не пишет никогда (в эталонных выгрузках
+  // не встречаются ни у одного типизированного поля). Они остаются в списке,
+  // чтобы смена типа вычищала их из уже испорченных файлов.
+  'RoundingMode',
+  'ShowInTotal',
 ] as const;
 
 const COMMON_ORDER = [
@@ -81,22 +98,88 @@ const COMMON_ORDER = [
 ] as const;
 
 const STRING_ORDER = ['PasswordMode', 'Format', 'EditFormat', 'Mask', 'MultiLine', 'ExtendedEdit'] as const;
-const NUMBER_ORDER = ['Format', 'EditFormat', 'MarkNegatives', 'MinValue', 'MaxValue', 'RoundingMode'] as const;
+// `RoundingMode` в NUMBER_ORDER не входит намеренно: ни у одного типизированного
+// поля реальной выгрузки (example/2.20, example/2.21 — реквизиты, измерения,
+// ресурсы, константы) этого свойства нет, а платформа отклоняет загрузку
+// («Свойство RoundingMode не входит в состав объекта метаданных Resource»).
+const NUMBER_ORDER = ['Format', 'EditFormat', 'MarkNegatives', 'MinValue', 'MaxValue'] as const;
 const DATE_ORDER = ['Format', 'EditFormat', 'Mask', 'MinValue', 'MaxValue'] as const;
 const BOOLEAN_ORDER = ['Format', 'EditFormat'] as const;
 const CHOICE_ORDER = ['ChoiceParameterLinks', 'ChoiceParameters', 'ChoiceForm', 'LinkByType'] as const;
-const DIMENSION_ORDER = ['DenyIncompleteValues', 'Master', 'MainFilter', 'TypeReductionMode', 'UseInTotals'] as const;
-const RESOURCE_ORDER = ['Balance', 'AccountingFlag'] as const;
 const ADDRESSING_ORDER = ['AddressingDimension'] as const;
 
-// Ролевые свойства измерения зависят от типа регистра (эталоны example/2.20
-// InformationRegisters/AccumulationRegisters): у ИР — Master/MainFilter/
-// DenyIncompleteValues/TypeReductionMode; у РН — DenyIncompleteValues/UseInTotals.
-const IR_DIMENSION_ROLE = ['DenyIncompleteValues', 'Master', 'MainFilter', 'TypeReductionMode'] as const;
-const ACCUM_DIMENSION_ROLE = ['DenyIncompleteValues', 'UseInTotals'] as const;
-// Общие свойства, которые регистр накопления НЕ хранит у полей (в отличие от
-// реквизита объекта): свойства заполнения и история данных.
-const ACCUM_FIELD_DROP_KEYS = ['FillFromFillingValue', 'FillValue', 'DataHistory'] as const;
+/**
+ * Состав свойств измерения/ресурса, зависящий ТОЛЬКО от вида регистра-владельца
+ * (не от типа поля). Снято с эталонных выгрузок `example/2.21/src/cf`:
+ * `InformationRegisters`, `AccumulationRegisters`, `AccountingRegisters`.
+ *
+ * `dropKeys` — общие свойства, которых у полей этого регистра нет (платформа их
+ * не принимает), `resourceDropKeys` — дополнительно только у ресурса.
+ */
+const REGISTER_FIELD_RULES: Readonly<Record<RegisterOwnerKind, {
+  dimensionRole: readonly string[];
+  resourceRole: readonly string[];
+  dropKeys: readonly string[];
+  resourceDropKeys: readonly string[];
+}>> = {
+  InformationRegister: {
+    dimensionRole: ['DenyIncompleteValues', 'Master', 'MainFilter', 'TypeReductionMode'],
+    resourceRole: [],
+    dropKeys: [],
+    resourceDropKeys: [],
+  },
+  AccumulationRegister: {
+    dimensionRole: ['DenyIncompleteValues', 'UseInTotals'],
+    resourceRole: [],
+    dropKeys: ['FillFromFillingValue', 'FillValue', 'DataHistory'],
+    resourceDropKeys: ['Indexing'],
+  },
+  AccountingRegister: {
+    dimensionRole: ['DenyIncompleteValues', 'Balance', 'AccountingFlag'],
+    resourceRole: ['Balance', 'AccountingFlag', 'ExtDimensionAccountingFlag'],
+    dropKeys: ['FillFromFillingValue', 'FillValue', 'DataHistory'],
+    resourceDropKeys: ['Indexing'],
+  },
+};
+
+/**
+ * Виды объектов, у полей которых состав свойств задаётся правилами регистра.
+ * Выводится из {@link META_TYPES} по наличию дочернего тега `Dimension`, а не
+ * перечислением: иначе новый вид-владелец, добавленный единственной записью в
+ * реестр (инвариант CLAUDE.md), сюда бы не попал и его реквизиту молча
+ * дописались бы свойства заполнения.
+ *
+ * Виды из этого набора, отсутствующие в {@link REGISTER_FIELD_RULES} (правила не
+ * сняты с эталона), обрабатываются консервативно — см. {@link isUnmodelledRegisterField}.
+ */
+const REGISTER_OWNER_KINDS: ReadonlySet<string> = new Set(
+  Object.values(META_TYPES)
+    .filter((def) => def.childTags?.includes('Dimension'))
+    .map((def) => def.kind)
+);
+
+/**
+ * Свойства, наличие которых определяется видом объекта-владельца, а не типом поля.
+ * Смена `<Type>` их состав менять не должна: когда владелец неизвестен или не
+ * описан в {@link REGISTER_FIELD_RULES}, такие свойства только сохраняются из
+ * исходного XML и никогда не дописываются «по умолчанию» — иначе в файл попадает
+ * свойство чужого вида метаданных и платформа отказывается грузить конфигурацию.
+ */
+const OWNER_DEPENDENT_KEYS: ReadonlySet<string> = new Set([
+  'FillFromFillingValue',
+  'FillValue',
+  'DataHistory',
+  'Indexing',
+  'DenyIncompleteValues',
+  'ShowInTotal',
+  'Master',
+  'MainFilter',
+  'TypeReductionMode',
+  'UseInTotals',
+  'Balance',
+  'AccountingFlag',
+  'ExtDimensionAccountingFlag',
+]);
 
 const DEFAULT_VALUES: Readonly<Record<string, string>> = {
   PasswordMode: 'false',
@@ -129,7 +212,11 @@ const DEFAULT_VALUES: Readonly<Record<string, string>> = {
   TypeReductionMode: 'Auto',
   UseInTotals: 'false',
   Balance: 'false',
-  AccountingFlag: 'false',
+  // AccountingFlag/ExtDimensionAccountingFlag — не булево, а ссылка на признак
+  // учёта плана счетов (`ChartOfAccounts.X.AccountingFlag.Y`). В эталонах либо
+  // такая ссылка, либо пустой самозакрытый тег; `false` платформа не примет.
+  AccountingFlag: '',
+  ExtDimensionAccountingFlag: '',
   AddressingDimension: '',
 };
 
@@ -159,6 +246,117 @@ export function getTypedFieldPropertyKeys(
   return getAllowedPropertyKeys(kind, detectFieldTypeCategories(typeInnerXml), registerKind);
 }
 
+/**
+ * Набор ключей для ПАНЕЛИ СВОЙСТВ. Панель показывает недостающие свойства как
+ * редактируемые поля и дописывает их в XML при первом же вводе, поэтому список
+ * обязан совпадать с контрактом записи: иначе один клик вернул бы в файл
+ * `UseInTotals` измерению регистра сведений.
+ *
+ * Когда вид владельца известен — набор строгий, как при генерации. Владелец
+ * неизвестен (панель открыта вне контекста объекта) — ролевые свойства
+ * объединяются по всем описанным видам регистров, чтобы не спрятать уже
+ * записанное платформой свойство.
+ */
+export function getDisplayTypedFieldPropertyKeys(
+  kind: TypeAwarePropertyOwnerKind,
+  typeInnerXml: string,
+  ownerKind?: string,
+  elementXml?: string
+): string[] {
+  const registerKind = toRegisterOwnerKind(ownerKind);
+  const keys = getAllowedPropertyKeys(kind, detectFieldTypeCategories(typeInnerXml), registerKind);
+  if (ownerKind) {
+    // Тот же доводчик, что и на пути записи: для регистра без снятых с эталона
+    // правил (регистр расчёта) ролевые свойства берутся из самого XML — панель
+    // не прячет уже записанное и не предлагает дописать непроверенное.
+    return restrictOwnerDependentKeysToExisting(
+      keys,
+      collectExistingPropertyBlocks(elementXml),
+      kind,
+      ownerKind,
+      registerKind
+    );
+  }
+  // Владелец не передан. Для константы и общего реквизита это штатный путь
+  // (getTypeAwarePropertyKeyOrder владельца не знает и не должен).
+  if (kind !== 'Dimension' && kind !== 'Resource') {
+    return keys;
+  }
+  // Измерение/ресурс без владельца из UI недостижимы: единственный вызывающий
+  // (structuredMetaChildHandler) всегда передаёт rootMetaKind. Ветка оставлена
+  // как контракт публичного API infra — без владельца прятать записанное
+  // платформой ролевое свойство нельзя.
+  const roleKeys = Object.values(REGISTER_FIELD_RULES)
+    .flatMap((rules) => (kind === 'Dimension' ? rules.dimensionRole : rules.resourceRole));
+  appendUnique(keys, roleKeys);
+  return sortByControlledOrder(keys);
+}
+
+/** Блоки свойств элемента; пустой список, если XML не передан или `<Properties>` нет. */
+function collectExistingPropertyBlocks(elementXml?: string): { ordered: { key: string; xml: string }[] } {
+  const properties = elementXml ? findPropertiesInner(elementXml) : null;
+  return properties ? collectPropertyBlocks(properties.inner) : { ordered: [] };
+}
+
+/**
+ * Возвращает управляемые свойства элемента, не входящие в состав его вида
+ * метаданных. Основа проверки `validate_metadata`: платформа 1С отклоняет
+ * загрузку конфигурации при свойстве чужого вида («Свойство UseInTotals не
+ * входит в состав объекта метаданных Dimension»).
+ *
+ * Проверяется принадлежность ВИДУ, а не соответствие текущему `<Type>`:
+ * платформа выгружает типозависимые свойства (`PasswordMode`, `MinValue`, …)
+ * у поля любого типа, и сужение состава по типу — политика генератора
+ * ({@link getTypedFieldPropertyKeys}), а не ограничение формата.
+ */
+export function findDisallowedTypedFieldProperties(
+  elementXml: string,
+  kind: TypeAwarePropertyOwnerKind,
+  ownerKind?: string
+): string[] {
+  const properties = findPropertiesInner(elementXml);
+  if (!properties) {
+    return [];
+  }
+  const registerKind = toRegisterOwnerKind(ownerKind);
+  if (isUnmodelledRegisterField(kind, ownerKind, registerKind)) {
+    return [];
+  }
+  const members = new Set(getMemberPropertyKeys(kind, registerKind));
+  return collectPropertyBlocks(properties.inner).ordered
+    .map((block) => block.key)
+    .filter((key) => CONTROLLED_PROPERTY_KEY_SET.has(key) && !members.has(key));
+}
+
+/** Полный состав управляемых свойств вида поля — объединение по всем категориям типа. */
+function getMemberPropertyKeys(
+  kind: TypeAwarePropertyOwnerKind,
+  registerKind?: RegisterOwnerKind
+): string[] {
+  const allCategories: ReadonlySet<FieldTypeCategory> = new Set<FieldTypeCategory>([
+    'string',
+    'number',
+    'boolean',
+    'date',
+    'reference',
+  ]);
+  const keys = getAllowedPropertyKeys(kind, allCategories, registerKind);
+  if (kind === 'Column') {
+    // У колонки ТЧ обработки/отчёта реальная выгрузка свойства заполнения содержит,
+    // у колонки справочника/документа — нет: состав определяется владельцем ТЧ,
+    // поэтому для проверки принадлежности виду они допустимы всегда (генератор
+    // их по-прежнему не пишет — см. getAllowedPropertyKeys).
+    appendUnique(keys, ['FillFromFillingValue', 'FillValue']);
+    return sortByControlledOrder(keys);
+  }
+  return keys;
+}
+
+/** Сужает вид объекта-владельца до регистра с описанными правилами полей. */
+export function toRegisterOwnerKind(ownerKind?: string): RegisterOwnerKind | undefined {
+  return ownerKind && ownerKind in REGISTER_FIELD_RULES ? (ownerKind as RegisterOwnerKind) : undefined;
+}
+
 /** Проверяет, управляется ли свойство составом `<Type>` и должно ли скрываться для неподходящего типа. */
 export function isTypedFieldControlledPropertyKey(key: string): boolean {
   return CONTROLLED_PROPERTY_KEY_SET.has(key);
@@ -167,11 +365,17 @@ export function isTypedFieldControlledPropertyKey(key: string): boolean {
 /**
  * Перестраивает `<Properties>` после смены `<Type>`: недопустимые для нового типа теги убираются,
  * значения тегов, которые остались в новом составе, сохраняются.
+ *
+ * `ownerKind` — вид объекта из корня файла (`InformationRegister`, `Catalog`, …).
+ * Без него состав ролевых свойств измерения/ресурса не определить, и в XML
+ * попадали свойства чужого вида регистра (`UseInTotals` измерению РС, `Balance`
+ * ресурсу РС) — конфигурация переставала грузиться платформой.
  */
 export function normalizeTypedFieldPropertiesAfterTypeChange(
   elementXml: string,
   kind: TypeAwarePropertyOwnerKind,
-  typeInnerXml: string
+  typeInnerXml: string,
+  ownerKind?: string
 ): string {
   const properties = findPropertiesInner(elementXml);
   if (!properties) {
@@ -181,7 +385,14 @@ export function normalizeTypedFieldPropertiesAfterTypeChange(
   const indent = detectPropertyIndent(properties.inner);
   const existing = collectPropertyBlocks(properties.inner);
   const nextTypeBlock = `<Type>\n${typeInnerXml}\n${indent}</Type>`;
-  const allowed = getAllowedPropertyKeys(kind, detectFieldTypeCategories(typeInnerXml));
+  const registerKind = toRegisterOwnerKind(ownerKind);
+  const allowed = restrictOwnerDependentKeysToExisting(
+    getAllowedPropertyKeys(kind, detectFieldTypeCategories(typeInnerXml), registerKind),
+    existing,
+    kind,
+    ownerKind,
+    registerKind
+  );
   const resultBlocks: string[] = [];
   const emitted = new Set<string>();
 
@@ -262,11 +473,11 @@ function getAllowedPropertyKeys(
   if (categories.has('reference') || categories.has('defined') || categories.has('other')) {
     appendUnique(keys, CHOICE_ORDER);
   }
-  if (kind === 'Dimension') {
-    appendUnique(keys, getDimensionRoleKeys(registerKind));
+  if (kind === 'Dimension' && registerKind) {
+    appendUnique(keys, REGISTER_FIELD_RULES[registerKind].dimensionRole);
   }
-  if (kind === 'Resource') {
-    appendUnique(keys, getResourceRoleKeys(registerKind));
+  if (kind === 'Resource' && registerKind) {
+    appendUnique(keys, REGISTER_FIELD_RULES[registerKind].resourceRole);
   }
   if (kind === 'AddressingAttribute') {
     appendUnique(keys, ADDRESSING_ORDER);
@@ -283,39 +494,66 @@ function getAllowedPropertyKeys(
   return sortByControlledOrder(dropRegisterOmittedKeys(withoutColumnFill, kind, registerKind));
 }
 
-/** Ролевые свойства измерения: зависят от типа регистра, вне регистра — совместимый полный набор. */
-function getDimensionRoleKeys(registerKind?: RegisterOwnerKind): readonly string[] {
-  if (registerKind === 'InformationRegister') {
-    return IR_DIMENSION_ROLE;
-  }
-  if (registerKind === 'AccumulationRegister') {
-    return ACCUM_DIMENSION_ROLE;
-  }
-  return DIMENSION_ORDER;
-}
-
-/** Ролевые свойства ресурса: у регистров с известным типом их нет (Balance/AccountingFlag опущены). */
-function getResourceRoleKeys(registerKind?: RegisterOwnerKind): readonly string[] {
-  if (registerKind === 'InformationRegister' || registerKind === 'AccumulationRegister') {
-    return [];
-  }
-  return RESOURCE_ORDER;
-}
-
-/** Убирает у полей регистра накопления общие свойства, которые платформа для него не хранит. */
+/**
+ * Убирает у полей регистра общие свойства, которые платформа для него не хранит.
+ * Правило распространяется и на РЕКВИЗИТ регистра: в эталонах у реквизита РН и РБ
+ * (в отличие от реквизита РС) нет `FillFromFillingValue`/`FillValue`/`DataHistory`.
+ */
 function dropRegisterOmittedKeys(
   keys: string[],
   kind: TypeAwarePropertyOwnerKind,
   registerKind?: RegisterOwnerKind
 ): string[] {
-  if (registerKind !== 'AccumulationRegister' || (kind !== 'Dimension' && kind !== 'Resource')) {
+  if (!registerKind) {
     return keys;
   }
-  const drop = new Set<string>(ACCUM_FIELD_DROP_KEYS);
+  const rules = REGISTER_FIELD_RULES[registerKind];
+  const drop = new Set<string>(rules.dropKeys);
   if (kind === 'Resource') {
-    drop.add('Indexing');
+    for (const key of rules.resourceDropKeys) {
+      drop.add(key);
+    }
   }
   return keys.filter((key) => !drop.has(key));
+}
+
+/**
+ * Поле регистра, правила которого не описаны в {@link REGISTER_FIELD_RULES}
+ * (регистр расчёта). Измерение и ресурс существуют только у регистров, поэтому
+ * для них достаточно отсутствия описанных правил; реквизит же бывает у любого
+ * объекта, и признаком служит сам вид владельца.
+ */
+function isUnmodelledRegisterField(
+  kind: TypeAwarePropertyOwnerKind,
+  ownerKind?: string,
+  registerKind?: RegisterOwnerKind
+): boolean {
+  if (registerKind) {
+    return false;
+  }
+  return kind === 'Dimension' || kind === 'Resource' || REGISTER_OWNER_KINDS.has(ownerKind ?? '');
+}
+
+/**
+ * Для поля регистра с неописанными правилами: свойства, зависящие от вида
+ * владельца, только сохраняются из исходного XML. Смена типа поля не повод ни
+ * дописать `UseInTotals`/`Balance` «по умолчанию», ни выбросить уже записанные
+ * платформой ролевые свойства.
+ */
+function restrictOwnerDependentKeysToExisting(
+  allowed: string[],
+  existing: { ordered: { key: string; xml: string }[] },
+  kind: TypeAwarePropertyOwnerKind,
+  ownerKind?: string,
+  registerKind?: RegisterOwnerKind
+): string[] {
+  if (!isUnmodelledRegisterField(kind, ownerKind, registerKind)) {
+    return allowed;
+  }
+  const present = new Set(existing.ordered.map((block) => block.key));
+  const kept = allowed.filter((key) => !OWNER_DEPENDENT_KEYS.has(key) || present.has(key));
+  appendUnique(kept, [...present].filter((key) => OWNER_DEPENDENT_KEYS.has(key)));
+  return sortByControlledOrder(kept);
 }
 
 /**

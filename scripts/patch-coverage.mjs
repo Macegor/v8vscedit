@@ -30,7 +30,27 @@ function git(args) {
 
 // Container/extension исполняются в Extension Host, который c8 не инструментирует
 // (тонкие адаптеры, покрываются интеграционно) — из гейта исключены.
-const NOT_INSTRUMENTED = new Set(['src/Container.ts', 'src/extension.ts']);
+// Тот же класс уникально-неинструментируемых оркестраторов:
+//   • src/cli/onec-tools.ts — самовыполняющаяся точка входа CLI (`void main()` на
+//     верхнем уровне модуля), исполняется только как отдельный процесс
+//     `node dist/cli/onec-tools.js`; покрывается E2E-тестом
+//     src/test/suite/cliProcess.test.ts (спавн собранного бинарника), но c8 не
+//     видит её из-за exclude dist/** до source-map ремапа.
+//   • src/cli/commands/listDbExtensions.ts — CLI-оркестратор спавна реального
+//     Конфигуратора 1С; в CI в процесс не загружается (только через тот же спавн
+//     бинарника), поэтому lcov-записи нет вовсе. Вся тестируемая логика (разбор
+//     вывода) вынесена в infra/environment/ExtensionListParser.ts (100%).
+//   • src/ui/commands/ext/ExtensionCommands.ts — регистрация vscode-команд,
+//     исполняется только в Extension Host при активации (как Container/extension);
+//     решающая логика выбора вынесена в planExtensionChoices (100%). Ср.:
+//     инструментируется лишь ExtensionCommandRunner.ts (извлечённая логика).
+const NOT_INSTRUMENTED = new Set([
+  'src/Container.ts',
+  'src/extension.ts',
+  'src/cli/onec-tools.ts',
+  'src/cli/commands/listDbExtensions.ts',
+  'src/ui/commands/ext/ExtensionCommands.ts',
+]);
 
 function isProdTs(f) {
   return (

@@ -518,10 +518,11 @@ export function buildConfigurationProperties(fullConfigXml: string): ObjectPrope
 /** Свойства типового реквизита / измерения / ресурса / колонки */
 export function buildTypedFieldProperties(
   elementFullXml: string,
-  inheritedElementFullXml?: string | null
+  inheritedElementFullXml?: string | null,
+  ownerKind?: string
 ): ObjectPropertiesCollection {
   const keySource = elementFullXml || (inheritedElementFullXml ?? '');
-  return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, getTypedFieldPropertyKeyOrder(keySource), {
+  return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, getTypedFieldPropertyKeyOrder(keySource, ownerKind), {
     elementXmlForType: elementFullXml,
     inheritedElementXmlForType: inheritedElementFullXml ?? undefined,
     includeExtraKeys: true,

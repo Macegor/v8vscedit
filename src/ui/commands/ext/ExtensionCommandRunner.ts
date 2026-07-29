@@ -21,7 +21,7 @@ import {
   resolveV8PathHintFromVersion,
   runProcess,
 } from '../../../infra/process';
-import { resolveDbPassword, type ProjectSecretStorage } from '../../../infra/environment';
+import { readExtensionListFromDumpFile, resolveDbPassword, type ProjectSecretStorage } from '../../../infra/environment';
 
 type NodeArg = MetadataNode | { xmlPath?: string; nodeKind?: string; label?: string };
 
@@ -506,6 +506,64 @@ async function runBatchDecompileExtension(
     removeTempDir(tempRoot, outputChannel);
   }
 }
+
+/**
+ * Возвращает список имён расширений, подключённых к базе проекта, через
+ * внутренний CLI (`list-db-extensions` → Конфигуратор). Если подключение к базе
+ * не настроено (нет env.json/`--ibconnection`) или CLI завершился ошибкой —
+ * возвращает `undefined`, чтобы вызывающая сторона откатилась на ручной ввод.
+ */
+/* c8 ignore start -- спавн node-CLI и реального Конфигуратора не юнит-тестируется в CI (правило CLAUDE.md №4); тестируемая логика разбора списка вынесена в infra/environment/ExtensionListParser */
+export async function listConnectedDatabaseExtensions(
+  workspaceFolder: vscode.WorkspaceFolder,
+  outputChannel: vscode.OutputChannel
+): Promise<string[] | undefined> {
+  const settingsPath = resolveSettingsPath(
+    workspaceFolder.uri.fsPath,
+    path.join(workspaceFolder.uri.fsPath, 'src', 'cfe', '_probe')
+  );
+  let connection: ConnectionParams;
+  try {
+    connection = await resolveConnectionFromSettings(settingsPath);
+  } catch {
+    return undefined;
+  }
+
+  const tempRoot = createWorkspaceTempDir(workspaceFolder.uri.fsPath, 'list-ext-');
+  const resultFile = path.join(tempRoot, 'extensions.txt');
+  try {
+    const cliArgs = [
+      'list-db-extensions',
+      '-ProjectRoot',
+      workspaceFolder.uri.fsPath,
+      '-ResultFile',
+      resultFile,
+      ...buildConnectionCliArgs(connection),
+    ];
+    const ok = await runInternalCliCommand(
+      {
+        cliArgs,
+        progressTitle: 'Получение списка расширений базы',
+        progressStartMessage: 'Запрос списка расширений из базы...',
+        successMessage: 'Список расширений базы получен.',
+        errorTitle: 'Не удалось получить список расширений базы.',
+        failureOperation: 'получении списка расширений базы',
+        logPrefix: 'list-db-extensions',
+        showSuccessMessage: false,
+        showErrorMessage: false,
+      },
+      workspaceFolder,
+      outputChannel
+    );
+    if (!ok) {
+      return undefined;
+    }
+    return readExtensionListFromDumpFile(resultFile);
+  } finally {
+    removeTempDir(tempRoot, outputChannel);
+  }
+}
+/* c8 ignore stop */
 
 async function runBatchDecompileMainConfiguration(
   configName: string,

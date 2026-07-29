@@ -140,7 +140,10 @@ src/
 │   │       └── formatRegistry.ts     # реестр «версия → ruleset» + version-guard
 │   ├── fs/
 │   │   ├── ConfigLocator.ts          # рекурсивный поиск Configuration.xml
-│   │   └── MetaPathResolver.ts       # единый resolver: XML + все модули по ModuleSlot
+│   │   ├── MetaPathResolver.ts       # единый resolver: XML + все модули по ModuleSlot
+│   │   └── ConfigurationCleanWindow.ts # окно тишины по корню конфигурации после
+│   │                                  # импорта/обновления БД (Container.markConfigurationsClean,
+│   │                                  # см. docs/architecture.md)
 │   ├── cfe/                          # расширения: CfeBorrowService, CfeDiffService, CfePatchMethodService
 │   ├── support/                      # SupportInfoReader/Service (ParentConfigurations.bin), Logger
 │   ├── cache/                        # MetadataCache, hashCache (CLI)
@@ -281,6 +284,21 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
 - **Новый дочерний тег (`ChildTag`):** значение в `domain/ChildTag.ts` + `CHILD_TAG_CONFIG` → при своём контейнере расширить `ObjectXmlReader.parseChildren` → тег в `childTags` нужных `META_TYPES`.
 - **Новый контейнерный дочерний тип со своими вложенными листьями** (паттерн ТЧ→Колонка; второй прецедент — HTTPСервис→URLШаблон→Метод, см. [mcp-paths.md](./docs/mcp-paths.md#26-расширенные-примеры-путей) и [metadata-navigator.md](./docs/metadata-navigator.md#контейнерные-дочерние-узлы-тчколонка-и-httpсервисurlшаблонметод)): контейнер и лист — обе отдельные записи `MetaKind`/`META_TYPES`/`ChildTag`; лист парсится в `MetaChild.columns` контейнера через `ObjectXmlReader.toXxxChild` (образец `toTabularSectionChild`) → имя родителя-контейнера пробрасывается ПАРАЛЛЕЛЬНЫМ полем контекста (`tabularSectionName`/`urlTemplateName`), а не переименованием существующего слота и не новым реестром → `domain/CanonicalNames.ts` (`canonicalChildPath`) обобщает контейнерную ветку по этому полю → узел дерева строится симметрично в ДВУХ источниках — `infra/cache/MetadataCache.ts` (webview) и `ui/tree/nodeBuilders/metaObjectTreeBuilder.ts` (нативный TreeView/свойства) → `infra/xml/XmlUtils.ts` получает nesting-aware `findXxxRangeInYyy`/`extractXxxXmlFromYyy` (образец `findColumnRangeInTabularSection`) → MCP add-инструмент для листа получает флаг-аналог `inTabularSection` (например `inUrlTemplate`) в `McpAddToolsRegistration.ts`, владелец — сам контейнер (`allowedOwnerKinds: ['<Контейнер>']`).
 - **Новая схема свойств:** объект-схема в `PROPERTY_SCHEMAS` → при новом `PropertyValueKind` расширить `_types.ts` + `PropertyBuilder.ts`. Регулярки — только в `infra/xml/`.
+- **Новое правило состава свойств типизированного поля** (какие теги `<Properties>` допустимы у
+  реквизита/измерения/ресурса/колонки конкретного вида объекта-владельца, см.
+  [xml-format-rulesets.md](./docs/xml-format-rulesets.md#состав-свойств-типизированного-поля-по-виду-владельца)):
+  правило регистра-владельца — запись в `REGISTER_FIELD_RULES` (`infra/xml/TypedFieldPropertyRules.ts`,
+  снимается с эталона `example/`) → при новом управляемом ключе свойства — добавить его в
+  `CONTROLLED_PROPERTY_KEYS` (позиция — по месту в `xs:sequence` схемы 1С, список остаётся единой
+  надпоследовательностью всех наблюдаемых в эталонах порядков) → значение по умолчанию в
+  `DEFAULT_VALUES` (или в `getFieldDefaultValues`, если оно зависит от `registerKind`) → тест на
+  реальном объекте из `example/2.20`+`example/2.21` (запись через `normalizeTypedFieldPropertiesAfterTypeChange`,
+  панель свойств через `getDisplayTypedFieldPropertyKeys`, `validate_metadata` с кодом
+  `property-not-allowed`). **Состав задаёт ВИД ОБЪЕКТА-ВЛАДЕЛЬЦА** (корень XML-файла,
+  `ObjectXmlReader.detectRootObjectKind`), **а не тип поля** (`<Type>`) — сужение по типу отдельная
+  политика генератора (`getAllowedPropertyKeys` по `FieldTypeCategory`), не ограничение формата; для
+  видов, правила которых ещё не сняты с эталона (пример — регистр расчёта), свойства владельца
+  ТОЛЬКО сохраняются из исходного XML, а не дописываются «по умолчанию».
 - **Новая команда:** класс в `ui/commands/...` с `readonly id` → регистрация в `CommandRegistry.registerAll` → `package.json → contributes.commands` → при меню узла `contributes.menus` c `when: viewItem =~ /…/` → при хоткее `contributes.keybindings`.
 - **Новый builder узла:** `ui/tree/nodeBuilders/<имя>.ts` → регистрация в диспетчере `metaObjectTreeBuilder.ts`. XML — только через `parseObjectXml`/`ObjectXmlReader`.
 - **Новая декорация узла:** класс в `ui/tree/decorations/` (реализует `vscode.FileDecorationProvider`) → регистрация в `Container.wireTreeView` → суффикс `contextValue` — только в `TreeNode`.
@@ -290,6 +308,17 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
 - **Новая настройка:** `package.json → contributes.configuration.properties` с префиксом `v8vscedit.<область>.<ключ>`, `description` на русском → читать только через `vscode.workspace.getConfiguration('v8vscedit')` в UI/Container → при рантайм-влиянии подписка на `onDidChangeConfiguration`.
 - **Новый watcher:** `FileSystemWatcher` — только в `Container` или `ui/support/`; обработчик делегирует в сервис.
 - **Внешняя интеграция (vrunner):** запуск процесса в `ui/commands/ext/`; декодирование OEM/Win1251 через `iconv-lite`; прогресс/отмена через `vscode.window.withProgress`.
+- **Новая операция чтения данных из базы через пакетный Конфигуратор** (данных, которых нет в
+  XML-выгрузке — список/состояние; образец — список подключённых расширений для
+  `v8vscedit.connectExtension`): CLI-команда `cli/commands/<name>.ts` с гейтом по `exitCode` процесса
+  (не по тексту лога) и передачей результата через `-ResultFile` (не marker-блок в stdout — избегает
+  порчи данных построчным `LineBufferedDecoder`) → чистый парсер в `infra/<область>/<Name>Parser.ts` без
+  `vscode`/spawn (снятие BOM, разбор строк, при необходимости — чистая функция выбора для UI) → тонкая
+  UI-обёртка `ui/commands/.../*CommandRunner.ts` (спавн CLI + чтение `-ResultFile`, `undefined` при
+  недоступности) → диалог без ручного fallback-ввода: при `undefined`/пустом/полностью исчерпанном
+  списке — явные `showErrorMessage`/`showInformationMessage` по причине и отмена операции, без
+  переключения на ручной ввод значения пользователем. Подробности и обоснование —
+  [architecture.md](./docs/architecture.md#паттерн-чтение-данных-из-базы-через-пакетный-конфигуратор-file-handoff).
 - **Открытие BSL-модулей:** только реальные `file://` документы (виртуальная схема `onec://` удалена). Readonly — через `ui/readonly/BslReadonlyGuard.ts`.
 - **Изменение жизненного цикла/безопасности встроенного MCP-сервера** (порт, идентичность процесса,
   graceful shutdown, Host/Origin, отличается от «новый MCP-инструмент» из раздела выше): чистая логика —
@@ -316,6 +345,13 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
   команд `package.json → contributes.commands`/меню `view/item/context` для этой панели не заводится —
   весь UI-контракт живёт во внутреннем протоколе webview (см.
   [git-metadata-changes.md](./docs/git-metadata-changes.md#формат-сообщений-протокола)).
+- **Новый триггер обновления панели изменений/декораций по git-событию** (аналог Git Extension API):
+  чистый селектор репозитория — `infra/git/GitRepositorySelector.ts` (без `vscode`) → тонкий наблюдатель
+  поверх события — `ui/git/` (образец `GitStateObserver.ts` + типовой фасад `gitExtensionApi.ts`) →
+  подключение в `Container` (образец `wireGitStateWatcher()`), с обязательным fallback fs-вотчером на
+  случай недоступности источника → единственный выход обоих триггеров —
+  `Container.scheduleDecorationRefresh()` (не заводить параллельный debounce/refresh-путь). См.
+  [git-metadata-changes.md](./docs/git-metadata-changes.md#триггеры-обновления-панели-и-декораций-git-extension-api--fallback-fs-вотчер).
 - **Новая возможность блока «История»** (граф git-коммитов внутри панели «Изменения метаданных», НЕ
   отдельная вкладка/провайдер, см. [git-history-graph.md](./docs/git-history-graph.md)), в зависимости от
   слоя:
@@ -358,6 +394,7 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
 15. **Нативный TreeView — не основной UI**; не дублировать логику меню в `package.json`, если она есть в `addModuleActions`.
 16. **MCP-инструменты принимают только канон** (см. `./docs/mcp-paths.md`).
 17. **God-объектов быть не должно.** Порог-ориентир — **~800 строк** на файл производственного кода; превышение требует либо явного обоснования, либо декомпозиции. Дробить **по ответственности/домену, а не механически по строкам**. Каноничные приёмы: регистрация MCP-инструментов дробится по доменам (`src/ui/mcp/registration/*`, образец — `McpAddToolsRegistration`); диспетчер `switch (kind)` заменяется **таблицей** `Record<MetaKind, …>` — данные типа в `META_TYPES`, XML-литералы формата в спец-реестре `infra/` (параллельные словари вне `META_TYPES` запрещены, см. п.2); класс-фасад остаётся тонким, логика — в module-level функциях/подмодулях того же слоя. **Любое дробление XML-генератора обязано сохранять байт-в-байт выход** (BOM/EOL/порядок атрибутов/самозакрытие, см. п.12) и предваряться байт-golden-тестом; декомпозиция `MetadataXmlCreator`/`FormBuilders` без такого эталона — запрещена (идёт вслепую).
+18. **Внутри критической секции эксклюзивной операции (флаги вида `isUpdatingConfigurations`) уведомления показываются без `await`.** `await vscode.window.showInformationMessage(...)`/`showWarningMessage(...)` до закрытия секции держит флаг занятости выставленным до закрытия нотификации пользователем — любая параллельная операция всё это время отбивается сообщением «уже выполняется», хотя фактически ничего не выполняется.
 
 ## Ключевые принципы
 

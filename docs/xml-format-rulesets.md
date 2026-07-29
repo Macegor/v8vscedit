@@ -87,3 +87,102 @@
 (`normalizeTypedFieldPropertiesAfterTypeChange`), и UI. Ruleset владеет
 *привязкой* к ним (`buildTypedFieldProperties`), поэтому будущий формат может их
 переопределить, не дублируя таблицы.
+
+## Состав свойств типизированного поля по виду владельца
+
+Свойства внутри `<Properties>` типизированного поля (`Attribute`/`AddressingAttribute`/
+`Dimension`/`Resource`/`Column`/`Constant`/`CommonAttribute`) задаются ДВУМЯ независимыми осями:
+типом поля (`<Type>`) и видом объекта-владельца (корень XML-файла). Ось версии формата (rulesets
+выше) здесь ни при чём — состав от версии 2.20/2.21 не зависит, снят с обоих эталонов одинаковым.
+
+Модуль: `infra/xml/TypedFieldPropertyRules.ts`.
+
+### Ось типа: `getAllowedPropertyKeys` по `FieldTypeCategory`
+
+Категория типа (`string`/`number`/`boolean`/`date`/`reference`/`defined`/`binary`/`other`/`none`,
+определяется `detectFieldTypeCategories` по `<Type>`/`<TypeSet>`) добавляет свой блок ключей
+(`STRING_ORDER`, `NUMBER_ORDER`, `DATE_ORDER`, `BOOLEAN_ORDER`, `CHOICE_ORDER`). Общий блок
+(`COMMON_ORDER`) есть у поля любого типа.
+
+### Ось владельца: `REGISTER_FIELD_RULES` по `RegisterOwnerKind`
+
+Для измерения/ресурса регистра состав дополнительно зависит от вида регистра-владельца
+(`InformationRegister`/`AccumulationRegister`/`AccountingRegister`) — платформа отклоняет загрузку
+при свойстве, не входящем в состав объекта метаданных (`UseInTotals` у измерения ИР, `Balance` у
+ресурса ИР), и при недопустимом значении перечисления. Таблица `REGISTER_FIELD_RULES` снята с
+эталонов `example/2.20` + `example/2.21`:
+
+- `dimensionRole`/`resourceRole` — ролевые свойства, добавляемые ТОЛЬКО измерению/ресурсу этого
+  вида регистра (`Master`/`MainFilter` у ИР, `UseInTotals` у РН, `Balance`/`AccountingFlag`/
+  `ExtDimensionAccountingFlag` у РБ);
+- `dropKeys`/`resourceDropKeys` — общие свойства, которых у полей ЭТОГО регистра нет вовсе
+  (`FillFromFillingValue`/`FillValue`/`DataHistory` — нет у РН и РБ, есть только у ИР).
+
+Правило распространяется и на РЕКВИЗИТ регистра, не только на измерение/ресурс (в эталонах у
+реквизита РН и РБ, в отличие от реквизита РС, нет `FillFromFillingValue`/`FillValue`/`DataHistory`).
+Набор видов-владельцев, для которых применяются правила регистра (`REGISTER_OWNER_KINDS`),
+выводится из `META_TYPES` по `childTags.includes('Dimension')`, а не перечисляется параллельным
+списком — новый вид-владелец с измерением подхватывается автоматически той же одной записью в
+`META_TYPES`, без правки этого модуля.
+
+Регистр, правила которого с эталона ещё не сняты (на момент написания — регистр расчёта),
+обрабатывается КОНСЕРВАТИВНО (`isUnmodelledRegisterField` + `restrictOwnerDependentKeysToExisting`):
+свойства из `OWNER_DEPENDENT_KEYS` (зависящие от владельца — `FillFromFillingValue`, `UseInTotals`,
+`Balance`, `AccountingFlag` и т.п.) только СОХРАНЯЮТСЯ из исходного XML, никогда не дописываются
+«по умолчанию». Смена типа поля такого объекта не может ни добавить, ни выбросить ролевое свойство
+непроверенного вида.
+
+Вид владельца определяется по корню файла (`ObjectXmlReader.detectRootObjectKind` →
+`updateTypeInObject` → `normalizeTypedFieldPropertiesAfterTypeChange`), не по тегу самого поля — у
+измерения/ресурса/реквизита свой собственный тег, здесь нужен именно владелец.
+
+### `CONTROLLED_PROPERTY_KEYS` — единая надпоследовательность
+
+Порядок свойств в `<Properties>` — не произвольный, а единая последовательность,
+подпоследовательностями которой являются ВСЕ наблюдаемые в эталонах порядки (реквизит справочника,
+адресный реквизит задачи, измерение/ресурс ИР/РН/РБ): схема 1С — `xs:sequence`, платформа
+чувствительна к порядку. Ролевые свойства владельца (`Master`/`MainFilter`/`Balance`/
+`AccountingFlag`) идут ДО `Indexing`/`FullTextSearch`/`DataHistory`, `UseInTotals`/
+`TypeReductionMode` — после них. Новый управляемый ключ добавляется в эту таблицу на позицию,
+соответствующую его месту в схеме; `sortByControlledOrder` расставляет уже собранные блоки
+автоматически по этому порядку.
+
+`RoundingMode` в таблице есть, но никогда не генерируется (в эталонах отсутствует у всех
+типизированных полей всех видов) — оставлен, чтобы смена типа вычищала его из уже испорченных
+файлов. `AccountingFlag`/`ExtDimensionAccountingFlag` — не булевы, а ссылка на признак учёта плана
+счетов (`ChartOfAccounts.X.AccountingFlag.Y`); по умолчанию генерируются пустым самозакрытым тегом,
+а не значением `false`.
+
+### Панель свойств — тот же конвейер, что и запись
+
+`ui/tree/nodeBuilders/structuredMetaChildHandler.ts` прокидывает `node.metaContext.rootMetaKind`
+(вид объекта-владельца) в `PropertyBuilder.buildTypedFieldProperties` →
+`getTypedFieldPropertyKeyOrder` → `TypedFieldPropertyRules.getDisplayTypedFieldPropertyKeys`. Это
+принципиально: панель рисует недостающие ключи РЕДАКТИРУЕМЫМИ и дописывает их в XML при первом же
+вводе значения — набор обязан совпадать с составом, который пишет
+`normalizeTypedFieldPropertiesAfterTypeChange`, иначе один клик в панели вернул бы в файл
+`UseInTotals` измерению регистра сведений. Когда владелец неизвестен (панель открыта вне контекста
+объекта — применимо только к константе/общему реквизиту), ролевые свойства объединяются по всем
+описанным видам регистров, чтобы не спрятать уже записанное платформой свойство.
+
+### Валидация: код `property-not-allowed`
+
+`MetadataValidationService` (через `findDisallowedTypedFieldProperties` из
+`TypedFieldPropertyRules.ts`) проверяет обратную задачу — что в уже существующем XML нет свойства,
+не входящего в состав вида объекта-владельца. Код ошибки — `property-not-allowed`, severity
+`error` (платформа отказывается грузить конфигурацию с таким XML). Важно: проверяется
+принадлежность ВИДУ, а не соответствие текущему `<Type>` — платформа выгружает типозависимые
+свойства (`PasswordMode`, `MinValue`, …) у поля ЛЮБОГО типа, и сужение состава по типу — политика
+генератора (`getAllowedPropertyKeys`/`getTypedFieldPropertyKeys`), а не ограничение формата;
+проверка по `<Type>` давала бы ложные срабатывания. Проверено на 22 328 реальных XML — 0 ложных
+срабатываний.
+
+Колонка ТЧ (`Column`) в этой проверке не наследует запрет генератора на свойства заполнения:
+`getMemberPropertyKeys` явно допускает `FillFromFillingValue`/`FillValue` у колонки, потому что в
+реальной выгрузке они встречаются у колонки ТЧ обработки/отчёта (наследуются от владельца ТЧ), хотя
+сам генератор их по-прежнему не пишет.
+
+MCP-инструменты, использующие этот конвейер, отдельной поддержки владельца не содержат — она уже в
+`infra/xml/`: `v8vscedit_set_type` (запись, через `ObjectXmlReader.updateTypeInObject`) и
+`v8vscedit_validate_metadata` (чтение, через `MetadataValidationService`) учитывают вид владельца
+автоматически. Канон путей этих инструментов — [mcp-paths.md](./mcp-paths.md).

@@ -814,8 +814,8 @@ const TYPED_FIELD_KEYS = [
   'DataHistory',
   'LinkByType',
   'DenyIncompleteValues',
-  'RoundingMode',
-  'ShowInTotal',
+  // RoundingMode/ShowInTotal исключены — см. комментарий к CONTROLLED_PROPERTY_KEYS
+  // в TypedFieldPropertyRules: у типизированных полей этих свойств не бывает.
 ] as const;
 
 const STANDARD_ATTRIBUTE_KEYS = TYPED_FIELD_KEYS.filter((key) => key !== 'Type');
