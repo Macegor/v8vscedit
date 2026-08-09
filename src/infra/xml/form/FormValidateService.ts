@@ -13,6 +13,15 @@ import {
   collectCommands,
   collectElements,
 } from './FormInfoService';
+import {
+  collectIdSpaces,
+  countCheckedEntries,
+  findDuplicateIds,
+  splitBaseForm,
+  type FormIdDuplicate,
+  type FormIdSpace,
+  type IdSpaceKind,
+} from './FormIdSpaces';
 import type {
   FormAttributeInfo,
   FormCommandInfo,
@@ -80,37 +89,19 @@ const SKIP_DATAPATH_TAGS = new Set([
 export class FormValidateService {
   validate(options: ValidateFormOptions): FormValidationResult {
     const formPath = resolveFormXmlPath(options.formPath);
-    const maxErrors = options.maxErrors ?? 30;
-    const detailed = options.detailed === true;
     const formName = resolveFormName(formPath);
     const lines: string[] = [`=== Validation: Form.${formName} ===`, ''];
-    let errors = 0;
-    let warnings = 0;
-    let ok = 0;
-    // Расширяем тип до boolean, иначе TS сужает до литерала false и линтер считает,
-    // что проверки `if (!stopped)` всегда истинны — а на самом деле reportError
-    // выставляет stopped=true как сайд-эффект из замыкания.
-    let stopped = false as boolean;
-    const reportOk = (msg: string) => {
-      ok++;
-      if (detailed) {lines.push(`[OK]    ${msg}`);}
-    };
-    const reportWarn = (msg: string) => {
-      warnings++;
-      lines.push(`[WARN]  ${msg}`);
-    };
-    const reportError = (msg: string) => {
-      errors++;
-      lines.push(`[ERROR] ${msg}`);
-      if (errors >= maxErrors) {stopped = true;}
-    };
+    const report = new ValidationReport(lines, options.maxErrors ?? 30, options.detailed === true);
+    const reportOk = (msg: string) => { report.ok(msg); };
+    const reportWarn = (msg: string) => { report.warn(msg); };
+    const reportError = (msg: string) => { report.error(msg); };
 
     let xml: string;
     try {
       xml = fs.readFileSync(formPath, 'utf-8');
     } catch (err) {
       reportError(`Cannot read file: ${String(err)}`);
-      return finalize(formPath, errors, warnings, ok, lines);
+      return finalize(formPath, report, lines);
     }
 
     const isConfigContext = detectConfigContext(formPath);
@@ -118,7 +109,7 @@ export class FormValidateService {
     // 1. Root element
     if (!/<Form\b/.test(xml)) {
       reportError('Root element is not Form.');
-      return finalize(formPath, errors, warnings, ok, lines);
+      return finalize(formPath, report, lines);
     }
     const versionM = /<Form\b[^>]*\bversion="([^"]+)"/.exec(xml);
     if (versionM) {
@@ -135,18 +126,19 @@ export class FormValidateService {
     const hasBaseForm = /<BaseForm\b/.test(xml);
 
     // 2. AutoCommandBar
-    if (!stopped) {
-      const acb = /<AutoCommandBar\b([^>]*?)(\/?)>/.exec(xml);
-      if (!acb) {
-        reportError('AutoCommandBar element missing');
+    // Единственная ошибка секции 1 («Root element is not Form.») завершает
+    // проверку немедленным return выше, поэтому досюда `stopped` дойти не может —
+    // guard'а здесь намеренно нет.
+    const acb = /<AutoCommandBar\b([^>]*?)(\/?)>/.exec(xml);
+    if (!acb) {
+      reportError('AutoCommandBar element missing');
+    } else {
+      const acbId = attr(acb[1], 'id') ?? '';
+      const acbName = attr(acb[1], 'name') ?? '';
+      if (acbId === '-1') {
+        reportOk(`AutoCommandBar: name='${acbName}', id=${acbId}`);
       } else {
-        const acbId = attr(acb[1], 'id') ?? '';
-        const acbName = attr(acb[1], 'name') ?? '';
-        if (acbId === '-1') {
-          reportOk(`AutoCommandBar: name='${acbName}', id=${acbId}`);
-        } else {
-          reportError(`AutoCommandBar id='${acbId}', expected '-1'`);
-        }
+        reportError(`AutoCommandBar id='${acbId}', expected '-1'`);
       }
     }
 
@@ -154,72 +146,168 @@ export class FormValidateService {
     const attributes = collectAttributes(xml);
     const commands = collectCommands(xml);
 
-    // 3. Unique element IDs
-    if (!stopped) {
-      stopped = !checkUniqueIds(elements.map((e) => ({ kind: 'element', name: e.name, id: e.id })), reportError, () => reportOk(`Unique element IDs: ${String(elements.filter((e) => e.id && e.id !== '-1').length)} elements`), maxErrors, errors) || stopped;
-    }
-    if (!stopped) {
-      stopped = !checkUniqueIds(attributes.map((a) => ({ kind: 'attribute', name: a.name, id: a.id })), reportError, () => attributes.length ? reportOk(`Unique attribute IDs: ${String(attributes.length)} entries`) : undefined, maxErrors, errors) || stopped;
-    }
-    if (!stopped) {
-      stopped = !checkUniqueIds(commands.map((c) => ({ kind: 'command', name: c.name, id: c.id })), reportError, () => commands.length ? reportOk(`Unique command IDs: ${String(commands.length)} entries`) : undefined, maxErrors, errors) || stopped;
-    }
-
-    // 3b. Column IDs within each attribute
-    if (!stopped) {
-      validateColumnIds(xml, attributes, reportError);
-    }
+    // 3. Пространства нумерации id: element / attribute / command / колонки.
+    // Регион <BaseForm> — копия базовой формы, её id живут отдельно и с
+    // собственными id расширения не пересекаются (см. FormIdSpaces).
+    // Внешнего guard'а нет: проверка пространств сама уважает `stopped`.
+    validateIdSpaces(collectIdSpaces(splitBaseForm(xml).own), report);
 
     // 4. Companion elements
-    if (!stopped) {
+    if (!report.stopped) {
       validateCompanions(xml, elements, reportError, reportOk);
     }
 
     // 5. DataPath → attribute
-    if (!stopped) {
+    if (!report.stopped) {
       validateDataPaths(xml, elements, attributes, hasBaseForm, reportError, reportWarn, reportOk);
     }
 
     // 6. Command references
-    if (!stopped) {
+    if (!report.stopped) {
       validateCommandRefs(elements, commands, reportError, reportOk);
     }
 
     // 7. Event handlers non-empty
-    if (!stopped) {
+    if (!report.stopped) {
       validateEventHandlers(xml, reportError, reportOk);
     }
 
     // 8. Command actions present
-    if (!stopped) {
+    if (!report.stopped) {
       validateCommandActions(xml, commands, reportError, reportOk);
     }
 
     // 9. MainAttribute count
-    const mainCount = attributes.filter((a) => a.main).length;
-    if (mainCount > 1) {
-      reportError(`Multiple MainAttribute=true (${String(mainCount)} found, expected 0 or 1)`);
-    } else {
-      reportOk(`MainAttribute: ${mainCount === 1 ? '1 main attribute' : 'no main attribute'}`);
+    if (!report.stopped) {
+      const mainCount = attributes.filter((a) => a.main).length;
+      if (mainCount > 1) {
+        reportError(`Multiple MainAttribute=true (${String(mainCount)} found, expected 0 or 1)`);
+      } else {
+        reportOk(`MainAttribute: ${mainCount === 1 ? '1 main attribute' : 'no main attribute'}`);
+      }
     }
 
     // 10. Title must be multilingual
-    if (!stopped) {
+    if (!report.stopped) {
       validateTitle(xml, reportError, reportOk);
     }
 
     // 11. Extension validations + callType
-    if (!stopped) {
+    if (!report.stopped) {
       validateCallTypesAndExtension(xml, attributes, commands, hasBaseForm, reportError, reportWarn, reportOk);
     }
 
     // 12. Type validation
-    if (!stopped) {
+    if (!report.stopped) {
       validateTypes(xml, isConfigContext, reportError, reportWarn, reportOk);
     }
 
-    return finalize(formPath, errors, warnings, ok, lines);
+    return finalize(formPath, report, lines);
   }
+}
+
+/**
+ * Единый счётчик отчёта: ошибки/предупреждения/OK и признак останова живут в
+ * одном месте, поэтому проверки сами ничего не считают. Как только достигнут
+ * лимит `maxErrors`, ошибки перестают приниматься — число ошибок в результате
+ * никогда не превышает лимит, даже если проверка внутри себя нашла больше.
+ */
+class ValidationReport {
+  private errorCount = 0;
+  private warningCount = 0;
+  private okCount = 0;
+  private limitReached = false;
+
+  constructor(
+    private readonly lines: string[],
+    private readonly maxErrors: number,
+    private readonly detailed: boolean,
+  ) {}
+
+  get errors(): number { return this.errorCount; }
+  get warnings(): number { return this.warningCount; }
+  get okChecks(): number { return this.okCount; }
+  get stopped(): boolean { return this.limitReached; }
+
+  error(msg: string): void {
+    if (this.limitReached) {
+      return;
+    }
+    this.errorCount++;
+    this.lines.push(`[ERROR] ${msg}`);
+    if (this.errorCount >= this.maxErrors) {
+      this.limitReached = true;
+    }
+  }
+
+  warn(msg: string): void {
+    this.warningCount++;
+    this.lines.push(`[WARN]  ${msg}`);
+  }
+
+  ok(msg: string): void {
+    this.okCount++;
+    if (this.detailed) {
+      this.lines.push(`[OK]    ${msg}`);
+    }
+  }
+}
+
+/** Единица измерения OK-строки по виду пространства. */
+const OK_UNIT: Record<Exclude<IdSpaceKind, 'column'>, string> = {
+  element: 'elements',
+  attribute: 'entries',
+  command: 'entries',
+};
+
+/**
+ * Проверяет пространства в фиксированном порядке (element → attribute →
+ * command → колоночные контейнеры). OK-строка пространства печатается ТОЛЬКО
+ * при нуле дублей в нём, иначе отчёт «0 ошибок, уникальных id: N» снова стал бы
+ * ложным. Колонки суммируются в одну строку по всем контейнерам.
+ */
+function validateIdSpaces(spaces: readonly FormIdSpace[], report: ValidationReport): void {
+  let columnEntries = 0;
+  let columnContainers = 0;
+  let columnsClean = true;
+  for (const space of spaces) {
+    if (report.stopped) {
+      return;
+    }
+    const duplicates = findDuplicateIds(space);
+    for (const duplicate of duplicates) {
+      report.error(formatDuplicate(space, duplicate));
+    }
+    const kind = space.kind;
+    if (kind === 'column') {
+      columnContainers++;
+      columnEntries += countCheckedEntries(space);
+      columnsClean = columnsClean && duplicates.length === 0;
+      continue;
+    }
+    if (duplicates.length === 0) {
+      report.ok(`Unique ${kind} IDs: ${String(countCheckedEntries(space))} ${OK_UNIT[kind]}`);
+    }
+  }
+  if (columnContainers > 0 && columnsClean) {
+    report.ok(`Unique column IDs: ${String(columnEntries)} columns in ${String(columnContainers)} containers`);
+  }
+}
+
+function formatDuplicate(space: FormIdSpace, duplicate: FormIdDuplicate): string {
+  const current = quoteName(duplicate.current.name);
+  const previous = quoteName(duplicate.previous.name);
+  if (space.kind === 'element') {
+    return `Duplicate element id=${duplicate.id}: ${current} <${duplicate.current.tag}> and ${previous} <${duplicate.previous.tag}>`;
+  }
+  if (space.kind === 'column') {
+    return `Duplicate column id=${duplicate.id} in ${space.label}: ${current} and ${previous}`;
+  }
+  return `Duplicate ${space.kind} id=${duplicate.id}: ${current} and ${previous}`;
+}
+
+function quoteName(name: string): string {
+  return `'${name || '(unnamed)'}'`;
 }
 
 function resolveFormName(formPath: string): string {
@@ -241,48 +329,6 @@ function detectConfigContext(formPath: string): boolean {
     walkDir = parent;
   }
   return false;
-}
-
-interface IdItem { kind: string; name: string; id: string }
-
-function checkUniqueIds(items: readonly IdItem[], reportError: (msg: string) => void, reportOkFn: () => void, maxErrors: number, errorsSoFar: number): boolean {
-  const seen = new Map<string, string>();
-  let lastErrors = errorsSoFar;
-  for (const item of items) {
-    if (!item.id || item.id === '-1') {continue;}
-    const previous = seen.get(item.id);
-    if (previous) {
-      reportError(`Duplicate ${item.kind} id=${item.id}: '${item.name}' and '${previous}'`);
-      lastErrors++;
-      if (lastErrors >= maxErrors) {return false;}
-      continue;
-    }
-    seen.set(item.id, item.name);
-  }
-  reportOkFn();
-  return true;
-}
-
-function validateColumnIds(xml: string, attributes: readonly FormAttributeInfo[], reportError: (msg: string) => void): void {
-  const attrsBlock = extractBlock(xml, 'Attributes') ?? '';
-  for (const attrInfo of attributes) {
-    const re = new RegExp(`<Attribute\\b[^>]*name="${escapeRegExp(attrInfo.name)}"[^>]*>([\\s\\S]*?)<\\/Attribute>`);
-    const body = re.exec(attrsBlock)?.[1] ?? '';
-    const columnsM = /<Columns>([\s\S]*?)<\/Columns>/.exec(body);
-    if (!columnsM) {continue;}
-    const ids = new Map<string, string>();
-    for (const c of columnsM[1].matchAll(/<Column\b([^>]*)\/?>/g)) {
-      const id = attr(c[1], 'id');
-      const name = attr(c[1], 'name') ?? '';
-      if (!id) {continue;}
-      const prev = ids.get(id);
-      if (prev) {
-        reportError(`Duplicate column id=${id} in '${attrInfo.name}': '${name}' and '${prev}'`);
-      } else {
-        ids.set(id, name);
-      }
-    }
-  }
 }
 
 function validateCompanions(xml: string, elements: readonly FormElementInfo[], reportError: (msg: string) => void, reportOk: (msg: string) => void): void {
@@ -580,8 +626,10 @@ function validateTypes(
   }
 }
 
-function finalize(formPath: string, errors: number, warnings: number, ok: number, lines: string[]): FormValidationResult {
-  const checks = errors + warnings + ok;
+function finalize(formPath: string, report: ValidationReport, lines: string[]): FormValidationResult {
+  const errors = report.errors;
+  const warnings = report.warnings;
+  const checks = errors + warnings + report.okChecks;
   if (errors === 0 && warnings === 0 && lines.length <= 2) {
     lines.push(`=== Validation OK: ${path.basename(formPath)} (${String(checks)} checks) ===`);
   } else {

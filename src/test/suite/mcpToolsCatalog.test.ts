@@ -388,7 +388,7 @@ const EXPECTED_TOOLS: readonly ExpectedTool[] = [
   {
     name: 'v8vscedit_validate_form',
     title: 'Валидировать форму',
-    description: 'Проверяет Form.xml: версию, уникальность ID, DataPath, CommandName, события, callType, типы. Принимает канонический путь формы: Справочники.Контрагенты.Форма.ФормаСписка или ОбщиеФормы.X.',
+    description: 'Проверяет Form.xml: версию, уникальность ID внутри каждого пространства нумерации (элементы формы / реквизиты / команды / колонки таблицы отдельно — не по всему файлу), DataPath, CommandName, события, callType, типы. Регион <BaseForm> (копия базовой формы в расширении) из проверки уникальности исключается целиком. Принимает канонический путь формы: Справочники.Контрагенты.Форма.ФормаСписка или ОбщиеФормы.X.',
     schemaKeys: { path: false, configuration: true, detailed: true, maxErrors: true },
   },
   {

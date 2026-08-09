@@ -1,4 +1,5 @@
 export * from './types';
+export * from './FormIdSpaces';
 export { FormToolsService } from './FormToolsService';
 export { FormAddService } from './FormAddService';
 export { FormCompileService } from './FormCompileService';

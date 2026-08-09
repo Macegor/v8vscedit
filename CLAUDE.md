@@ -76,7 +76,11 @@ npm run coverage:report  # покрытие без падения по поро�
 ```
 
 - **`npm test` требует предварительной сборки.** Скрипт `pretest` делает `typecheck → build:node → build:webview → test:compile` (без `clean` — сборка инкрементальная; компиляция тестов в `out/` через `tsconfig.test.json`). Тестовый runner берётся из `out/`, т.к. Mocha грузит `out/test/suite/*.js`.
-- Запуск под конкретной версией VS Code: `VSCODE_TEST_VERSION=1.85.0 npm test`.
+- Запуск под конкретной версией VS Code: `VSCODE_TEST_VERSION=1.85.0 npm test`. `src/test/runTests.ts`
+  читает эту переменную ДО очистки унаследованного от IDE окружения (`sanitizeInheritedIdeEnv` стирает
+  всё с префиксом `VSCODE_`, включая саму `VSCODE_TEST_VERSION`, если читать её после очистки) —
+  порядок чтения важен, не переставлять. Если версия ещё не скачана, `@vscode/test-electron` при
+  первом запуске сам скачает её в `.vscode-test/` (нужна сеть); повторные запуски используют кэш.
 - **Отдельный тест — быстро и без `.only`.** Runner (`src/test/suite/index.ts`) читает `MOCHA_GREP` и применяет `mocha.grep()`. Итерация: правка теста → `npm run test:compile` → `MOCHA_GREP='<regex по имени suite/теста>' npm run test:fast` (`test:fast` НЕ запускает `pretest`, т.е. не пересобирает Vite — на порядок быстрее полного `npm test`). `.only` больше не нужен.
 - Перед любым коммитом: `npm run compile` и **`npm run lint`** должны проходить без ошибок и предупреждений.
 - Точки входа: `main` = `./dist/extension.js`; CLI — `dist/cli/onec-tools.js`. Целевая среда — VS Code API ≥ 1.85, TypeScript ≥ 5.3, strict, ES2020.
@@ -299,6 +303,14 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
   политика генератора (`getAllowedPropertyKeys` по `FieldTypeCategory`), не ограничение формата; для
   видов, правила которых ещё не сняты с эталона (пример — регистр расчёта), свойства владельца
   ТОЛЬКО сохраняются из исходного XML, а не дописываются «по умолчанию».
+- **Новое правило пространства нумерации `id` формы** (какие теги делят одно пространство уникальности
+  id в `Form.xml`, см. [xml-format-rulesets.md](./docs/xml-format-rulesets.md#пространства-нумерации-id-в-formxml)):
+  запись в `ID_SPACE_BY_TAG` (`infra/xml/form/FormIdSpaces.ts`) → тест на эталоне обеих генераций формата
+  (`example/2.20` и `example/2.21`, cf и cfe). Правило снимается ЭМПИРИЧЕСКИ с эталона `example/`, а не
+  выводится из XSD-схемы формы (её у Form.xml нет в проекте) и не из документации платформы. Белый
+  список тегов элементов заводить нельзя — структурный признак («тег несёт `id`, но это не
+  Attribute/Column/Command») уже один раз протёк в виде такого списка (`createIdAllocator` до
+  исправления, см. xml-format-rulesets.md) и пропустил `ColumnGroup`/`SpreadSheetDocumentField`.
 - **Новая команда:** класс в `ui/commands/...` с `readonly id` → регистрация в `CommandRegistry.registerAll` → `package.json → contributes.commands` → при меню узла `contributes.menus` c `when: viewItem =~ /…/` → при хоткее `contributes.keybindings`.
 - **Новый builder узла:** `ui/tree/nodeBuilders/<имя>.ts` → регистрация в диспетчере `metaObjectTreeBuilder.ts`. XML — только через `parseObjectXml`/`ObjectXmlReader`.
 - **Новая декорация узла:** класс в `ui/tree/decorations/` (реализует `vscode.FileDecorationProvider`) → регистрация в `Container.wireTreeView` → суффикс `contextValue` — только в `TreeNode`.

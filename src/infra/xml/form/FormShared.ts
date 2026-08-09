@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { FormPurpose } from './types';
 import { escapeXmlAttribute, escapeRegExp, buildLocalizedTag, extractMetaDataObjectVersion } from '../XmlUtils';
+import { maxIdByKind } from './FormIdSpaces';
 
 export const MD_XMLNS = 'xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:app="http://v8.1c.ru/8.2/managed-application/core" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:cmi="http://v8.1c.ru/8.2/managed-application/cmi" xmlns:ent="http://v8.1c.ru/8.1/data/enterprise" xmlns:lf="http://v8.1c.ru/8.2/managed-application/logform" xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:sys="http://v8.1c.ru/8.1/data/ui/fonts/system" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:web="http://v8.1c.ru/8.1/data/ui/colors/web" xmlns:win="http://v8.1c.ru/8.1/data/ui/colors/windows" xmlns:xen="http://v8.1c.ru/8.3/xcf/enums" xmlns:xpr="http://v8.1c.ru/8.3/xcf/predef" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"';
 export const FORM_XMLNS = 'xmlns="http://v8.1c.ru/8.3/xcf/logform" xmlns:app="http://v8.1c.ru/8.2/managed-application/core" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:dcscor="http://v8.1c.ru/8.1/data-composition-system/core" xmlns:dcsset="http://v8.1c.ru/8.1/data-composition-system/settings" xmlns:ent="http://v8.1c.ru/8.1/data/enterprise" xmlns:lf="http://v8.1c.ru/8.2/managed-application/logform" xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:sys="http://v8.1c.ru/8.1/data/ui/fonts/system" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:web="http://v8.1c.ru/8.1/data/ui/colors/web" xmlns:win="http://v8.1c.ru/8.1/data/ui/colors/windows" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"';
@@ -16,21 +17,18 @@ export interface IdAllocator {
   nextCommand(): number;
 }
 
+/**
+ * Счётчики новых id опираются на {@link maxIdByKind}: максимум берётся
+ * структурно (любой тег с `id`, кроме Attribute/Column/Command) и по ВСЕМУ
+ * документу, включая `<BaseForm>`. Собственного списка тегов у аллокатора нет —
+ * иначе новый вид поля 1С снова оказался бы невидимым и генератор выдал бы
+ * коллизию id.
+ */
 export function createIdAllocator(xml: string): IdAllocator {
-  const max = (re: RegExp, min: number) => {
-    let result = min;
-    let match: RegExpExecArray | null;
-    while ((match = re.exec(xml)) !== null) {
-      const value = Number(match[1]);
-      if (Number.isFinite(value) && value > result) {
-        result = value;
-      }
-    }
-    return result;
-  };
-  let elementId = max(/\b(?:InputField|CheckBoxField|LabelDecoration|LabelField|Table|UsualGroup|Pages|Page|Button|PictureDecoration|PictureField|CalendarField|CommandBar|Popup|ContextMenu|ExtendedTooltip|AutoCommandBar|SearchStringAddition|ViewStatusAddition|SearchControlAddition)\b[^>]*\bid="(\d+)"/g, 0);
-  let attrId = max(/<Attribute\b[^>]*\bid="(\d+)"/g, 0);
-  let commandId = max(/<Command\b[^>]*\bid="(\d+)"/g, 0);
+  const max = maxIdByKind(xml);
+  let elementId = max.element;
+  let attrId = max.attribute;
+  let commandId = max.command;
   const extension = /<BaseForm\b/.test(xml);
   if (extension) {
     elementId = Math.max(elementId, 999999);

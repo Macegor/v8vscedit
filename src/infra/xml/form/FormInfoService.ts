@@ -35,6 +35,11 @@ const ALL_ELEMENT_TAGS = [
   'CalendarField', 'Table', 'Button', 'Pages', 'Page', 'CommandBar', 'Popup',
   'ButtonGroup', 'ExtendedTooltip', 'ContextMenu', 'AutoCommandBar',
   'SearchStringAddition', 'ViewStatusAddition', 'SearchControlAddition',
+  // «Широкие» виды полей управляемой формы: без них отчёт и проверки
+  // DataPath/CommandName просто не видели такие элементы.
+  'SpreadSheetDocumentField', 'HTMLDocumentField', 'TextDocumentField',
+  'ProgressBarField', 'FormattedDocumentField', 'ChartField', 'TrackBarField',
+  'PDFDocumentField', 'PlannerField', 'GraphicalSchemaField', 'GeographicalSchemaField',
 ];
 
 export class FormInfoService {
