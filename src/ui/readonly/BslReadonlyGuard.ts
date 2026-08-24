@@ -8,6 +8,15 @@ import type { SupportInfoService } from '../../infra/support/SupportInfoService'
  * поддержкой или объект не захвачен в хранилище.
  */
 export class BslReadonlyGuard {
+  // Отслеживает документы, для которых readonly-статус уже применён в этой
+  // сессии, — синхронный путь и fallback-watcher в `register()` теоретически
+  // могут пересечься для одного и того же документа (например, при split-editor:
+  // документ становится видимым сразу в нескольких группах). `WeakSet` по
+  // идентичности `TextDocument`: при реальном закрытии и повторном открытии
+  // файла VS Code создаёт новый объект документа — трекинг для него сбрасывается
+  // сам собой, readonly-статус применится заново (это корректно и нужно).
+  private readonly appliedTo = new WeakSet<vscode.TextDocument>();
+
   constructor(
     private readonly supportService: SupportInfoService,
     private readonly repositoryService: RepositoryService,
@@ -61,6 +70,11 @@ export class BslReadonlyGuard {
 
   /** Делает указанный видимый редактор readonly в текущей сессии. */
   private async applyReadonly(editor: vscode.TextEditor): Promise<void> {
+    if (this.appliedTo.has(editor.document)) {
+      return;
+    }
+    this.appliedTo.add(editor.document);
+
     // `preserveFocus: true` — редактор становится активным (это всё, что нужно
     // команде ниже: она применяется к `window.activeTextEditor`), но фокус
     // клавиатуры не отбирается у текущего фокуса (например, у webview-панели

@@ -94,6 +94,48 @@ suite('BslReadonlyGuard — issue #4: фокус не отбирается пр�
       'документ всё равно должен стать активным редактором — иначе readonly-команда применится не туда'
     );
   });
+
+  test('повторный applyReadonly для того же документа не переприменяет readonly-статус', async function () {
+    this.timeout(10_000);
+    const uri = vscode.Uri.file(tmpFile);
+    const doc = await vscode.workspace.openTextDocument(uri);
+    const editor = await vscode.window.showTextDocument(doc, { preview: false });
+
+    const supportService = { isLocked: () => true } as unknown as SupportInfoService;
+    const repositoryService = { isEditRestricted: () => false } as unknown as RepositoryService;
+    const log = { appendLine: () => undefined } as unknown as vscode.OutputChannel;
+
+    let executeCommandCalls = 0;
+    const originalExecuteCommand = vscode.commands.executeCommand;
+    (vscode.commands as { executeCommand: typeof vscode.commands.executeCommand }).executeCommand = ((
+      command: string,
+      ...rest: unknown[]
+    ) => {
+      if (command === 'workbench.action.files.setActiveEditorReadonlyInSession') {
+        executeCommandCalls += 1;
+      }
+      return (originalExecuteCommand as (c: string, ...r: unknown[]) => Thenable<unknown>)(command, ...rest);
+    }) as typeof vscode.commands.executeCommand;
+
+    try {
+      const guard = new BslReadonlyGuard(supportService, repositoryService, log);
+      const applyReadonly = (
+        guard as unknown as { applyReadonly: (editor: vscode.TextEditor) => Promise<void> }
+      ).applyReadonly.bind(guard);
+
+      await applyReadonly(editor);
+      await applyReadonly(editor);
+    } finally {
+      (vscode.commands as { executeCommand: typeof vscode.commands.executeCommand }).executeCommand =
+        originalExecuteCommand;
+    }
+
+    assert.strictEqual(
+      executeCommandCalls,
+      1,
+      'readonly-команда для одного и того же документа не должна выполняться повторно'
+    );
+  });
 });
 
 async function waitUntil(predicate: () => boolean, timeoutMs: number): Promise<void> {
