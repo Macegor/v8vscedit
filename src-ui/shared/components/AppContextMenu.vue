@@ -50,19 +50,6 @@ function cssIconUrl(uri: string): string {
   return `url("${escaped}")`;
 }
 
-// ВРЕМЕННО (диагностика issue #4): логирует, какой именно обработчик закрыл
-// меню. Смотреть через «Developer: Open Webview Developer Tools» → Console,
-// строки с тегом [ctxmenu-debug]. Убрать после локализации причины.
-function debugLog(reason: string, event?: Event): void {
-  // eslint-disable-next-line no-console
-  console.debug('[ctxmenu-debug] close:', reason, {
-    target: event?.target instanceof Element ? event.target.tagName + (event.target.className ? '.' + event.target.className : '') : event?.target,
-    activeElement: document.activeElement instanceof Element
-      ? document.activeElement.tagName + (document.activeElement.className ? '.' + document.activeElement.className : '')
-      : document.activeElement,
-  });
-}
-
 function close(): void {
   emit('close');
 }
@@ -71,7 +58,6 @@ function onOutsidePointer(event: PointerEvent): void {
   if (menuRef.value?.contains(event.target as Node)) {
     return;
   }
-  debugLog('outside-pointer', event);
   close();
 }
 
@@ -79,25 +65,21 @@ function onOutsideFocus(event: FocusEvent): void {
   if (menuRef.value?.contains(event.target as Node)) {
     return;
   }
-  debugLog('outside-focus', event);
   close();
 }
 
 function onWindowBlur(): void {
-  debugLog('window-blur');
   close();
 }
 
 function onVisibilityChange(): void {
   if (document.visibilityState !== 'visible') {
-    debugLog('visibility-change');
     close();
   }
 }
 
 function onEscape(event: KeyboardEvent): void {
   if (event.key === 'Escape') {
-    debugLog('escape', event);
     close();
   }
 }
@@ -106,7 +88,6 @@ function onScroll(event: Event): void {
   if (menuRef.value?.contains(event.target as Node)) {
     return;
   }
-  debugLog('scroll', event);
   close();
 }
 
