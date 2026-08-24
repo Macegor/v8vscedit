@@ -32,7 +32,9 @@ suite('BslReadonlyGuard — issue #4: фокус не отбирается пр�
 
   teardown(async () => {
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
-    fs.rmSync(path.dirname(tmpFile), { recursive: true, force: true });
+    // maxRetries/retryDelay: на Windows файл может оставаться заблокированным
+    // ещё пару тиков после закрытия редактора (EPERM) — это не сбой продакшен-кода.
+    fs.rmSync(path.dirname(tmpFile), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
   test('showTextDocument вызывается с preserveFocus: true, документ становится активным редактором', async function () {
