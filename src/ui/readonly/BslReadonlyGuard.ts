@@ -61,9 +61,15 @@ export class BslReadonlyGuard {
 
   /** Делает указанный видимый редактор readonly в текущей сессии. */
   private async applyReadonly(editor: vscode.TextEditor): Promise<void> {
+    // `preserveFocus: true` — редактор становится активным (это всё, что нужно
+    // команде ниже: она применяется к `window.activeTextEditor`), но фокус
+    // клавиатуры не отбирается у текущего фокуса (например, у webview-панели
+    // навигатора с открытым контекстным меню). До этой правки `false` безусловно
+    // перехватывал фокус на каждое (пере)применение readonly-статуса, включая
+    // фоновые срабатывания через `onDidChangeVisibleTextEditors` — см. issue #4.
     await vscode.window.showTextDocument(editor.document, {
       viewColumn: editor.viewColumn,
-      preserveFocus: false,
+      preserveFocus: true,
     });
     await vscode.commands.executeCommand('workbench.action.files.setActiveEditorReadonlyInSession');
   }
