@@ -1,40 +1,27 @@
 #!/usr/bin/env bash
-# Подготовка окружения для Claude Code Cloud и любого headless-CI.
+# Прогрев проекта для Claude Code Cloud и любого headless-CI: npm ci + сборка.
 #
-# Мотивация вынести это в репозиторий, а не держать в UI облака: `npm test` здесь запускает
-# @vscode/test-electron, то есть НАСТОЯЩИЙ VS Code (Electron), а не headless-Node. Без виртуального
-# X-дисплея он падает ещё до старта тестов. Такой нюанс легко теряется при переносе настройки между
-# окружениями — поэтому он версионируется вместе с кодом.
+# Не системные зависимости — только то, что относится к самому проекту, поэтому вызывается
+# через SessionStart-хук (.claude/settings.json), а не через поле Setup script в UI облака.
+# Причина разделения: Setup script выполняется ДО запуска Claude Code, и на этом этапе нет
+# гарантированной привязки рабочей директории к клону репозитория — задокументирована только
+# переменная $CLAUDE_PROJECT_DIR, которую Claude Code выставляет для хуков. Установка xvfb и
+# системных библиотек Electron (нужны настоящему VS Code из @vscode/test-electron под npm test)
+# не зависит от файлов проекта и живёт прямо в поле Setup script инлайн-текстом — см.
+# README.md, раздел «Claude Code Cloud».
 #
-# В Claude Code Cloud в поле Setup script достаточно одной строки:
-#   bash scripts/cloud-setup.sh
+# CLAUDE_CODE_REMOTE=true выставляется только в облачной VM — локально хук выходит сразу,
+# не мешая обычному npm run watch.
 
 set -euo pipefail
+
+if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
+  exit 0
+fi
 
 echo "==> Установка зависимостей (npm ci по package-lock.json)"
 npm ci
 
-# Electron не запускается без X-сервера и набора системных библиотек. Ставим их только если
-# xvfb-run отсутствует: повторный запуск setup-скрипта не должен дёргать apt впустую.
-if command -v xvfb-run >/dev/null 2>&1; then
-  echo "==> xvfb-run уже доступен, установка системных зависимостей пропущена"
-elif command -v apt-get >/dev/null 2>&1; then
-  echo "==> Установка X-окружения и библиотек Electron"
-  sudo apt-get update
-  sudo apt-get install -y \
-    xvfb \
-    libgbm1 \
-    libnss3 \
-    libxkbfile1 \
-    libgtk-3-0 \
-    libasound2t64 || sudo apt-get install -y libasound2
-else
-  echo "==> apt-get недоступен: пропускаю установку X-окружения." >&2
-  echo "    Если в этом окружении нет дисплея, 'npm test' работать не будет." >&2
-fi
-
-# Прогрев сборки. pretest всё равно выполнит это при первом npm test, но заранее собранные
-# dist/ и out/ убирают многоминутную паузу на первой же итерации агента.
 echo "==> Прогрев сборки: typecheck + vite + компиляция тестов"
 npm run typecheck
 npm run build:node
@@ -45,7 +32,8 @@ cat <<'HINT'
 
 ==> Готово.
 
-Запуск тестов в headless-окружении — через виртуальный дисплей:
+Запуск тестов в headless-окружении — через виртуальный дисплей (xvfb ставится Setup script'ом
+окружения, см. README.md):
 
     xvfb-run -a npm test
 
