@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npx tsc *)",
+      "Bash(MOCHA_GREP=* npm run test:fast)",
+      "Bash(VSCODE_TEST_VERSION=* npm test)",
+      "Bash(rg *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)"
+    ]
+  }
+}
