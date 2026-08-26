@@ -40,6 +40,11 @@ npm run compile                                  # = typecheck (tsc + vue-tsc); 
 npm run lint                                     # eslint . --max-warnings=0
 ```
 
+**`npm run test:fast`/`npm test` требуют отключённой песочницы Bash** — Electron-хост
+(`@vscode/test-electron`) убивается сигналом под стандартной песочницей. Команда числится в
+`sandbox.excludedCommands` проектного `.claude/settings.json`; `compile`/`lint`/`test:compile` идут
+обычным способом, песочница им не мешает.
+
 ## Что ты делаешь
 
 1. Прочитай план архитектора и красные тесты автора тестов.

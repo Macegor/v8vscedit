@@ -40,6 +40,11 @@ MOCHA_GREP='<regex по suite/тесту>' npm run test:fast   # прогон т
 - `test:fast` НЕ запускает `pretest` (не пересобирает Vite) — на порядок быстрее полного `npm test`.
 - **Без `.only`.** Runner читает `MOCHA_GREP` и применяет `mocha.grep()`. Итерация: правка теста → `test:compile` → `MOCHA_GREP=… test:fast`.
 - Полный `npm test` и `coverage:changed` на этой стадии НЕ нужны — это работа `qa-e2e`.
+- **`npm run test:fast`/`npm test` требуют отключённой песочницы Bash** — Electron-хост
+  (`@vscode/test-electron`) убивается сигналом под стандартной песочницей. Команда числится в
+  `sandbox.excludedCommands` проектного `.claude/settings.json` и должна отработать без ручного
+  вмешательства; если всё равно падает с сигналом — это ограничение окружения, а не повод подменять
+  прогон статической проверкой (`tsc --noEmit` и т.п.) или объявлять тест непроверяемым.
 
 ## Что ты делаешь
 
