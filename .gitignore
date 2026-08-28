@@ -26,4 +26,8 @@ npm-debug.log*
 .DS_Store
 
 docs/1cdocs
-.claude
+
+# Личные настройки разработчика (у каждого свои). Остальное в .claude/ — общее:
+# агенты (.claude/agents/), команды (.claude/commands/), общие настройки (.claude/settings.json)
+# — коммитятся и шарятся с командой.
+.claude/settings.local.json

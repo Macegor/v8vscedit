@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npx tsc *)",
+      "Bash(MOCHA_GREP=* npm run test:fast)",
+      "Bash(VSCODE_TEST_VERSION=* npm test)",
+      "Bash(rg *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)"
+    ]
+  },
+  "sandbox": {
+    "excludedCommands": [
+      "npm test",
+      "npm run test:fast",
+      "MOCHA_GREP=* npm run test:fast",
+      "VSCODE_TEST_VERSION=* npm test"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/scripts/cloud-setup.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
