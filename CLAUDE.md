@@ -148,6 +148,9 @@ src/
 │   ├── fs/
 │   │   ├── ConfigLocator.ts          # рекурсивный поиск Configuration.xml
 │   │   ├── MetaPathResolver.ts       # единый resolver: XML + все модули по ModuleSlot
+│   │   ├── ProjectLayout.ts          # resolveConfigDir: src/cf, src/cfe/<имя> — общее
+│   │   │                              # для расширения и CLI (cli/core/projectLayout.ts —
+│   │   │                              # тонкий re-export)
 │   │   └── ConfigurationCleanWindow.ts # окно тишины по корню конфигурации после
 │   │                                  # импорта/обновления БД (Container.markConfigurationsClean,
 │   │                                  # см. docs/architecture.md)
@@ -165,7 +168,11 @@ src/
 │   │                                  # docs/git-history-graph.md; граф — сворачиваемый блок панели
 │   │                                  # «Изменения метаданных», отдельного webview/вкладки нет)
 │   ├── environment/                  # bsl-analyzer.toml, окружение проекта, реестр баз
-│   ├── process/                      # поиск платформы, spawn, декодер OEM/Win1251
+│   ├── cfFile/                       # CfFileArgs (вектор аргументов /DumpCfg,/LoadCfg),
+│   │                                  # CfFileValidation (guard'ы: суффикс, staging-путь,
+│   │                                  # запрет -AllExtensions) — см. docs/architecture.md
+│   ├── process/                      # поиск платформы, spawn, декодер OEM/Win1251,
+│   │                                  # SensitiveArgs (маскирование -Password в логах)
 │   ├── mcp/                          # McpServerIdentity/McpStartDecision/McpPortProbe/
 │   │                                  # McpConflictPrompt/McpHost — чистая логика жизненного цикла
 │   │                                  # встроенного MCP-сервера (bind/reuse/conflict, закрытие порта),
@@ -384,6 +391,28 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
   списке — явные `showErrorMessage`/`showInformationMessage` по причине и отмена операции, без
   переключения на ручной ввод значения пользователем. Подробности и обоснование —
   [architecture.md](./docs/architecture.md#паттерн-чтение-данных-из-базы-через-пакетный-конфигуратор-file-handoff).
+- **Новая операция обмена с базой через CF/CFE-файл** (бинарная выгрузка/загрузка, не чтение
+  списка/состояния — для последнего см. пункт выше): guard'ы и вектор аргументов Конфигуратора — в
+  `infra/cfFile/` (`CfFileArgs.buildCfFileDesignerArgs`, `CfFileValidation.validateCfFileRequest` —
+  ЕДИНСТВЕННАЯ точка композиции проверок) без `vscode`/spawn → CLI-команда `cli/commands/<name>.ts`
+  парсит и ПОЛНОСТЬЮ валидирует аргументы ДО `resolveConnection` (платформа не диагностирует ни
+  неверный ключ, ни рассинхрон «суффикс↔расширение», а при сбое всё равно оставляет побочные эффекты —
+  см. [architecture.md](./docs/architecture.md#паттерн-бинарный-обмен-cfcfe-через-пакетный-конфигуратор-dumpcfgloadcfg))
+  → тонкая UI-обёртка `ui/commands/ext/CfFileCommandRunner.ts` (переиспользует
+  `resolveConnectionFromSettings`/`runInternalCliCommand` из `ExtensionCommandRunner`, как импорт/
+  обновление) → диалоги в `ui/commands/ext/CfFileCommands.ts` + пункт в `getNodeActions` (не
+  `addModuleActions` — это действие корневого узла конфигурации/расширения, а не слот модуля) →
+  MCP-инструмент в `McpConfigLifecycleTools.ts`, зовущий ТОТ ЖЕ `CfFileCommandRunner`. Любая мутирующая
+  операция такого рода берёт общий `configurationOperationLock` (`ui/commands/ext/
+  configurationOperationLock.ts`) — она работает с той же базой, что импорт/обновление конфигураций,
+  конкурентный запуск повредил бы данные. **Вектор аргументов Конфигуратора обязан быть под точным
+  регресс-тестом** (не полагаться на `exitCode`/лог) — платформа молча принимает и игнорирует
+  неизвестные ключи (проверено: заведомо несуществующий ключ даёт exit 0), поэтому единственная
+  защита от ошибки в векторе — тест самого набора аргументов, а не поведения процесса. Staging-путь
+  для выгрузки — `CfFileValidation.resolveDumpStagingPath` (перенос на целевой путь только при
+  `exitCode === 0`), а не прямая запись в целевой файл. Post-mutation путь для `load`-операции —
+  СОЗНАТЕЛЬНОЕ отклонение от общего (см. architecture.md выше), не «чинить» его к единому пути без
+  повторного замера платформы.
 - **Открытие BSL-модулей:** только реальные `file://` документы (виртуальная схема `onec://` удалена). Readonly — через `ui/readonly/BslReadonlyGuard.ts`.
 - **Изменение жизненного цикла/безопасности встроенного MCP-сервера** (порт, идентичность процесса,
   graceful shutdown, Host/Origin, отличается от «новый MCP-инструмент» из раздела выше): чистая логика —

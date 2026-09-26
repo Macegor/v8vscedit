@@ -1,17 +1,11 @@
-import * as path from 'path';
-
-export type ConfigTarget = 'cf' | 'cfe';
-
 /**
- * Возвращает путь к XML-исходникам в рамках жёсткой структуры проекта.
+ * Тонкий re-export раскладки проекта для CLI.
+ *
+ * Само правило («src/cf» для основной конфигурации, «src/cfe/<имя>» для
+ * расширения) нужно и расширению, и CLI, поэтому живёт в `infra/fs/` — так
+ * предписывает CLAUDE.md для общего кода. Здесь остаётся только реэкспорт,
+ * чтобы существующие импорты CLI не менялись и не появилось второго
+ * источника знания о раскладке (запрет №2).
  */
-export function resolveConfigDir(projectRoot: string, target: ConfigTarget, extensionName?: string): string {
-  if (target === 'cf') {
-    return path.join(projectRoot, 'src', 'cf');
-  }
-
-  if (!extensionName?.trim()) {
-    throw new Error('Error: -Extension is required for cfe target');
-  }
-  return path.join(projectRoot, 'src', 'cfe', extensionName);
-}
+export { resolveConfigDir } from '../../infra/fs/ProjectLayout';
+export type { ConfigTarget } from '../../infra/fs/ProjectLayout';

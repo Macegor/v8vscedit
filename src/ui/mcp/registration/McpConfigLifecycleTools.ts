@@ -8,6 +8,13 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as vscode from 'vscode';
 import * as z from 'zod/v4';
 import { canonicalToLegacyModulePath } from '../McpPathResolvers';
+import { runDumpConfigurationToCf, runLoadConfigurationFromCf } from '../../commands/ext/CfFileCommandRunner';
+import { buildCfApplyTarget } from '../../commands/ext/CfFileTarget';
+import { runApplyDatabaseConfiguration } from '../../commands/ext/ExtensionCommandRunner';
+import {
+  endConfigurationOperation,
+  tryBeginConfigurationOperation,
+} from '../../commands/ext/configurationOperationLock';
 import type { McpRegistrationDeps } from './McpRegistrationDeps';
 
 const ALLOWED_COMMANDS = new Set([
@@ -71,6 +78,110 @@ export function registerConfigLifecycleTools(server: McpServer, deps: McpRegistr
       gate.afterMutationIfSucceeded(result.changedFiles);
       return result;
     })
+  );
+
+  server.registerTool(
+    'v8vscedit_dump_cf',
+    {
+      title: 'Выгрузить конфигурацию в CF-файл',
+      description: [
+        'Выгружает конфигурацию базы в бинарный файл через пакетный Конфигуратор: основную конфигурацию в .cf,',
+        'расширение — в .cfe (если задан extensionName).',
+        'Файл появляется на целевом пути только при успешном завершении; overwrite разрешает заменить существующий файл.',
+        'Выгрузить все расширения одним вызовом нельзя — получите список через v8vscedit_workspace_overview или CLI list-db-extensions и выгружайте поштучно.',
+      ].join(' '),
+      inputSchema: z.object({
+        outputFile: z.string(),
+        extensionName: z.string().optional(),
+        overwrite: z.boolean().optional(),
+      }),
+      annotations: {
+        // Выгрузка не меняет ни базу, ни файлы проекта; единственный побочный
+        // эффект — создание указанного файла, защищённого guard'ом overwrite.
+        destructiveHint: false,
+      },
+    },
+    async ({ outputFile, extensionName, overwrite }) => gate.wrapAsync(async () => {
+      const dumped = await withConfigurationOperationLock(() => runDumpConfigurationToCf({
+        workspaceFolder: services.workspaceFolder,
+        outputChannel: services.outputChannel,
+        outputFile,
+        extensionName,
+        overwrite: overwrite ?? false,
+        silent: true,
+      }));
+      if (!dumped) {
+        throw new Error('Выгрузка в файл не выполнена. Подробности — в журнале «1С Редактор».');
+      }
+      return { outputFile, extensionName: extensionName ?? '', overwrite: overwrite ?? false };
+    })
+  );
+
+  server.registerTool(
+    'v8vscedit_load_cf',
+    {
+      title: 'Загрузить конфигурацию из CF-файла',
+      description: [
+        'Загружает конфигурацию из бинарного файла в базу через пакетный Конфигуратор: .cf — в основную конфигурацию,',
+        '.cfe — в расширение (если задан extensionName; несуществующее расширение при этом создаётся в базе).',
+        'Операция необратима и требует confirm: true.',
+        'Конфигурация БАЗЫ при загрузке не обновляется — примените изменения отдельно через applyToDatabase: true.',
+        'XML-выгрузка проекта после загрузки перестаёт соответствовать базе: выполните импорт конфигураций.',
+      ].join(' '),
+      inputSchema: z.object({
+        inputFile: z.string(),
+        extensionName: z.string().optional(),
+        confirm: z.boolean(),
+        applyToDatabase: z.boolean().optional(),
+      }),
+      annotations: {
+        destructiveHint: true,
+      },
+    },
+    async ({ inputFile, extensionName, confirm, applyToDatabase }) => {
+      // Проверяем значение, а не только наличие поля: агент может прислать
+      // confirm=false — неявного согласия по умолчанию у необратимой
+      // операции быть не должно.
+      if (!confirm) {
+        return gate.toolError(new Error(
+          'Загрузка из файла необратимо заменяет содержимое конфигурации в базе: '
+          + 'текущее содержимое будет потеряно, а при сбое часть изменений всё равно может быть применена. '
+          + 'Передайте confirm: true, чтобы подтвердить операцию.'
+        ));
+      }
+      return gate.wrapAsync(async () => withConfigurationOperationLock(async () => {
+        const loaded = await runLoadConfigurationFromCf({
+          workspaceFolder: services.workspaceFolder,
+          outputChannel: services.outputChannel,
+          inputFile,
+          extensionName,
+          silent: true,
+        });
+        if (!loaded) {
+          throw new Error(
+            'Загрузка из файла не выполнена. Часть изменений могла быть применена — проверьте состояние базы. '
+            + 'Подробности — в журнале «1С Редактор».'
+          );
+        }
+        const applied = applyToDatabase === true
+          ? await runApplyDatabaseConfiguration(
+              buildCfApplyTarget(services.workspaceFolder.uri.fsPath, extensionName ?? ''),
+              services.workspaceFolder,
+              services.outputChannel
+            )
+          : false;
+        // Конфигурация проекта НЕ помечается изменённой: файлы проекта не
+        // менялись, а пометка привела бы к тому, что «обновить изменённые
+        // конфигурации» залило бы СТАРЫЕ файлы обратно в базу поверх
+        // только что загруженного CF.
+        return {
+          inputFile,
+          extensionName: extensionName ?? '',
+          databaseConfigurationUpdated: applied,
+          projectSourcesOutdated: true,
+        };
+      }));
+    }
   );
 
   server.registerTool(
@@ -166,3 +277,23 @@ export function registerConfigLifecycleTools(server: McpServer, deps: McpRegistr
     })
   );
 }
+
+/**
+ * Берёт ОБЩИЙ замок операций над конфигурацией на время работы с базой —
+ * тот же, что у команд импорта/обновления: MCP-агент и пользователь работают
+ * с одной базой, и параллельный запуск повредил бы данные. Валидация входа
+ * выполняется внутри `action()`, то есть уже ПОСЛЕ захвата замка: при занятом
+ * замке вызывающий получит «операция уже выполняется», а не диагностику
+ * формата входа.
+ */
+async function withConfigurationOperationLock<T>(action: () => Promise<T>): Promise<T> {
+  if (!await tryBeginConfigurationOperation()) {
+    throw new Error('Операция с конфигурацией уже выполняется. Дождитесь её завершения.');
+  }
+  try {
+    return await action();
+  } finally {
+    await endConfigurationOperation();
+  }
+}
+

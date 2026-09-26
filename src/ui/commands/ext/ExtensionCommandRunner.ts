@@ -17,6 +17,7 @@ import {
 import {
   describeProcessInterruption,
   getOrCreate,
+  maskSensitiveCliArgs,
   normalizeInfoBasePath,
   resolveV8PathHintFromVersion,
   runProcess,
@@ -47,7 +48,7 @@ export interface ConfigurationImportHooks extends ConfigurationProgressHooks {
   readonly beforeProjectFilesChanged?: (filePaths: string[]) => void;
 }
 
-interface ConnectionParams {
+export interface ConnectionParams {
   infoBasePath?: string;
   infoBaseServer?: string;
   infoBaseRef?: string;
@@ -83,7 +84,7 @@ interface RunAgentOptions {
   readonly onProgressMessage?: (message: string) => void;
 }
 
-interface RunCliOptions {
+export interface RunCliOptions {
   cliArgs: string[];
   progressTitle: string;
   progressStartMessage: string;
@@ -939,14 +940,17 @@ async function runBatchUpdateMainConfiguration(
   );
 }
 
-async function runInternalCliCommand(
+export async function runInternalCliCommand(
   options: RunCliOptions,
   workspaceFolder: vscode.WorkspaceFolder,
   outputChannel: vscode.OutputChannel
 ): Promise<boolean> {
   const cliPath = resolveInternalCliPath(workspaceFolder.uri.fsPath);
   const processArgs = [cliPath, ...options.cliArgs];
-  const commandAsText = `node ${processArgs.join(' ')}`;
+  // В журнал пишем МАСКИРОВАННЫЙ вектор: buildConnectionCliArgs кладёт в
+  // аргументы `-Password <пароль базы>`, и без маскирования он попадал бы в
+  // OutputChannel открытым текстом. В процесс уходит исходный processArgs.
+  const commandAsText = `node ${maskSensitiveCliArgs(processArgs).join(' ')}`;
   outputChannel.appendLine(`[actions] Старт: ${commandAsText}`);
   beginConfigurationOperationStatus(options.progressTitle, options.progressStartMessage);
   options.onProgressMessage?.(options.progressStartMessage);
@@ -1676,7 +1680,7 @@ function addCandidate(target: string[], seen: Set<string>, candidatePath: string
   target.push(normalized);
 }
 
-function resolveSettingsPath(workspaceRoot: string, extensionRoot: string): string {
+export function resolveSettingsPath(workspaceRoot: string, extensionRoot: string): string {
   const extensionParent = path.dirname(extensionRoot);
   const extensionGrandParent = path.dirname(extensionParent);
   const candidates = [
@@ -1694,7 +1698,7 @@ function resolveSettingsPath(workspaceRoot: string, extensionRoot: string): stri
   return candidates[0];
 }
 
-async function resolveConnectionFromSettings(settingsPath: string): Promise<ConnectionParams> {
+export async function resolveConnectionFromSettings(settingsPath: string): Promise<ConnectionParams> {
   if (!fs.existsSync(settingsPath)) {
     throw new Error(`Не найден env.json для подключения к базе: ${settingsPath}`);
   }
@@ -1751,7 +1755,7 @@ function parseIbConnection(rawValue: string): ConnectionParams {
   throw new Error(`Не удалось разобрать "--ibconnection": ${rawValue}`);
 }
 
-function buildConnectionCliArgs(params: ConnectionParams): string[] {
+export function buildConnectionCliArgs(params: ConnectionParams): string[] {
   const args: string[] = [];
   if (params.infoBasePath) {
     args.push('-InfoBasePath', params.infoBasePath);

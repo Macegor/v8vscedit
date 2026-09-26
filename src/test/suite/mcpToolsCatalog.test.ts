@@ -12,10 +12,10 @@
  * провалить именно этот тест.
  *
  * Зафиксировано:
- *  1) Полный каталог из 57 tools, регистрируемых НЕПОСРЕДСТВЕННО телом
+ *  1) Полный каталог из 59 tools, регистрируемых НЕПОСРЕДСТВЕННО телом
  *     `registerTools` (`server.registerTool(...)` прямо в V8McpServer.ts).
  *     Для каждого — имя, title, description (построчно, дословно) и набор
- *     ключей inputSchema с их опциональностью. Ровно 57 — см. `grep`/`awk`
+ *     ключей inputSchema с их опциональностью. Ровно 59 — см. `grep`/`awk`
  *     подсчёт по исходнику; ~60 из архитектурной оценки включает round-off.
  *     Отдельно вызываемые `registerAllAddTools` (45 root + 11 child = 56 tools)
  *     сюда не входят — они уже застрахованы `mcpAddTools.test.ts` как
@@ -509,6 +509,18 @@ const EXPECTED_TOOLS: readonly ExpectedTool[] = [
     },
   },
   {
+    name: 'v8vscedit_dump_cf',
+    title: 'Выгрузить конфигурацию в CF-файл',
+    description: 'Выгружает конфигурацию базы в бинарный файл через пакетный Конфигуратор: основную конфигурацию в .cf, расширение — в .cfe (если задан extensionName). Файл появляется на целевом пути только при успешном завершении; overwrite разрешает заменить существующий файл. Выгрузить все расширения одним вызовом нельзя — получите список через v8vscedit_workspace_overview или CLI list-db-extensions и выгружайте поштучно.',
+    schemaKeys: { outputFile: false, extensionName: true, overwrite: true },
+  },
+  {
+    name: 'v8vscedit_load_cf',
+    title: 'Загрузить конфигурацию из CF-файла',
+    description: 'Загружает конфигурацию из бинарного файла в базу через пакетный Конфигуратор: .cf — в основную конфигурацию, .cfe — в расширение (если задан extensionName; несуществующее расширение при этом создаётся в базе). Операция необратима и требует confirm: true. Конфигурация БАЗЫ при загрузке не обновляется — примените изменения отдельно через applyToDatabase: true. XML-выгрузка проекта после загрузки перестаёт соответствовать базе: выполните импорт конфигураций.',
+    schemaKeys: { inputFile: false, extensionName: true, confirm: false, applyToDatabase: true },
+  },
+  {
     name: 'v8vscedit_get_properties',
     title: 'Свойства объекта по пути',
     description: 'Возвращает ВСЕ свойства узла, включая readonly, со всеми допустимыми enum/multiEnum-значениями. Каждый контракт содержит propertyKey, title, kind, currentValue, supportedBySetProperty и notes. Свойства с kind= "metadataType" (Type/Source/CommandParameterType) сами список значений не несут — в notes указано, какой tool вызывать для смены и получения списка доступных типов.',
@@ -584,21 +596,21 @@ const EXPECTED_TOOLS: readonly ExpectedTool[] = [
 ];
 
 suite('V8McpServer.registerTools — golden-каталог перед декомпозицией (характеризационный)', () => {
-  test('регистрирует ровно 57 прямых tools (без учёта registerAllAddTools)', () => {
+  test('регистрирует ровно 59 прямых tools (без учёта registerAllAddTools)', () => {
     const { tools } = registerAllTools(createBaselineServices());
     // registerAllAddTools добавляет ещё 45 root + 11 child = 56 tool-ов поверх
-    // этих 57 — их каталог отдельно застрахован mcpAddTools.test.ts. Здесь
+    // этих 59 — их каталог отдельно застрахован mcpAddTools.test.ts. Здесь
     // фиксируем именно прямые регистрации, чтобы дробление не потеряло и не
     // задвоило ни одну из них.
     assert.strictEqual(tools.size, EXPECTED_TOOLS.length + 56,
-      `фактический размер каталога (${String(tools.size)}) разошёлся с ожидаемым (57 прямых + 56 add-tools)`);
+      `фактический размер каталога (${String(tools.size)}) разошёлся с ожидаемым (59 прямых + 56 add-tools)`);
     for (const expected of EXPECTED_TOOLS) {
       assert.ok(tools.has(expected.name), `должен быть зарегистрирован tool "${expected.name}"`);
     }
   });
 
-  test('ровно 57 прямых tools описаны в эталоне EXPECTED_TOOLS (защита от рассинхронизации самого теста)', () => {
-    assert.strictEqual(EXPECTED_TOOLS.length, 57);
+  test('ровно 59 прямых tools описаны в эталоне EXPECTED_TOOLS (защита от рассинхронизации самого теста)', () => {
+    assert.strictEqual(EXPECTED_TOOLS.length, 59);
     const uniqueNames = new Set(EXPECTED_TOOLS.map((tool) => tool.name));
     assert.strictEqual(uniqueNames.size, EXPECTED_TOOLS.length, 'имена tools в эталоне не должны повторяться');
   });

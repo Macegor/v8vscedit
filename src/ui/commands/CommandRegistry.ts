@@ -5,6 +5,7 @@ import { registerConfigurationReportCommands } from './configuration/Configurati
 import { registerDbCommands } from './db/DbCommands';
 import { registerExternalObjectCommands } from './external/ExternalObjectCommands';
 import { registerBorrowToExtensionCommand } from './ext/BorrowToExtensionCommand';
+import { registerCfFileCommands } from './ext/CfFileCommands';
 import { registerCfeToolsCommands } from './ext/CfeToolsCommands';
 import { registerExtensionCommands } from './ext/ExtensionCommands';
 import { registerFormToolsCommands } from './form/FormToolsCommands';
@@ -59,5 +60,6 @@ export function registerCommands(
   registerStandaloneServerCommands(context, services);
   registerInstallAiSkillsCommand(context, services);
   registerExtensionCommands(context, services);
+  registerCfFileCommands(context, services);
   registerRepositoryCommands(context, services);
 }

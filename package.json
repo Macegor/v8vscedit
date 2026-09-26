@@ -104,6 +104,18 @@
         "icon": "$(close)"
       },
       {
+        "command": "v8vscedit.dumpConfigurationToCf",
+        "title": "Выгрузить конфигурацию в CF-файл",
+        "enablement": "!v8vscedit.isUpdatingConfigurations",
+        "icon": "$(package)"
+      },
+      {
+        "command": "v8vscedit.loadConfigurationFromCf",
+        "title": "Загрузить конфигурацию из CF-файла",
+        "enablement": "!v8vscedit.isUpdatingConfigurations",
+        "icon": "$(folder-opened)"
+      },
+      {
         "command": "v8vscedit.importConfigurations",
         "title": "Импортировать конфигурации из базы",
         "enablement": "!v8vscedit.isUpdatingConfigurations",

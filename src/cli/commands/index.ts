@@ -1,8 +1,10 @@
 import type { CliArgs } from '../core/types';
+import { dumpCfFile } from './dumpCfFile';
 import { exportConfiguration } from './exportConfiguration';
 import { importConfiguration } from './importConfiguration';
 import { importGitChanges } from './importGitChanges';
 import { listDbExtensions } from './listDbExtensions';
+import { loadCfFile } from './loadCfFile';
 import { refreshHashCache } from './refreshHashCache';
 import {
   addRepositoryUser,
@@ -28,6 +30,8 @@ export const CLI_COMMANDS: Partial<Record<string, CommandHandler>> = {
   'import-configuration': importConfiguration,
   'import-git-changes': importGitChanges,
   'list-db-extensions': listDbExtensions,
+  'dump-cf': dumpCfFile,
+  'load-cf': loadCfFile,
   'refresh-hash-cache': refreshHashCache,
   'update-configuration': updateConfiguration,
   'sync-configuration-partial': syncConfigurationPartial,
@@ -49,6 +53,8 @@ export const CLI_COMMANDS: Partial<Record<string, CommandHandler>> = {
   'db-dump-xml': exportConfiguration,
   'db-load-xml': importConfiguration,
   'db-load-git': importGitChanges,
+  'db-dump-cf': dumpCfFile,
+  'db-load-cf': loadCfFile,
   'db-update': updateConfiguration,
   'update-partial': syncConfigurationPartial,
   'update-full': syncConfigurationFull,
