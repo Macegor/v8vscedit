@@ -138,6 +138,9 @@ src/
 │   │   ├── ConfigurationXmlEditor.ts # редактирование Configuration.xml
 │   │   ├── MetadataXmlCreator.ts     # создание новых XML-объектов метаданных
 │   │   ├── MetadataXmlRemover.ts     # удаление XML-объектов метаданных
+│   │   ├── childObjects/             # канон порядка <ChildObjects> (см. docs/xml-format-rulesets.md)
+│   │   │   ├── ChildObjectsOrder.ts  # ДАННЫЕ: CHILD_OBJECTS_ORDER (по MetaKind), childTagRank, hasOrderRule
+│   │   │   └── ChildObjectsEditor.ts # МЕХАНИКА: resolveInsertOffset — не знает ни одного вида метаданных
 │   │   └── format/                   # ruleset формата сериализации (см. docs/xml-format-rulesets.md)
 │   │       ├── FormatRuleset.ts      # интерфейс правил генерации одного поколения формата
 │   │       ├── baselineRuleset.ts    # правила текущего формата (2.21)
@@ -349,6 +352,18 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
   список тегов элементов заводить нельзя — структурный признак («тег несёт `id`, но это не
   Attribute/Column/Command») уже один раз протёк в виде такого списка (`createIdAllocator` до
   исправления, см. xml-format-rulesets.md) и пропустил `ColumnGroup`/`SpreadSheetDocumentField`.
+- **Новое правило порядка дочерних элементов `<ChildObjects>`** (в каком порядке вид объекта-владельца
+  сериализует прямых детей — `Attribute`/`TabularSection`/`Form`/`Dimension`/`Resource`/…, см.
+  [xml-format-rulesets.md](./docs/xml-format-rulesets.md#порядок-прямых-детей-childobjects-по-виду-владельца)):
+  строка в `CHILD_OBJECTS_ORDER` (`infra/xml/childObjects/ChildObjectsOrder.ts`), снятая с эталона
+  `example/` СКАНОМ КОНТРПРИМЕРОВ (ноль нарушений на всей выборке корпуса, а не «сто подтверждений») →
+  тест двусторонней сшивки с `META_TYPES.childTags` (набор видов/тегов с правилом порядка не расходится
+  с набором видов/тегов, которые вид реально может содержать) → тест на обеих генерациях формата
+  (`example/2.20` и `example/2.21`, cf и cfe) → механика вставки (`ChildObjectsEditor.resolveInsertOffset`)
+  при этом НЕ трогается — она не знает ни одного конкретного вида метаданных, только ранги из таблицы.
+  Существующие узлы `<ChildObjects>` НЕ переупорядочиваются никогда — правило применяется исключительно
+  к вставке нового элемента, нормализация существующих файлов не делается сознательно (полная
+  перезапись объекта в git-диффе на каждую мелкую правку и потеря идемпотентности операции).
 - **Новая команда:** класс в `ui/commands/...` с `readonly id` → регистрация в `CommandRegistry.registerAll` → `package.json → contributes.commands` → при меню узла `contributes.menus` c `when: viewItem =~ /…/` → при хоткее `contributes.keybindings`.
 - **Новый builder узла:** `ui/tree/nodeBuilders/<имя>.ts` → регистрация в диспетчере `metaObjectTreeBuilder.ts`. XML — только через `parseObjectXml`/`ObjectXmlReader`.
 - **Новая декорация узла:** класс в `ui/tree/decorations/` (реализует `vscode.FileDecorationProvider`) → регистрация в `Container.wireTreeView` → суффикс `contextValue` — только в `TreeNode`.

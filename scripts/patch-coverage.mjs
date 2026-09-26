@@ -90,9 +90,12 @@ function resolveDiffBase() {
   if (explicit) {
     return { base: explicit, why: 'задана переменной COVERAGE_BASE' };
   }
-  if (modifiedAgainst('HEAD').length > 0 || untracked.length > 0) {
-    return { base: 'HEAD', why: 'есть незакоммиченные изменения' };
-  }
+  // merge-base предпочтительнее HEAD ВСЕГДА, когда разрешается: дифф от неё
+  // включает и коммиты задачи, и рабочее дерево. Проверка «а есть ли
+  // незакоммиченное» здесь была бы ошибкой — при смешанном состоянии
+  // («закоммитил, потом дошлифовал») база HEAD молча теряет закоммиченную
+  // часть патча, то есть воспроизводит ровно тот ложный зелёный, ради
+  // которого выбор базы и вводился.
   for (const upstream of ['origin/develop', 'origin/main']) {
     let mergeBase;
     try {
@@ -102,10 +105,12 @@ function resolveDiffBase() {
       continue;
     }
     if (mergeBase && modifiedAgainst(mergeBase).length > 0) {
-      return { base: mergeBase, why: `рабочее дерево чисто, взята точка расхождения с ${upstream}` };
+      return { base: mergeBase, why: `точка расхождения с ${upstream}: в патч входят и коммиты задачи, и рабочее дерево` };
     }
   }
-  return { base: 'HEAD', why: 'изменений не найдено ни в дереве, ни относительно ветки интеграции' };
+  // Ветки интеграции нет (нет remote, свежий клон) — остаётся дифф с последним
+  // коммитом; это слабее, но лучше, чем ничего.
+  return { base: 'HEAD', why: 'ветка интеграции недоступна, сравниваем с HEAD' };
 }
 
 const { base: DIFF_BASE, why: BASE_REASON } = resolveDiffBase();
@@ -115,11 +120,12 @@ const modified = modifiedAgainst(DIFF_BASE);
 
 const changed = [...untracked, ...modified];
 if (changed.length === 0) {
-  // Не «ок»: пустой набор почти всегда значит, что база выбрана неверно, а не
-  // что проверять нечего. Сообщение обязано выглядеть как повод разобраться.
-  console.warn('[coverage:changed] ВНИМАНИЕ: изменённых production-файлов относительно базы НЕ НАЙДЕНО — гейт ничего не проверил.');
-  console.warn('[coverage:changed] Если правки уже закоммичены, укажите базу явно: COVERAGE_BASE=<ref> npm run coverage:changed');
-  process.exit(0);
+  // Пустой набор почти всегда значит неверно выбранную базу, а не «нечего
+  // проверять». Предупреждение в длинном логе теряется, поэтому по умолчанию
+  // это ОТКАЗ: гейт, который ничего не проверил, не должен выглядеть пройденным.
+  console.error('[coverage:changed] RED — изменённых production-файлов относительно базы НЕ НАЙДЕНО, гейт ничего не проверил.');
+  console.error('[coverage:changed] Укажите базу явно (COVERAGE_BASE=<ref>) либо подтвердите пустой патч осознанно: COVERAGE_ALLOW_EMPTY=1.');
+  process.exit(process.env.COVERAGE_ALLOW_EMPTY === '1' ? 0 : 1);
 }
 
 // Добавленные/изменённые строки модифицированного файла из unified=0 diff.
