@@ -7,11 +7,13 @@ import {
   buildTypedFieldPropertyBlocks,
   findDisallowedTypedFieldProperties,
   getDisplayTypedFieldPropertyKeys,
-  getTypedFieldPropertyKeys,
   isTypedFieldControlledPropertyKey,
   normalizeTypedFieldPropertiesAfterTypeChange,
-  toRegisterOwnerKind,
 } from '../../infra/xml/TypedFieldPropertyRules';
+// Единственная точка чтения состава владелец×роль: owner-агностичной обёртки
+// `getTypedFieldPropertyKeys` и «регистрового» сужения владельца больше нет —
+// регистр частный случай той же таблицы.
+import { getGeneratedPropertyKeys } from '../../infra/xml/typedField/TypedFieldOwnerRules';
 
 const EXAMPLE_CF_2_21 = path.resolve(__dirname, '../../../example/2.21/src/cf');
 
@@ -328,13 +330,28 @@ suite('registerFieldProperties — состав свойств полей рег
     }
   });
 
-  test('toRegisterOwnerKind сужает только описанные виды регистров', () => {
-    assert.strictEqual(toRegisterOwnerKind('InformationRegister'), 'InformationRegister');
-    assert.strictEqual(toRegisterOwnerKind('AccumulationRegister'), 'AccumulationRegister');
-    assert.strictEqual(toRegisterOwnerKind('AccountingRegister'), 'AccountingRegister');
-    assert.strictEqual(toRegisterOwnerKind('CalculationRegister'), undefined);
-    assert.strictEqual(toRegisterOwnerKind('Catalog'), undefined);
-    assert.strictEqual(toRegisterOwnerKind(undefined), undefined);
+  test('правила измерения сняты только для описанных видов регистров, прочим владельцам ролевые свойства не дописываются', () => {
+    // Раньше то же самое проверялось через `toRegisterOwnerKind`, сужавший вид
+    // владельца до трёх регистров с описанными правилами. Отдельного
+    // «регистрового» типа больше нет (регистр — частный случай таблицы
+    // владелец×роль), поэтому граница описанных видов проверяется по
+    // наблюдаемому следствию: у описанного вида состав измерения ролевой, у
+    // прочих — совпадает с owner-независимым (консервативный режим).
+    const ownerAgnostic = getGeneratedPropertyKeys('Dimension', undefined, NUMBER_TYPE);
+    for (const described of ['InformationRegister', 'AccumulationRegister', 'AccountingRegister']) {
+      assert.notDeepStrictEqual(
+        getGeneratedPropertyKeys('Dimension', described, NUMBER_TYPE),
+        ownerAgnostic,
+        `${described}: правила измерения сняты с эталона — состав обязан отличаться от owner-независимого`
+      );
+    }
+    for (const undescribed of ['CalculationRegister', 'Catalog']) {
+      assert.deepStrictEqual(
+        getGeneratedPropertyKeys('Dimension', undescribed, NUMBER_TYPE),
+        ownerAgnostic,
+        `${undescribed}: правил измерения у этого вида нет — ролевые свойства регистра дописывать нельзя`
+      );
+    }
   });
 
   test('панель свойств с известным владельцем не предлагает свойства чужого вида', () => {
@@ -347,7 +364,7 @@ suite('registerFieldProperties — состав свойств полей рег
     }
     assert.deepStrictEqual(
       irDimension,
-      getTypedFieldPropertyKeys('Dimension', NUMBER_TYPE, 'InformationRegister'),
+      getGeneratedPropertyKeys('Dimension', 'InformationRegister', NUMBER_TYPE),
       'показ и запись должны совпадать при известном владельце'
     );
 
@@ -421,13 +438,13 @@ suite('registerFieldProperties — состав свойств полей рег
     // FillFromFillingValue/FillValue/DataHistory — правило вида владельца
     // распространяется на реквизит, а не только на измерение и ресурс.
     for (const owner of ['AccumulationRegister', 'AccountingRegister']) {
-      const keys = getTypedFieldPropertyKeys('Attribute', NUMBER_TYPE, toRegisterOwnerKind(owner));
+      const keys = getGeneratedPropertyKeys('Attribute', owner, NUMBER_TYPE);
       for (const alien of ['FillFromFillingValue', 'FillValue', 'DataHistory']) {
         assert.ok(!keys.includes(alien), `${owner}.Attribute: ${alien} недопустим`);
       }
       assert.ok(keys.includes('Indexing'), `${owner}.Attribute: Indexing должен остаться`);
     }
-    const irKeys = getTypedFieldPropertyKeys('Attribute', NUMBER_TYPE, 'InformationRegister');
+    const irKeys = getGeneratedPropertyKeys('Attribute', 'InformationRegister', NUMBER_TYPE);
     for (const own of ['FillFromFillingValue', 'FillValue', 'DataHistory']) {
       assert.ok(irKeys.includes(own), `InformationRegister.Attribute: ${own} должен остаться`);
     }
@@ -450,7 +467,7 @@ suite('registerFieldProperties — состав свойств полей рег
     for (const item of cases) {
       const referenceKeys = readReferenceFieldKeys(item.file, item.tag);
       assert.ok(referenceKeys.length > 0, `${item.file}: эталонное поле ${item.tag} не найдено`);
-      const generated = getTypedFieldPropertyKeys(item.tag, NUMBER_TYPE, toRegisterOwnerKind(item.owner));
+      const generated = getGeneratedPropertyKeys(item.tag, item.owner, NUMBER_TYPE);
       assert.ok(
         isSubsequence(generated, referenceKeys),
         `${item.owner}.${item.tag}: генерируемый набор\n  ${generated.join(',')}\nне является подпоследовательностью эталона\n  ${referenceKeys.join(',')}`

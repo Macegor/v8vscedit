@@ -289,20 +289,58 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
 - **Новый контейнерный дочерний тип со своими вложенными листьями** (паттерн ТЧ→Колонка; второй прецедент — HTTPСервис→URLШаблон→Метод, см. [mcp-paths.md](./docs/mcp-paths.md#26-расширенные-примеры-путей) и [metadata-navigator.md](./docs/metadata-navigator.md#контейнерные-дочерние-узлы-тчколонка-и-httpсервисurlшаблонметод)): контейнер и лист — обе отдельные записи `MetaKind`/`META_TYPES`/`ChildTag`; лист парсится в `MetaChild.columns` контейнера через `ObjectXmlReader.toXxxChild` (образец `toTabularSectionChild`) → имя родителя-контейнера пробрасывается ПАРАЛЛЕЛЬНЫМ полем контекста (`tabularSectionName`/`urlTemplateName`), а не переименованием существующего слота и не новым реестром → `domain/CanonicalNames.ts` (`canonicalChildPath`) обобщает контейнерную ветку по этому полю → узел дерева строится симметрично в ДВУХ источниках — `infra/cache/MetadataCache.ts` (webview) и `ui/tree/nodeBuilders/metaObjectTreeBuilder.ts` (нативный TreeView/свойства) → `infra/xml/XmlUtils.ts` получает nesting-aware `findXxxRangeInYyy`/`extractXxxXmlFromYyy` (образец `findColumnRangeInTabularSection`) → MCP add-инструмент для листа получает флаг-аналог `inTabularSection` (например `inUrlTemplate`) в `McpAddToolsRegistration.ts`, владелец — сам контейнер (`allowedOwnerKinds: ['<Контейнер>']`).
 - **Новая схема свойств:** объект-схема в `PROPERTY_SCHEMAS` → при новом `PropertyValueKind` расширить `_types.ts` + `PropertyBuilder.ts`. Регулярки — только в `infra/xml/`.
 - **Новое правило состава свойств типизированного поля** (какие теги `<Properties>` допустимы у
-  реквизита/измерения/ресурса/колонки конкретного вида объекта-владельца, см.
+  реквизита/измерения/ресурса/колонки/адресного реквизита конкретного вида объекта-владельца, см.
   [xml-format-rulesets.md](./docs/xml-format-rulesets.md#состав-свойств-типизированного-поля-по-виду-владельца)):
-  правило регистра-владельца — запись в `REGISTER_FIELD_RULES` (`infra/xml/TypedFieldPropertyRules.ts`,
-  снимается с эталона `example/`) → при новом управляемом ключе свойства — добавить его в
+  правило двумерное — **вид объекта-владельца × роль поля**, живёт в
+  `OWNER_ROLE_RULES` (`infra/xml/typedField/TypedFieldOwnerRules.ts`, ключи верхнего уровня — `MetaKind`,
+  второго — `TypeAwarePropertyOwnerKind`: `Attribute`/`AddressingAttribute`/`Dimension`/`Resource`/
+  `Column`/`Constant`/`CommonAttribute`). Регистры (`InformationRegister`/`AccumulationRegister`/
+  `AccountingRegister`) — не отдельный механизм, а такие же записи этой таблицы. Новая пара
+  владелец×роль добавляется ЯВНОЙ записью в `OWNER_ROLE_RULES` — она НЕ выводится автоматически из
+  `META_TYPES` (в отличие от набора самих ролей, который выводится из
+  `propertySchema === 'typedField'`), поэтому появление нового вида метаданных с измерением/ресурсом
+  само по себе состав не подхватывает. При новом управляемом ключе свойства — добавить его в
   `CONTROLLED_PROPERTY_KEYS` (позиция — по месту в `xs:sequence` схемы 1С, список остаётся единой
   надпоследовательностью всех наблюдаемых в эталонах порядков) → значение по умолчанию в
-  `DEFAULT_VALUES` (или в `getFieldDefaultValues`, если оно зависит от `registerKind`) → тест на
-  реальном объекте из `example/2.20`+`example/2.21` (запись через `normalizeTypedFieldPropertiesAfterTypeChange`,
-  панель свойств через `getDisplayTypedFieldPropertyKeys`, `validate_metadata` с кодом
-  `property-not-allowed`). **Состав задаёт ВИД ОБЪЕКТА-ВЛАДЕЛЬЦА** (корень XML-файла,
-  `ObjectXmlReader.detectRootObjectKind`), **а не тип поля** (`<Type>`) — сужение по типу отдельная
-  политика генератора (`getAllowedPropertyKeys` по `FieldTypeCategory`), не ограничение формата; для
-  видов, правила которых ещё не сняты с эталона (пример — регистр расчёта), свойства владельца
-  ТОЛЬКО сохраняются из исходного XML, а не дописываются «по умолчанию».
+  `DEFAULT_VALUES` (или в `defaults` конкретной пары, если оно зависит от владельца) → тест на реальном
+  объекте из `example/2.20`+`example/2.21` (запись через `normalizeTypedFieldPropertiesAfterTypeChange`
+  в `infra/xml/TypedFieldPropertyRules.ts`, панель свойств через `getDisplayTypedFieldPropertyKeys`,
+  `validate_metadata` с кодом `property-not-allowed`).
+
+  Правило снимается ЭМПИРИЧЕСКИ с эталона `example/` (перемерено на 44 047 полях, обе генерации, cf и
+  cfe), а не выводится из XSD-схемы. **Две точки чтения таблицы — с разным смыслом, путать нельзя:**
+  `getMemberPropertyKeys(role, ownerKind)` — что у поля ДОПУСТИМО существовать (единый критерий и для
+  `property-not-allowed` в валидации, и для удаления лишнего при `set_type` — буквально одна функция);
+  `getGeneratedPropertyKeys(role, ownerKind, typeInner)` — что мы ДОПИСЫВАЕМ (генерация нового поля,
+  довписывание недостающего при смене типа, показ недостающего в панели). Инвариант — `generated ⊆
+  member`. **Состав задаёт ВИД ОБЪЕКТА-ВЛАДЕЛЬЦА** (корень XML-файла,
+  `ObjectXmlReader.detectRootObjectKind`) СОВМЕСТНО С РОЛЬЮ поля, роль передаётся вызывающим ЯВНО
+  (`targetKind`/вид узла дерева) — тег самого элемента XML источником решения не является (у
+  измерения/ресурса/реквизита свой тег, но для владельца это несущественно).
+
+  Ось ТИПА (`<Type>`) в удалении/допустимости больше НЕ участвует — `getMemberPropertyKeys` включает
+  полный набор типозависимых ключей независимо от фактического типа поля; сужение по типу — только
+  политика ГЕНЕРАЦИИ нового поля (`getGeneratedPropertyKeys`/`typeAxisKeys` по `FieldTypeCategory`), не
+  ограничение формата и не критерий валидации/удаления. Основание: 12 326 чисто-ссылочных полей корпуса
+  — 100% несут хотя бы одно из `PasswordMode`/`MultiLine`/`Mask`/`MinValue`/`MaxValue`/`ExtendedEdit`,
+  то есть платформа выгружает типозависимые свойства у поля ЛЮБОГО типа. Единственное известное
+  обратное исключение — `Constant`: `withoutKeys: ['CreateOnInput']` в правиле пары `Constant.Constant`
+  (у 996 констант эталона нет `CreateOnInput` при наличии `QuickChoice`); ось типа/владельца МОЖЕТ иметь
+  такие точечные исключения, они заводятся полем `withoutKeys`, а не отдельным механизмом.
+
+  Для владельца без снятых с эталона правил (на момент написания — регистр расчёта, а также любой
+  неизвестный/отсутствующий `ownerKind`) действует КОНСЕРВАТИВНЫЙ режим: owner-зависимые свойства
+  (`OWNER_DEPENDENT_KEYS`, объединение по всей таблице) только СОХРАНЯЮТСЯ из исходного XML — `set_type`
+  их не удаляет и не дописывает, валидация по ним молчит.
+
+  Любой редактор существующего блока `<Properties>` обязан сохранять два инварианта (иначе следующий
+  агент чинит задачу обратно, а битый XML одного поля делает нечитаемой всю конфигурацию, а не одно
+  поле): **идемпотентность** (повторное применение с тем же типом → файл байт-в-байт, включая отступы и
+  неуправляемые теги — правка точечным splice по диапазонам блоков, `infra/xml/typedField/
+  PropertyBlockEditor.ts`, а не пересборка `<Properties>` из «разрешённых ключей») и **структурный
+  round-trip** (результат — well-formed XML, а прямые дети `<Properties>` меняются РОВНО в ожидаемых
+  ключах — образец проверки: `src/test/suite/support/typedFieldCorpus.ts`,
+  `assertWellFormedXml`/`assertStructuralRoundTrip`).
 - **Новое правило пространства нумерации `id` формы** (какие теги делят одно пространство уникальности
   id в `Form.xml`, см. [xml-format-rulesets.md](./docs/xml-format-rulesets.md#пространства-нумерации-id-в-formxml)):
   запись в `ID_SPACE_BY_TAG` (`infra/xml/form/FormIdSpaces.ts`) → тест на эталоне обеих генераций формата

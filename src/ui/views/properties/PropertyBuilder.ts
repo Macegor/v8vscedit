@@ -19,7 +19,7 @@ import {
   extractXmlAttribute,
   stripXmlTagNamespacePrefixes,
 } from '../../../infra/xml';
-import { isTypedFieldControlledPropertyKey } from '../../../infra/xml/TypedFieldPropertyRules';
+import { isTypedFieldControlledPropertyKey, type TypeAwarePropertyOwnerKind } from '../../../infra/xml/TypedFieldPropertyRules';
 import {
   BOOLEAN_PROPERTY_TAGS,
   ENUM_DEFAULTS,
@@ -519,10 +519,11 @@ export function buildConfigurationProperties(fullConfigXml: string): ObjectPrope
 export function buildTypedFieldProperties(
   elementFullXml: string,
   inheritedElementFullXml?: string | null,
-  ownerKind?: string
+  ownerKind?: string,
+  role?: TypeAwarePropertyOwnerKind
 ): ObjectPropertiesCollection {
   const keySource = elementFullXml || (inheritedElementFullXml ?? '');
-  return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, getTypedFieldPropertyKeyOrder(keySource, ownerKind), {
+  return buildEffectivePropertyItemsForKeys(elementFullXml, inheritedElementFullXml, getTypedFieldPropertyKeyOrder(keySource, ownerKind, role), {
     elementXmlForType: elementFullXml,
     inheritedElementXmlForType: inheritedElementFullXml ?? undefined,
     includeExtraKeys: true,

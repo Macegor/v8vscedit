@@ -1,5 +1,5 @@
 import type { MetaKind } from '../../../domain/MetaTypes';
-import type { RegisterOwnerKind, TypeAwarePropertyOwnerKind } from '../TypedFieldPropertyRules';
+import type { TypeAwarePropertyOwnerKind } from '../TypedFieldPropertyRules';
 
 /** Описание сгенерированного типа объекта (xr:GeneratedType) — префикс + категория. */
 export interface GeneratedTypeDef {
@@ -73,14 +73,14 @@ export interface FormatRuleset {
    * Дополнительные блоки свойств нового типизированного поля, зависящие от его
    * типа (`<Type>`-состав определяет, какие свойства уместны). `typeInnerXml` —
    * XML блока типа для определения категории, `indent` — отступ свойств.
-   * `registerKind` — тип регистра-владельца измерения/ресурса (набор свойств и
-   * их значения по умолчанию зависят от типа регистра).
+   * `ownerKind` — вид объекта-владельца: вместе с ролью поля он задаёт состав
+   * свойств (таблица владелец×роль) и значения по умолчанию.
    */
   buildTypedFieldProperties(
     kind: TypeAwarePropertyOwnerKind,
     typeInnerXml: string,
     indent: string,
-    registerKind?: RegisterOwnerKind
+    ownerKind?: string
   ): readonly string[];
 
   /**

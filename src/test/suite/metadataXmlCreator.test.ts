@@ -399,9 +399,23 @@ suite('metadataXmlCreator', () => {
     assert.strictEqual(changed, true);
     const nextXml = fs.readFileSync(xmlPath, 'utf-8');
     assert.ok(nextXml.includes('<v8:Type>xs:decimal</v8:Type>'));
-    assert.ok(!nextXml.includes('<MultiLine>true</MultiLine>'));
-    assert.ok(!nextXml.includes('<PasswordMode>false</PasswordMode>'));
-    assert.ok(!nextXml.includes('<LegacyProperty>old</LegacyProperty>'));
+    // ПЕРЕПИСАНО под контракт «владелец×роль»: сужение состава по ТИПУ на
+    // пути правки отменено (очередь недочётов, п.1 и п.3) — критерий удаления
+    // свойства теперь owner-based (getMemberPropertyKeys), а не type-based.
+    // MultiLine/PasswordMode — типозависимые свойства УЖЕ СУЩЕСТВОВАВШЕГО поля
+    // (реквизит Catalog.Attribute member — не type-narrowed), они не должны
+    // исчезать при смене string→number: эталон подтверждает, что 9827 из
+    // 17 596 (55%) ссылочных реквизитов реально несут PasswordMode/MultiLine/
+    // Mask/MinValue/MaxValue/ExtendedEdit одновременно — платформа их не
+    // отклоняет.
+    assert.ok(nextXml.includes('<MultiLine>true</MultiLine>'), 'MultiLine существующего поля не должен пропадать при смене типа');
+    assert.ok(nextXml.includes('<PasswordMode>false</PasswordMode>'), 'PasswordMode существующего поля не должен пропадать при смене типа');
+    // Полностью незнакомый (не входящий даже в CONTROLLED_PROPERTY_KEYS) тег
+    // сохраняется байт-в-байт — прямое исправление пункта 1 очереди недочётов
+    // («set_type теряет неуправляемые свойства»).
+    assert.ok(nextXml.includes('<LegacyProperty>old</LegacyProperty>'), 'незнакомый тег не должен теряться при смене типа');
+    // MarkNegatives — НОВОЕ числовое свойство: поле было строковым, поэтому
+    // getGeneratedPropertyKeys для number дописывает его впервые.
     assert.ok(nextXml.includes('<MarkNegatives>false</MarkNegatives>'));
     // RoundingMode не входит в состав реквизита: свойства нет ни у одного
     // типизированного поля эталонных выгрузок example/2.20 и example/2.21.
@@ -575,9 +589,14 @@ suite('metadataXmlCreator', () => {
     assert.ok(nextXml.includes('<DataHistory>DontUse</DataHistory>'));
     assert.ok(nextXml.includes('<MarkNegatives>false</MarkNegatives>'));
     assert.ok(!nextXml.includes('<RoundingMode>'));
-    assert.ok(!nextXml.includes('<ChoiceForm/>'));
-    assert.ok(!nextXml.includes('<LinkByType/>'));
-    assert.ok(!nextXml.includes('<PasswordMode>false</PasswordMode>'));
+    // ПЕРЕПИСАНО под контракт «владелец×роль»: ChoiceForm/LinkByType/PasswordMode
+    // существовали у поля ДО смены типа (reference→number) и остаются owner-member
+    // для Constant — сужение по ТИПУ на пути правки отменено (та же логика, что
+    // и для реквизита справочника выше; эталон: 55% ссылочных реквизитов несут
+    // PasswordMode одновременно с другими типозависимыми свойствами).
+    assert.ok(nextXml.includes('<ChoiceForm/>'), 'ChoiceForm существовавшего поля не должен пропадать при смене типа');
+    assert.ok(nextXml.includes('<LinkByType/>'), 'LinkByType существовавшего поля не должен пропадать при смене типа');
+    assert.ok(nextXml.includes('<PasswordMode>false</PasswordMode>'), 'PasswordMode существовавшего поля не должен пропадать при смене типа');
   });
 });
 

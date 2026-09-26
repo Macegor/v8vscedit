@@ -6,7 +6,9 @@ import { getMetaFolder, type MetaKind } from '../../domain/MetaTypes';
 import { MetadataXmlCreator } from '../../infra/xml/MetadataXmlCreator';
 import { MetadataXmlRemover } from '../../infra/xml/MetadataXmlRemover';
 import { ObjectXmlReader } from '../../infra/xml/ObjectXmlReader';
-import { getTypedFieldPropertyKeys } from '../../infra/xml/TypedFieldPropertyRules';
+// Единственная точка чтения состава свойств владелец×роль (см.
+// typedFieldOwnerRoleRules.test.ts): owner-агностичной обёртки над ней больше нет.
+import { getGeneratedPropertyKeys } from '../../infra/xml/typedField/TypedFieldOwnerRules';
 
 /**
  * Генерация дочерних элементов под загрузку в 1С. Каждый инвариант здесь пойман
@@ -102,17 +104,43 @@ suite('Генерация дочерних элементов — контрак
     assert.ok(!ts[0].includes('FillValue'), 'у колонки не должно быть FillValue');
   });
 
-  test('getTypedFieldPropertyKeys: Column исключает свойства заполнения, Attribute — нет', () => {
-    const attribute = getTypedFieldPropertyKeys('Attribute', '');
-    const column = getTypedFieldPropertyKeys('Column', '');
-    assert.ok(attribute.includes('FillFromFillingValue') && attribute.includes('FillValue'));
-    assert.ok(!column.includes('FillFromFillingValue') && !column.includes('FillValue'));
+  test('getGeneratedPropertyKeys: колонка ТЧ и реквизит верхнего уровня зависят от владельца (Catalog vs DataProcessor)', () => {
+    // ПЕРЕПИСАНО под контракт «владелец×роль» (см. typedFieldOwnerRoleRules.test.ts,
+    // GOLDEN-тесты и очередь недочётов пользователя, пункт 3). Раньше проверялось
+    // «Column исключает свойства заполнения безусловно, Attribute — нет»: это
+    // верно только для справочника/документа. У обработки/отчёта — ровно
+    // наоборот (эталон: DataProcessor 1670 колонок и Report 20 колонок со
+    // свойствами заполнения, а у их же реквизитов верхнего уровня — 0).
+    // Раньше это проверял owner-агностичный `getTypedFieldPropertyKeys('Column', '')` —
+    // теперь состав всегда идёт через владельца, поэтому тест переехал на
+    // getGeneratedPropertyKeys(role, ownerKind, typeInner).
+    const catalogColumn = getGeneratedPropertyKeys('Column', 'Catalog', '');
+    const dataProcessorColumn = getGeneratedPropertyKeys('Column', 'DataProcessor', '');
+    assert.ok(
+      !catalogColumn.includes('FillFromFillingValue') && !catalogColumn.includes('FillValue'),
+      'колонка ТЧ справочника не должна получать свойства заполнения'
+    );
+    assert.ok(
+      dataProcessorColumn.includes('FillFromFillingValue') && dataProcessorColumn.includes('FillValue'),
+      'колонка ТЧ обработки должна получать свойства заполнения (зеркально справочнику)'
+    );
+
+    const catalogAttribute = getGeneratedPropertyKeys('Attribute', 'Catalog', '');
+    const dataProcessorAttribute = getGeneratedPropertyKeys('Attribute', 'DataProcessor', '');
+    assert.ok(
+      catalogAttribute.includes('FillFromFillingValue') && catalogAttribute.includes('FillValue'),
+      'реквизит верхнего уровня справочника должен получать свойства заполнения'
+    );
+    assert.ok(
+      !dataProcessorAttribute.includes('FillFromFillingValue') && !dataProcessorAttribute.includes('FillValue'),
+      'реквизит верхнего уровня обработки не должен получать свойства заполнения'
+    );
   });
 
-  test('getTypedFieldPropertyKeys: измерение/ресурс зависят от типа регистра', () => {
-    const irDim = getTypedFieldPropertyKeys('Dimension', '', 'InformationRegister');
-    const accDim = getTypedFieldPropertyKeys('Dimension', '', 'AccumulationRegister');
-    const irRes = getTypedFieldPropertyKeys('Resource', '', 'InformationRegister');
+  test('getGeneratedPropertyKeys: измерение/ресурс зависят от типа регистра', () => {
+    const irDim = getGeneratedPropertyKeys('Dimension', 'InformationRegister', '');
+    const accDim = getGeneratedPropertyKeys('Dimension', 'AccumulationRegister', '');
+    const irRes = getGeneratedPropertyKeys('Resource', 'InformationRegister', '');
     // Измерение ИР: Master/MainFilter/TypeReductionMode, без UseInTotals.
     assert.ok(irDim.includes('Master') && irDim.includes('MainFilter') && irDim.includes('TypeReductionMode'));
     assert.ok(!irDim.includes('UseInTotals'));

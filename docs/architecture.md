@@ -99,6 +99,12 @@ God-класса», запрет №17): большой класс дробит�
 - `ui/views/properties/PropertiesViewController.ts` + `propertyEditLock.ts`
   (резолвер блокировки редактирования) + `propertyNodeClassification.ts`
   (классификация и snapshot узлов).
+- `infra/xml/TypedFieldPropertyRules.ts` (фасад, 708 → 240 строк) +
+  `infra/xml/typedField/TypedFieldOwnerRules.ts` (ДАННЫЕ — двумерная таблица
+  правил владелец×роль) + `infra/xml/typedField/PropertyBlockEditor.ts`
+  (МЕХАНИКА — точечная splice-правка блоков `<Properties>` без знания самих
+  правил). Здесь разрез не «по домену», а по роду знания (данные / механика
+  применения) — см. [xml-format-rulesets.md](./xml-format-rulesets.md#состав-свойств-типизированного-поля-по-виду-владельца).
 
 Во всех случаях `switch` по `MetaKind`/виду объекта, где он был, оставлен как есть
 (это диспетчер поведения, а не реестр данных) — декомпозиция не подменяла его

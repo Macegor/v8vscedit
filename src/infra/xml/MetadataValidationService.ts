@@ -215,7 +215,9 @@ function validateTypedFieldProperties(
       continue;
     }
     for (const column of findChildElementsFullXmlInBlock(sectionChildren, 'Attribute')) {
-      report('Attribute', column.name, findDisallowedTypedFieldProperties(column.xml, 'Column'), section.name);
+      // Вид владельца ТЧ обязателен: именно им (а не тегом <Attribute>)
+      // определяется, допустимы ли у колонки свойства заполнения.
+      report('Attribute', column.name, findDisallowedTypedFieldProperties(column.xml, 'Column', ownerKind), section.name);
     }
   }
 }

@@ -15,6 +15,14 @@ export const EXAMPLE_ROOT = path.resolve(__dirname, '../../../../example');
  * эталонов) и для курируемого списка форм-носителей.
  */
 export function findAllFormXmlFiles(root: string): string[] {
+  // Каталог `example/` лежит в .gitignore, поэтому на чистом клоне его нет.
+  // Обход вызывается на этапе ЗАГРУЗКИ модуля (генерация тестов в цикле), и
+  // необработанный ENOENT здесь рушит весь прогон Mocha целиком, а не помечает
+  // тесты упавшими — никакой MOCHA_GREP от этого не спасает. Поэтому
+  // отсутствие корня — пустой список, а видимость пропуска даёт hasFormCorpus().
+  if (!fs.existsSync(root)) {
+    return [];
+  }
   const result: string[] = [];
   const walk = (dir: string): void => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -41,4 +49,9 @@ export function writeFormCopy(xml: string, root?: string): string {
   const formPath = path.join(dir, 'Form.xml');
   fs.writeFileSync(formPath, xml, 'utf-8');
   return formPath;
+}
+
+/** Есть ли локальный корпус эталонов: без него корпус-зависимые сьюты пропускаются, а не падают. */
+export function hasFormCorpus(): boolean {
+  return fs.existsSync(EXAMPLE_ROOT);
 }

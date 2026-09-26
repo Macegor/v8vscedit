@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { FormToolsService } from '../../infra/xml';
-import { EXAMPLE_ROOT, findAllFormXmlFiles, writeFormCopy } from './support/formFixtures';
+import { EXAMPLE_ROOT, findAllFormXmlFiles, hasFormCorpus, writeFormCopy } from './support/formFixtures';
 
 /**
  * Поведенческие тесты `FormValidateService.validate()` после переноса секций
@@ -95,6 +95,13 @@ suite('FormValidateService — T-8: воспроизведение дефект�
 });
 
 suite('FormValidateService — T-9: регресс «ноль ложных срабатываний» на курируемом списке форм', () => {
+  // Корпус в .gitignore: без него пропускаем явно. Молчаливо «сьюта без тестов»
+  // хуже пропуска — отсутствие проверки выглядело бы как её успешное прохождение.
+  suiteSetup(function () {
+    if (!hasFormCorpus()) {
+      this.skip();
+    }
+  });
   const formList = buildRegressionFormList();
 
   test('курируемый список форм действительно не пуст и включает EVOLC + РасходыПриИмпорте + носители новых тегов', () => {

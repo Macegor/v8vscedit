@@ -1,11 +1,10 @@
 import type { NodeKind } from '../../tree/TreeNode';
 import type { ObjectPropertiesCollection } from './_types';
-import { extractOpeningTagName } from '../../../infra/xml';
 import {
   getDisplayTypedFieldPropertyKeys,
   type TypeAwarePropertyOwnerKind,
 } from '../../../infra/xml/TypedFieldPropertyRules';
-import { stripXmlTagNamespacePrefix, summarizeTypeBlock } from './propertyExtractors';
+import { summarizeTypeBlock } from './propertyExtractors';
 
 /** Общие поля корневого объекта (справочник, документ, план обмена, …) */
 const COMMON_ROOT_META_PROPERTY_KEYS: string[] = [
@@ -921,35 +920,32 @@ export function isTypeAwareRootKind(rootMetaKind: NodeKind): rootMetaKind is 'Co
   return rootMetaKind === 'Constant' || rootMetaKind === 'CommonAttribute';
 }
 
-export function getTypedFieldPropertyKeyOrder(elementFullXml: string, ownerKind?: string): string[] {
-  const openingTag = extractOpeningTagName(elementFullXml);
-  const tag = openingTag ? stripXmlTagNamespacePrefix(openingTag) : '';
-  const typeInner = summarizeTypeBlock(elementFullXml);
-  if (
-    typeInner &&
-    (tag === 'Attribute' || tag === 'AddressingAttribute' || tag === 'Dimension' || tag === 'Resource' || tag === 'Column')
-  ) {
-    return [
-      'Name',
-      'Synonym',
-      'Comment',
-      'Type',
-      ...getDisplayTypedFieldPropertyKeys(toTypedFieldOwnerKind(tag), typeInner, ownerKind, elementFullXml),
-    ];
-  }
-  return TYPED_FIELD_PROPERTY_KEYS;
-}
-
-function toTypedFieldOwnerKind(tagName: 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column'): TypeAwarePropertyOwnerKind {
-  return tagName === 'Column' ? 'Attribute' : tagName;
+/**
+ * Порядок ключей панели свойств типизированного поля.
+ *
+ * `role` передаёт вызывающий (узел дерева знает, реквизит это или колонка ТЧ):
+ * тег XML источником решения быть не может — колонка ТЧ сериализуется тем же
+ * `<Attribute>`, что и реквизит верхнего уровня, а состав свойств у них разный.
+ * Неизвестная роль/владелец — не повод уходить на общий список без учёта
+ * владельца: состав объединяется по кандидатам (см. getDisplayTypedFieldPropertyKeys).
+ */
+export function getTypedFieldPropertyKeyOrder(
+  elementFullXml: string,
+  ownerKind?: string,
+  role?: TypeAwarePropertyOwnerKind
+): string[] {
+  return [
+    'Name',
+    'Synonym',
+    'Comment',
+    'Type',
+    ...getDisplayTypedFieldPropertyKeys(role, summarizeTypeBlock(elementFullXml), ownerKind, elementFullXml),
+  ];
 }
 
 export function getTypeAwarePropertyKeyOrder(elementFullXml: string, kind: TypeAwarePropertyOwnerKind): string[] {
-  const typeInner = summarizeTypeBlock(elementFullXml);
-  if (!typeInner) {
-    return ['Name', 'Synonym', 'Comment', 'Type'];
-  }
-  return ['Name', 'Synonym', 'Comment', 'Type', ...getDisplayTypedFieldPropertyKeys(kind, typeInner)];
+  // Константа и общий реквизит — самовладеющие: роль и владелец совпадают.
+  return getTypedFieldPropertyKeyOrder(elementFullXml, kind, kind);
 }
 
 function mergePropertyKeys(...groups: string[][]): string[] {

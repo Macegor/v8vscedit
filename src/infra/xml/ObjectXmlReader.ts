@@ -16,7 +16,16 @@ import {
   hasRealChange,
   writeTextFilePreservingBomAndEol,
 } from './XmlUtils';
-import { normalizeTypedFieldPropertiesAfterTypeChange } from './TypedFieldPropertyRules';
+import {
+  isTypedFieldRole,
+  normalizeTypedFieldPropertiesAfterTypeChange,
+  type TypeAwarePropertyOwnerKind,
+} from './TypedFieldPropertyRules';
+import {
+  collectPropertyBlocks,
+  detectPropertyIndent,
+  findPropertiesRange,
+} from './typedField/PropertyBlockEditor';
 
 interface XmlTextNode { '#text': string }
 type XmlElementNode = Record<string, XmlNodeList>;
@@ -284,7 +293,6 @@ export class ObjectXmlReader {
       return false;
     }
 
-    const normalizedType = indentTypeInner(options.typeInnerXml);
     // Локатор целевого блока: для корневых типов — весь XML, иначе — диапазон
     // конкретного дочернего узла (депт-аварный, устраняет подмену одноимённых блоков).
     const targetRange = (() => {
@@ -305,12 +313,16 @@ export class ObjectXmlReader {
     }
 
     const targetXml = xml.slice(targetRange.start, targetRange.end);
-    // Вид владельца берём из корня файла: состав ролевых свойств измерения/ресурса
-    // определяется именно им (у РС нет UseInTotals, у ресурса РС — Balance).
+    // Роль поля берём из targetKind вызывающего, а не из тега XML: колонка ТЧ
+    // сериализуется тем же тегом <Attribute>, что и реквизит верхнего уровня,
+    // и по тегу её состав свойств не отличить. Вид владельца — из корня файла:
+    // им задаётся вторая ось состава (у колонки ТЧ справочника нет свойств
+    // заполнения, у колонки ТЧ обработки — есть).
     const updatedTarget = updateTypeInElement(
       targetXml,
-      normalizedType,
+      options.typeInnerXml,
       options.propertyName ?? 'Type',
+      isTypedFieldRole(options.targetKind) ? options.targetKind : undefined,
       detectRootObjectKind(xml)
     );
     if (updatedTarget === targetXml) {
@@ -523,64 +535,86 @@ function visitFieldRefs(nodes: XmlNodeList, visitor: (ref: string) => void): voi
   }
 }
 
+/** Отступ свойств по умолчанию — уровень `<Properties>` дочернего элемента объекта. */
+const DEFAULT_PROPERTY_INDENT = '\t\t\t';
+
 function updateTypeInElement(
   elementXml: string,
   typeInnerXml: string,
   propertyName: 'Type' | 'Source' | 'CommandParameterType' = 'Type',
+  role?: TypeAwarePropertyOwnerKind,
   ownerKind?: string
 ): string {
-  const typeBlock = `<${propertyName}>\n${typeInnerXml}\n</${propertyName}>`;
+  // Отступ берётся у заменяемого блока (или у соседнего свойства), а не
+  // захардкожен: у колонки ТЧ он на два уровня глубже, чем у реквизита
+  // верхнего уровня, и фиксированные табы ломали бы файл на каждой смене типа.
+  const indent = detectPropertyBlockIndent(elementXml, propertyName);
+  const innerXml = indentTypeInner(typeInnerXml, `${indent}\t`);
+  const updated = replaceOrInsertTypeBlock(
+    elementXml,
+    propertyName,
+    `<${propertyName}>\n${innerXml}\n${indent}</${propertyName}>`,
+    indent
+  );
+  // Состав свойств перестраивается только у типизированного поля и только при
+  // смене <Type>: у Source подписки на событие и CommandParameterType команды
+  // ни роли поля, ни владельца нет.
+  if (updated === null || propertyName !== 'Type' || !role) {
+    return updated ?? elementXml;
+  }
+  return normalizeTypedFieldPropertiesAfterTypeChange(updated, role, innerXml, ownerKind);
+}
+
+/** Ставит готовый блок типа на место свойства; `null` — ставить некуда. */
+function replaceOrInsertTypeBlock(
+  elementXml: string,
+  propertyName: string,
+  typeBlock: string,
+  indent: string
+): string | null {
   const propertyRe = new RegExp(`<${propertyName}>[\\s\\S]*?<\\/${propertyName}>`);
   if (propertyRe.test(elementXml)) {
-    const updated = elementXml.replace(propertyRe, () => typeBlock);
-    return propertyName === 'Type' ? normalizeTypedFieldProperties(updated, typeInnerXml, ownerKind) : updated;
+    return elementXml.replace(propertyRe, () => typeBlock);
   }
   const selfClosingRe = new RegExp(`<${propertyName}(?:\\s[^>]*)?\\/>`);
   if (selfClosingRe.test(elementXml)) {
-    const updated = elementXml.replace(selfClosingRe, () => typeBlock);
-    return propertyName === 'Type' ? normalizeTypedFieldProperties(updated, typeInnerXml, ownerKind) : updated;
+    return elementXml.replace(selfClosingRe, () => typeBlock);
   }
   const propertiesMatch = /<Properties>([\s\S]*?)<\/Properties>/.exec(elementXml);
   if (!propertiesMatch) {
-    return elementXml;
+    return null;
   }
   const propsInner = propertiesMatch[1];
+  const indentedBlock = `${indent}${typeBlock}`;
   const nextPropsInner = /<Comment[\s\S]*?<\/Comment>/.test(propsInner)
-    ? propsInner.replace(/(<Comment[\s\S]*?<\/Comment>)/, (_m, g1: string) => `${g1}\n${typeBlock}`)
+    ? propsInner.replace(/(<Comment[\s\S]*?<\/Comment>)/, (_m, g1: string) => `${g1}\n${indentedBlock}`)
     : /<Name[\s\S]*?<\/Name>/.test(propsInner)
-    ? propsInner.replace(/(<Name[\s\S]*?<\/Name>)/, (_m, g1: string) => `${g1}\n${typeBlock}`)
-    : `${propsInner}\n${typeBlock}`;
-  const updated = elementXml.replace(propsInner, () => nextPropsInner);
-  return propertyName === 'Type' ? normalizeTypedFieldProperties(updated, typeInnerXml, ownerKind) : updated;
+    ? propsInner.replace(/(<Name[\s\S]*?<\/Name>)/, (_m, g1: string) => `${g1}\n${indentedBlock}`)
+    : `${propsInner}\n${indentedBlock}`;
+  return elementXml.replace(propsInner, () => nextPropsInner);
 }
 
-function normalizeTypedFieldProperties(elementXml: string, typeInnerXml: string, ownerKind?: string): string {
-  const tag = detectNormalizedTypeOwnerTag(elementXml);
-  if (
-    tag === 'Attribute' ||
-    tag === 'AddressingAttribute' ||
-    tag === 'Dimension' ||
-    tag === 'Resource' ||
-    tag === 'Constant' ||
-    tag === 'CommonAttribute'
-  ) {
-    return normalizeTypedFieldPropertiesAfterTypeChange(elementXml, tag, typeInnerXml, ownerKind);
+/**
+ * Отступ блока свойства внутри `<Properties>`: собственный, если свойство уже
+ * есть, иначе — соседнего свойства. Так новый блок встаёт на тот же уровень,
+ * что и остальные, независимо от глубины элемента в файле.
+ */
+function detectPropertyBlockIndent(elementXml: string, propertyName: string): string {
+  const properties = findPropertiesRange(elementXml);
+  if (!properties) {
+    return DEFAULT_PROPERTY_INDENT;
   }
-  return elementXml;
+  const blocks = collectPropertyBlocks(properties.inner);
+  const own = blocks.find((block) => block.key === propertyName);
+  return own && own.indent.length > 0 ? own.indent : detectPropertyIndent(blocks, DEFAULT_PROPERTY_INDENT);
 }
 
 /**
  * Вид объекта из корня ФАЙЛА (`InformationRegister`, `Catalog`, …) — им задаётся
- * состав ролевых свойств дочерних полей. Технически это тот же разбор первого
- * тега, что и {@link detectNormalizedTypeOwnerTag}, но смысл другой: там —
- * собственный тег элемента, здесь — его владелец.
+ * состав свойств дочерних полей вместе с их ролью.
  */
 function detectRootObjectKind(xml: string): string | undefined {
-  return detectNormalizedTypeOwnerTag(xml);
-}
-
-function detectNormalizedTypeOwnerTag(elementXml: string): string | undefined {
-  const text = elementXml.trimStart().replace(/^<\?xml\b[\s\S]*?\?>\s*/, '');
+  const text = xml.trimStart().replace(/^<\?xml\b[\s\S]*?\?>\s*/, '');
   return /^<MetaDataObject\b[^>]*>\s*<([A-Za-z][A-Za-z0-9]*)\b/.exec(text)?.[1]
     ?? /^<([A-Za-z][A-Za-z0-9]*)\b/.exec(text)?.[1];
 }
@@ -594,12 +628,12 @@ function isRootTypeTargetKind(kind: string): boolean {
     || kind === 'CommonCommand';
 }
 
-function indentTypeInner(typeInnerXml: string): string {
+function indentTypeInner(typeInnerXml: string, indent: string): string {
   return typeInnerXml
     .split('\n')
     .map((line) => line.replace(/\r/g, '').trimEnd())
     .filter((line) => line.length > 0)
-    .map((line) => `\t\t\t${line}`)
+    .map((line) => `${indent}${line}`)
     .join('\n');
 }
 

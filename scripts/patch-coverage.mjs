@@ -95,6 +95,42 @@ function addedLines(rel) {
 
 // Эвристика «чисто-типового» файла (нет исполняемого кода → нет покрытия — это норма).
 function isTypeOnly(rel) {
+  // Факт вместо догадки: если TypeScript не породил для файла НИ ОДНОГО
+  // исполняемого оператора, покрывать в нём нечего физически — c8 в принципе
+  // не может дать по такому файлу lcov-запись. Текстовая эвристика ниже
+  // оставлена лишь запасным вариантом: она гадает по виду строк и ломается,
+  // например, на многострочной сигнатуре метода интерфейса (строка,
+  // заканчивающаяся на `(`, и последний параметр без завершающей запятой).
+  const emitted = readEmittedJs(rel);
+  if (emitted !== null) {
+    return emitted === '';
+  }
+  return looksTypeOnlyBySource(rel);
+}
+
+/**
+ * Содержимое скомпилированного JS без служебной обвязки tsc (`use strict`,
+ * пометка `__esModule`, комментарии, ссылка на sourcemap). Пустая строка —
+ * файл не породил исполняемого кода. `null` — вывода нет (файл не
+ * компилируется в `out/`, например webview из `src-ui/`).
+ */
+function readEmittedJs(rel) {
+  if (!rel.startsWith('src/') || !rel.endsWith('.ts')) {
+    return null;
+  }
+  const outPath = path.join(ROOT, 'out', rel.slice('src/'.length).replace(/\.ts$/, '.js'));
+  if (!existsSync(outPath)) {
+    return null;
+  }
+  return readFileSync(outPath, 'utf-8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '')
+    .replace(/["']use strict["'];?/g, '')
+    .replace(/Object\.defineProperty\(exports,\s*["']__esModule["'],[^)]*\);?/g, '')
+    .trim();
+}
+
+function looksTypeOnlyBySource(rel) {
   const stripped = readFileSync(path.join(ROOT, rel), 'utf-8')
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/\/\/.*$/gm, '')

@@ -3,7 +3,6 @@ import * as path from 'path';
 import type { ChildTag } from '../../../domain/ChildTag';
 import { getObjectLocationFromXml } from '../../fs/MetaPathResolver';
 import type { FormatRuleset } from '../format/FormatRuleset';
-import { type RegisterOwnerKind, toRegisterOwnerKind } from '../TypedFieldPropertyRules';
 import {
   escapeRegExp,
   findChildMetaElementRange,
@@ -34,7 +33,16 @@ export function addChildToObjectXml(xml: string, options: AddChildMetadataOption
     if (!options.tabularSectionName) {
       return { changed: false, error: 'Не указана табличная часть для добавления колонки.' };
     }
-    return addColumnToTabularSectionXml(xml, options.tabularSectionName, options.name, ruleset);
+    // Вид владельца нужен и колонке: состав её свойств зеркален составу
+    // реквизита верхнего уровня того же объекта (у справочника свойства
+    // заполнения есть у реквизита, у обработки — наоборот, у колонки).
+    return addColumnToTabularSectionXml(
+      xml,
+      options.tabularSectionName,
+      options.name,
+      ruleset,
+      extractMetadataObjectKind(xml)
+    );
   }
 
   if (options.childTag === 'Method') {
@@ -68,7 +76,13 @@ export function addChildToObjectXml(xml: string, options: AddChildMetadataOption
   };
 }
 
-function addColumnToTabularSectionXml(xml: string, tabularSectionName: string, columnName: string, ruleset: FormatRuleset): { changed: true; xml: string } | { changed: false; error: string } {
+function addColumnToTabularSectionXml(
+  xml: string,
+  tabularSectionName: string,
+  columnName: string,
+  ruleset: FormatRuleset,
+  ownerKind?: string
+): { changed: true; xml: string } | { changed: false; error: string } {
   const section = findNamedChildBlock(xml, 'TabularSection', tabularSectionName);
   if (!section) {
     return { changed: false, error: `Табличная часть "${tabularSectionName}" не найдена.` };
@@ -85,7 +99,7 @@ function addColumnToTabularSectionXml(xml: string, tabularSectionName: string, c
   const indent = detectChildIndent(childObjects.inner, '\t\t\t\t\t');
   // Тег колонки в XML — <Attribute>, но набор свойств у неё «колоночный»
   // (без свойств заполнения), поэтому передаём kind='Column'.
-  const fragment = buildTypedFieldFragment('Attribute', columnName, indent, ruleset, 'Column');
+  const fragment = buildTypedFieldFragment('Attribute', columnName, indent, ruleset, 'Column', ownerKind);
   const replacement = buildChildObjectsReplacement(childObjects, fragment, indent);
   const nextSectionXml = `${sectionXml.slice(0, childObjects.start)}${replacement}${sectionXml.slice(childObjects.end)}`;
   return {
@@ -130,7 +144,7 @@ function buildChildFragment(
     throw new Error('Стандартные реквизиты создаются платформой 1С и не добавляются вручную.');
   }
   if (tag === 'Attribute' || tag === 'AddressingAttribute' || tag === 'Dimension' || tag === 'Resource') {
-    return buildTypedFieldFragment(tag, name, indent, ruleset, tag, toRegisterOwnerKind(ownerKind));
+    return buildTypedFieldFragment(tag, name, indent, ruleset, tag, ownerKind);
   }
   if (tag === 'TabularSection') {
     return buildTabularSectionFragment(name, indent, ruleset, ownerKind, ownerName);
@@ -201,7 +215,7 @@ function buildTypedFieldFragment(
   indent: string,
   ruleset: FormatRuleset,
   propertyKind: 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column' = tag,
-  registerKind?: RegisterOwnerKind
+  ownerKind?: string
 ): string {
   const typeBlock = ruleset.buildDefaultTypeBlock(`${indent}\t\t`);
   return [
@@ -211,7 +225,7 @@ function buildTypedFieldFragment(
     buildLocalizedTag(`${indent}\t\t`, 'Synonym', splitCamelCase(name)),
     `${indent}\t\t<Comment/>`,
     typeBlock,
-    ...ruleset.buildTypedFieldProperties(propertyKind, typeBlock, `${indent}\t\t`, registerKind),
+    ...ruleset.buildTypedFieldProperties(propertyKind, typeBlock, `${indent}\t\t`, ownerKind),
     `${indent}\t</Properties>`,
     `${indent}</${tag}>`,
   ].join('\n');
