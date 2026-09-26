@@ -30,16 +30,35 @@ const REAL_CHILD_TAGS = new Set<string>([
 ]);
 
 /**
- * Известный ОТДЕЛЬНЫЙ дефект (см. очередь недочётов в CLAUDE.md/audit):
- * у регистров `META_TYPES[kind].childTags` СЕЙЧАС не содержит `Attribute`/
- * `Template`, хотя оба реально добавляемы и присутствуют в каноне порядка.
- * Эта задача НЕ обязана чинить `META_TYPES` — направление проверки «каждый
- * ChildTag из строки входит в childTags» для этих 4 видов НЕ применяется,
- * только обратное направление (childTags ⊆ строка), которое и ловит реальный
- * анти-паттерн «добавили тег в реестр — забыли таблицу».
+ * Известный ОТДЕЛЬНЫЙ дефект реестра (см. очередь недочётов в CLAUDE.md/audit):
+ * `META_TYPES[kind].childTags` у ряда видов НЕ содержит некоторые теги, хотя
+ * они реально добавляемы через API (см. `ADDABLE_CANON` в
+ * `childObjectsOrder.creator.test.ts`) и присутствуют в каноне порядка:
+ *  - регистры (`InformationRegister`/`AccumulationRegister`/`AccountingRegister`/
+ *    `CalculationRegister`) не содержат `Attribute` И `Template`;
+ *  - `DocumentJournal`/`ChartOfCharacteristicTypes`/`ChartOfAccounts`/
+ *    `ChartOfCalculationTypes`/`BusinessProcess`/`Task` не содержат ТОЛЬКО
+ *    `Template` (макеты этим видам реально добавляемы).
+ *
+ * Эта задача НЕ обязана чинить `META_TYPES` (центральный контракт, другая ось —
+ * состав групп дерева) — разрыв уже занесён в очередь недочётов ОТДЕЛЬНЫМ
+ * пунктом. Здесь фиксируется ТОЧЕЧНОЕ исключение по паре «вид + тег», а НЕ по
+ * виду целиком: направление проверки «каждый ChildTag из строки входит в
+ * childTags» по-прежнему выполняется для этого же вида и ловит анти-паттерн
+ * «добавили тег в реестр — забыли таблицу» для ЛЮБОГО тега, кроме перечисленных
+ * здесь явно known-gap пар.
  */
-const REGISTER_CHILD_TAGS_KNOWN_GAP = new Set<MetaKind>([
-  'InformationRegister', 'AccumulationRegister', 'AccountingRegister', 'CalculationRegister',
+const KNOWN_CHILD_TAGS_GAP: ReadonlyMap<MetaKind, ReadonlySet<ChildTag>> = new Map([
+  ['InformationRegister', new Set<ChildTag>(['Attribute', 'Template'])],
+  ['AccumulationRegister', new Set<ChildTag>(['Attribute', 'Template'])],
+  ['AccountingRegister', new Set<ChildTag>(['Attribute', 'Template'])],
+  ['CalculationRegister', new Set<ChildTag>(['Attribute', 'Template'])],
+  ['DocumentJournal', new Set<ChildTag>(['Template'])],
+  ['ChartOfCharacteristicTypes', new Set<ChildTag>(['Template'])],
+  ['ChartOfAccounts', new Set<ChildTag>(['Template'])],
+  ['ChartOfCalculationTypes', new Set<ChildTag>(['Template'])],
+  ['BusinessProcess', new Set<ChildTag>(['Template'])],
+  ['Task', new Set<ChildTag>(['Template'])],
 ]);
 
 suite('ChildObjectsOrder — T-12: анти-параллельный-реестр (сшивка с META_TYPES)', () => {
@@ -72,33 +91,38 @@ suite('ChildObjectsOrder — T-12: анти-параллельный-реест�
       assert.deepStrictEqual(missing, [], `${kind}: теги из childTags отсутствуют в строке канона: ${missing.join(', ')}`);
     });
 
-    if (!REGISTER_CHILD_TAGS_KNOWN_GAP.has(kind)) {
-      test(`${kind}: каждый ChildTag-элемент строки CHILD_OBJECTS_ORDER входит в childTags (обратное направление, кроме известного разрыва регистров)`, () => {
-        if (!orderModule) {
-          assert.fail('ChildObjectsOrder.ts не реализован — см. предыдущий тест');
-          return;
-        }
-        const row = orderModule.CHILD_OBJECTS_ORDER[kind] ?? [];
-        const realChildTagsInRow = row.filter((tag) => REAL_CHILD_TAGS.has(tag));
-        const missing = realChildTagsInRow.filter((tag) => !childTags.includes(tag as ChildTag));
-        assert.deepStrictEqual(missing, [], `${kind}: теги строки канона отсутствуют в childTags: ${missing.join(', ')}`);
-      });
-    }
+    const knownGap = KNOWN_CHILD_TAGS_GAP.get(kind) ?? new Set<ChildTag>();
+    test(`${kind}: каждый ChildTag-элемент строки CHILD_OBJECTS_ORDER входит в childTags (обратное направление, минус точечный known-gap этого вида)`, () => {
+      if (!orderModule) {
+        assert.fail('ChildObjectsOrder.ts не реализован — см. предыдущий тест');
+        return;
+      }
+      const row = orderModule.CHILD_OBJECTS_ORDER[kind] ?? [];
+      const realChildTagsInRow = row.filter((tag) => REAL_CHILD_TAGS.has(tag));
+      // Известный точечный разрыв (см. KNOWN_CHILD_TAGS_GAP) вычитается из
+      // проверки ТОЛЬКО для конкретных тегов этого вида — любой ДРУГОЙ тег
+      // строки канона по-прежнему обязан присутствовать в childTags, иначе
+      // тест падает (анти-паттерн «добавили тег в реестр — забыли таблицу»
+      // остаётся под защитой).
+      const missing = realChildTagsInRow.filter((tag) => !childTags.includes(tag as ChildTag) && !knownGap.has(tag as ChildTag));
+      assert.deepStrictEqual(missing, [], `${kind}: теги строки канона отсутствуют в childTags: ${missing.join(', ')}`);
+    });
   }
 
-  test('регистры (известный разрыв): Attribute/Template есть в строке канона, но осознанно НЕ требуются в childTags этой задачей', () => {
+  test('известный точечный разрыв (KNOWN_CHILD_TAGS_GAP): каждый указанный тег есть в строке канона, но осознанно НЕ требуется в childTags этой задачей', () => {
     if (!orderModule) {
       assert.fail('ChildObjectsOrder.ts не реализован — см. первый тест');
       return;
     }
-    for (const kind of REGISTER_CHILD_TAGS_KNOWN_GAP) {
+    for (const [kind, gapTags] of KNOWN_CHILD_TAGS_GAP) {
       const row = orderModule.CHILD_OBJECTS_ORDER[kind] ?? [];
-      assert.ok(row.includes('Attribute'), `${kind}: строка канона обязана включать Attribute`);
-      assert.ok(row.includes('Template'), `${kind}: строка канона обязана включать Template`);
-      assert.ok(
-        !META_TYPES[kind].childTags?.includes('Attribute'),
-        `${kind}: если childTags уже содержит Attribute — известный разрыв починен, обнови REGISTER_CHILD_TAGS_KNOWN_GAP/тест`
-      );
+      for (const tag of gapTags) {
+        assert.ok(row.includes(tag), `${kind}: строка канона обязана включать ${tag}`);
+        assert.ok(
+          !META_TYPES[kind].childTags?.includes(tag),
+          `${kind}: если childTags уже содержит ${tag} — известный разрыв починен, убери пару из KNOWN_CHILD_TAGS_GAP`
+        );
+      }
     }
   });
 

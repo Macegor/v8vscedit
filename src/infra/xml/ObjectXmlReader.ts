@@ -324,8 +324,10 @@ export class ObjectXmlReader {
       options.typeInnerXml,
       options.propertyName ?? 'Type',
       isTypedFieldRole(options.targetKind) ? options.targetKind : undefined,
-      // allowBareRoot: сюда попадает и XML-фрагмент без обёртки <MetaDataObject>
-      // (вложенный объект/описатель формы) — вид берём из его собственного корня.
+      // allowBareRoot сохраняет поведение прежней приватной копии функции.
+      // Фактически недостижим: `xml` здесь — целиком прочитанный файл объекта
+      // метаданных по пути из MetaPathResolver, а такой файл всегда обёрнут
+      // <MetaDataObject>. Отказ от флага — отдельное решение, не косметика.
       detectRootObjectKind(xml, true)
     );
     if (updatedTarget === targetXml) {

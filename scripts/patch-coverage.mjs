@@ -67,20 +67,64 @@ const untracked = git(['ls-files', '--others', '--exclude-standard'])
   .map((s) => s.trim())
   .filter((f) => f && isProdTs(f) && existsSync(path.join(ROOT, f)));
 
-const modified = git(['diff', '--name-only', 'HEAD'])
-  .split('\n')
-  .map((s) => s.trim())
-  .filter((f) => f && isProdTs(f) && !untracked.includes(f) && existsSync(path.join(ROOT, f)));
+/** Production-файлы, изменённые относительно указанной базы (без untracked). */
+function modifiedAgainst(base) {
+  return git(['diff', '--name-only', base])
+    .split('\n')
+    .map((s) => s.trim())
+    .filter((f) => f && isProdTs(f) && !untracked.includes(f) && existsSync(path.join(ROOT, f)));
+}
+
+/**
+ * База сравнения для патч-покрытия.
+ *
+ * Наивное `HEAD` работает, только пока правки НЕ закоммичены. Если разработчик
+ * уже закоммитил (штатная ситуация: qa-e2e запускается после его стадии),
+ * дифф против HEAD пуст, и гейт «успешно» проходит, не проверив ничего —
+ * молчаливый ложный зелёный. Поэтому при чистом рабочем дереве база
+ * расширяется до точки расхождения с веткой интеграции, то есть проверяются
+ * коммиты самой задачи. Переопределяется переменной COVERAGE_BASE.
+ */
+function resolveDiffBase() {
+  const explicit = process.env.COVERAGE_BASE?.trim();
+  if (explicit) {
+    return { base: explicit, why: 'задана переменной COVERAGE_BASE' };
+  }
+  if (modifiedAgainst('HEAD').length > 0 || untracked.length > 0) {
+    return { base: 'HEAD', why: 'есть незакоммиченные изменения' };
+  }
+  for (const upstream of ['origin/develop', 'origin/main']) {
+    let mergeBase;
+    try {
+      mergeBase = git(['merge-base', 'HEAD', upstream]).trim();
+    } catch {
+      // Ветки интеграции может не быть (нет remote, свежий клон) — пробуем следующую.
+      continue;
+    }
+    if (mergeBase && modifiedAgainst(mergeBase).length > 0) {
+      return { base: mergeBase, why: `рабочее дерево чисто, взята точка расхождения с ${upstream}` };
+    }
+  }
+  return { base: 'HEAD', why: 'изменений не найдено ни в дереве, ни относительно ветки интеграции' };
+}
+
+const { base: DIFF_BASE, why: BASE_REASON } = resolveDiffBase();
+console.log(`[coverage:changed] База сравнения: ${DIFF_BASE} (${BASE_REASON}).`);
+
+const modified = modifiedAgainst(DIFF_BASE);
 
 const changed = [...untracked, ...modified];
 if (changed.length === 0) {
-  console.log('[coverage:changed] Изменённых production-файлов нет — проверять нечего.');
+  // Не «ок»: пустой набор почти всегда значит, что база выбрана неверно, а не
+  // что проверять нечего. Сообщение обязано выглядеть как повод разобраться.
+  console.warn('[coverage:changed] ВНИМАНИЕ: изменённых production-файлов относительно базы НЕ НАЙДЕНО — гейт ничего не проверил.');
+  console.warn('[coverage:changed] Если правки уже закоммичены, укажите базу явно: COVERAGE_BASE=<ref> npm run coverage:changed');
   process.exit(0);
 }
 
 // Добавленные/изменённые строки модифицированного файла из unified=0 diff.
 function addedLines(rel) {
-  const diff = git(['diff', '--unified=0', 'HEAD', '--', rel]);
+  const diff = git(['diff', '--unified=0', DIFF_BASE, '--', rel]);
   const lines = new Set();
   const re = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/;
   for (const line of diff.split('\n')) {

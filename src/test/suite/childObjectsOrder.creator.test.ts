@@ -419,8 +419,14 @@ suite('ChildObjects: T-7 — консервативный режим (владе
     // "притянуть" его к позиции Attribute по алфавиту/типу тега.
     assertOk(addTag(creator, ownerXml, 'EnumValue', 'Значение1'), 'add EnumValue (тег вне канона для Catalog)');
 
+    // Порядок вызовов был [Form, Attribute, EnumValue], но Attribute(ранг0)
+    // строго МЕНЬШЕ Form(ранг2) в каноне Catalog — по тому же правилу, что и
+    // обязательный кейс «Dimension затем Resource» из T-5, Attribute обязан
+    // встать ПЕРЕД Form независимо от порядка вызовов. Проверяемое здесь
+    // свойство — что EnumValue (тег вне канона для Catalog) при этом уходит
+    // в конец, а не встраивается по каким-то своим правилам.
     const tags = directChildObjectsTagSequence(readXml(ownerXml), 'Catalog');
-    assert.deepStrictEqual(tags, ['Form', 'Attribute', 'EnumValue']);
+    assert.deepStrictEqual(tags, ['Attribute', 'Form', 'EnumValue']);
   });
 
   test('вложенный контейнер: колонка ТЧ (container=nested) — вставка в конец, БЕЗ владельческого канона (Attribute/Dimension и т.п. здесь неприменимы)', () => {
