@@ -4,12 +4,14 @@ import type { ChildTag } from '../../../domain/ChildTag';
 import { getObjectLocationFromXml } from '../../fs/MetaPathResolver';
 import type { FormatRuleset } from '../format/FormatRuleset';
 import {
+  detectRootObjectKind,
   escapeRegExp,
   findChildMetaElementRange,
   findDirectElementRanges,
   findNestingAwareElementRange,
   hasDirectChildElementNameInBlock,
 } from '../XmlUtils';
+import { resolveInsertOffset } from '../childObjects/ChildObjectsEditor';
 import {
   buildFormDescriptorXml,
   buildManagedFormXml,
@@ -41,7 +43,7 @@ export function addChildToObjectXml(xml: string, options: AddChildMetadataOption
       options.tabularSectionName,
       options.name,
       ruleset,
-      extractMetadataObjectKind(xml)
+      detectRootObjectKind(xml)
     );
   }
 
@@ -52,7 +54,7 @@ export function addChildToObjectXml(xml: string, options: AddChildMetadataOption
     return addMethodToUrlTemplateXml(xml, options.urlTemplateName, options.name);
   }
 
-  const ownerKind = extractMetadataObjectKind(xml);
+  const ownerKind = detectRootObjectKind(xml);
   if (!ownerKind) {
     return { changed: false, error: 'Не найден корневой элемент объекта метаданных.' };
   }
@@ -68,7 +70,8 @@ export function addChildToObjectXml(xml: string, options: AddChildMetadataOption
   const indent = detectChildIndent(childObjectsInner, '\t\t\t');
   const ownerName = extractObjectName(xml);
   const fragment = buildChildFragment(options.childTag, options.name, indent, ruleset, ownerKind, ownerName);
-  const replacement = buildChildObjectsReplacement({ ...childObjects, inner: childObjectsInner }, fragment, indent);
+  const insertOffset = resolveInsertOffset(childObjectsInner, ownerKind, options.childTag, 'root');
+  const replacement = buildChildObjectsReplacement({ ...childObjects, inner: childObjectsInner }, fragment, indent, insertOffset);
   const nextXml = `${xml.slice(0, childObjects.start)}${replacement}${xml.slice(childObjects.end)}`;
   return {
     changed: true,
@@ -100,7 +103,9 @@ function addColumnToTabularSectionXml(
   // Тег колонки в XML — <Attribute>, но набор свойств у неё «колоночный»
   // (без свойств заполнения), поэтому передаём kind='Column'.
   const fragment = buildTypedFieldFragment('Attribute', columnName, indent, ruleset, 'Column', ownerKind);
-  const replacement = buildChildObjectsReplacement(childObjects, fragment, indent);
+  // container='nested': это <ChildObjects> САМОЙ табличной части, а не владельца —
+  // канон владельца (справочника/регистра) к её колонкам неприменим.
+  const replacement = buildChildObjectsReplacement(childObjects, fragment, indent, resolveInsertOffset(childObjects.inner, ownerKind, 'Attribute', 'nested'));
   const nextSectionXml = `${sectionXml.slice(0, childObjects.start)}${replacement}${sectionXml.slice(childObjects.end)}`;
   return {
     changed: true,
@@ -124,7 +129,8 @@ function addMethodToUrlTemplateXml(xml: string, urlTemplateName: string, methodN
 
   const indent = detectChildIndent(childObjects.inner, '\t\t\t\t\t');
   const fragment = buildMethodFragment(methodName, indent);
-  const replacement = buildChildObjectsReplacement(childObjects, fragment, indent);
+  // container='nested': <ChildObjects> URL-шаблона, а не HTTP-сервиса.
+  const replacement = buildChildObjectsReplacement(childObjects, fragment, indent, resolveInsertOffset(childObjects.inner, 'URLTemplate', 'Method', 'nested'));
   const nextTemplateXml = `${templateXml.slice(0, childObjects.start)}${replacement}${templateXml.slice(childObjects.end)}`;
   return {
     changed: true,
@@ -307,19 +313,26 @@ function getChildObjectsBlock(xml: string): { inner: string; start: number; end:
 function buildChildObjectsReplacement(
   block: { inner: string; selfClosing: boolean },
   fragment: string,
-  indent: string
+  indent: string,
+  insertOffset: number | null
 ): string {
   const parentIndent = indent.length > 0 ? indent.slice(0, -1) : '';
   if (block.selfClosing) {
     return `<ChildObjects>\n${fragment}\n${parentIndent}</ChildObjects>`;
   }
-  return insertChildFragment(block.inner, fragment, indent);
+  return insertChildFragment(block.inner, fragment, indent, insertOffset);
 }
 
-function insertChildFragment(inner: string, fragment: string, indent: string): string {
+function insertChildFragment(inner: string, fragment: string, indent: string, insertOffset: number | null): string {
   const parentIndent = indent.length > 0 ? indent.slice(0, -1) : '';
   if (!inner.trim()) {
     return `\n${fragment}\n${parentIndent}`;
+  }
+  if (insertOffset !== null) {
+    // Смещение указывает на начало строки соседа-«потомка старшего ранга»:
+    // его собственный отступ остаётся за вставкой, ни одна существующая строка
+    // не переписывается (чистый diff «+N строк»).
+    return `${inner.slice(0, insertOffset)}${fragment}\n${inner.slice(insertOffset)}`;
   }
   const trimmedRight = inner.replace(/\s+$/, '');
   return `${trimmedRight}\n${fragment}\n${parentIndent}`;
@@ -352,10 +365,6 @@ function removeNestedSimpleChildReference(inner: string, tag: ChildTag, name: st
 
 function extractObjectName(xml: string): string | undefined {
   return /<Properties>[\s\S]*?<Name>([^<]+)<\/Name>/.exec(xml)?.[1];
-}
-
-function extractMetadataObjectKind(xml: string): string | undefined {
-  return /<MetaDataObject\b[^>]*>\s*<([A-Za-z][A-Za-z0-9]*)\b/.exec(xml)?.[1];
 }
 
 function updateMainDataCompositionSchemaIfNeeded(

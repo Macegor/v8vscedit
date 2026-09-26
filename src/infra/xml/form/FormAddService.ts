@@ -1,7 +1,9 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { findNestingAwareElementRange, writeTextFilePreservingBomAndEol } from '../XmlUtils';
+import { detectRootObjectKind, findNestingAwareElementRange, writeTextFilePreservingBomAndEol } from '../XmlUtils';
+import { resolveInsertOffset } from '../childObjects/ChildObjectsEditor';
+import { detectChildIndent } from '../creator/creatorShared';
 import { buildFormXmlFromDefinition } from './FormBuilders';
 import { generateFormDefinitionForObject } from './FormObjectGenerator';
 import {
@@ -211,19 +213,24 @@ export function registerFormInObjectXml(xml: string, formName: string): string {
   if (new RegExp(`<Form>\\s*${escapeRegExp(formName)}\\s*<\\/Form>`).test(xml)) {
     return xml;
   }
-  const formLine = `\t\t\t<Form>${escapeXml(formName)}</Form>`;
   const childObjects = findNestingAwareElementRange(xml, 'ChildObjects');
   if (!childObjects) {
     throw new Error('Не найден ChildObjects в XML объекта.');
   }
   const openTag = xml.slice(childObjects.start, childObjects.openEnd);
   if (/\/>\s*$/.test(openTag)) {
-    return `${xml.slice(0, childObjects.start)}<ChildObjects>\n${formLine}\n\t\t</ChildObjects>${xml.slice(childObjects.end)}`;
+    return `${xml.slice(0, childObjects.start)}<ChildObjects>\n\t\t\t<Form>${escapeXml(formName)}</Form>\n\t\t</ChildObjects>${xml.slice(childObjects.end)}`;
   }
   const inner = xml.slice(childObjects.openEnd, childObjects.closeStart);
-  const insertBefore = /(\n\s*<(?:Template|TabularSection)>)/.exec(inner);
-  const nextInner = insertBefore
-    ? `${inner.slice(0, insertBefore.index)}\n${formLine}${inner.slice(insertBefore.index)}`
+  const formLine = `${detectChildIndent(inner, '\t\t\t')}<Form>${escapeXml(formName)}</Form>`;
+  // Позиция формы — общий канон порядка по виду владельца (у документа форма
+  // идёт ДО табличных частей, у справочника — после). Прежнее локальное правило
+  // «перед первым <Template>/<TabularSection>» было наполовину мёртвым:
+  // табличная часть сериализуется блоком `<TabularSection uuid="…">`, поэтому
+  // literal-альтернатива без атрибутов не срабатывала никогда.
+  const insertOffset = resolveInsertOffset(inner, detectRootObjectKind(xml), 'Form', 'root');
+  const nextInner = insertOffset !== null
+    ? `${inner.slice(0, insertOffset)}${formLine}\n${inner.slice(insertOffset)}`
     : `${inner.trimEnd()}\n${formLine}\n\t\t`;
   return `${xml.slice(0, childObjects.openEnd)}${nextInner}${xml.slice(childObjects.closeStart)}`;
 }

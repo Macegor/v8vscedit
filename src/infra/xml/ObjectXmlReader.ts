@@ -6,6 +6,7 @@ import {
   getStandardAttributePresentation,
 } from '../../domain/StandardAttribute';
 import {
+  detectRootObjectKind,
   escapeXmlText,
   extractStandardAttributeXml,
   extractSimpleTag,
@@ -323,7 +324,9 @@ export class ObjectXmlReader {
       options.typeInnerXml,
       options.propertyName ?? 'Type',
       isTypedFieldRole(options.targetKind) ? options.targetKind : undefined,
-      detectRootObjectKind(xml)
+      // allowBareRoot: сюда попадает и XML-фрагмент без обёртки <MetaDataObject>
+      // (вложенный объект/описатель формы) — вид берём из его собственного корня.
+      detectRootObjectKind(xml, true)
     );
     if (updatedTarget === targetXml) {
       return false;
@@ -607,16 +610,6 @@ function detectPropertyBlockIndent(elementXml: string, propertyName: string): st
   const blocks = collectPropertyBlocks(properties.inner);
   const own = blocks.find((block) => block.key === propertyName);
   return own && own.indent.length > 0 ? own.indent : detectPropertyIndent(blocks, DEFAULT_PROPERTY_INDENT);
-}
-
-/**
- * Вид объекта из корня ФАЙЛА (`InformationRegister`, `Catalog`, …) — им задаётся
- * состав свойств дочерних полей вместе с их ролью.
- */
-function detectRootObjectKind(xml: string): string | undefined {
-  const text = xml.trimStart().replace(/^<\?xml\b[\s\S]*?\?>\s*/, '');
-  return /^<MetaDataObject\b[^>]*>\s*<([A-Za-z][A-Za-z0-9]*)\b/.exec(text)?.[1]
-    ?? /^<([A-Za-z][A-Za-z0-9]*)\b/.exec(text)?.[1];
 }
 
 function isRootTypeTargetKind(kind: string): boolean {

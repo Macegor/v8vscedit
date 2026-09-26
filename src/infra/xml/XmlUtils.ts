@@ -147,8 +147,13 @@ function findFirstElementRange(xml: string, tagName: string): XmlElementRange | 
   return findNestingAwareElementRange(xml, tagName);
 }
 
-export function findDirectElementRanges(xml: string, tagName: string): { start: number; end: number }[] {
-  const ranges: { start: number; end: number }[] = [];
+/**
+ * ВСЕ прямые (верхнего уровня) элементы фрагмента в ДОКУМЕНТНОМ порядке, вместе
+ * с именем тега. Нужен там, где важна последовательность разнотипных детей
+ * (порядок в `<ChildObjects>`), а не поиск одного тега.
+ */
+export function findDirectElementEntries(xml: string): { tag: string; start: number; end: number }[] {
+  const entries: { tag: string; start: number; end: number }[] = [];
   const tagRe = /<\/?([A-Za-z_][\w:.-]*)(?:\s[^<>]*)?\/?>/g;
   let depth = 0;
   let current: { tag: string; start: number } | null = null;
@@ -160,16 +165,16 @@ export function findDirectElementRanges(xml: string, tagName: string): { start: 
     if (text.startsWith('</')) {
       depth = Math.max(0, depth - 1);
       if (depth === 0 && current?.tag === name) {
-        ranges.push({ start: current.start, end: match.index + text.length });
+        entries.push({ tag: name, start: current.start, end: match.index + text.length });
         current = null;
       }
       continue;
     }
 
     const selfClosing = text.endsWith('/>');
-    if (depth === 0 && name === tagName) {
+    if (depth === 0) {
       if (selfClosing) {
-        ranges.push({ start: match.index, end: match.index + text.length });
+        entries.push({ tag: name, start: match.index, end: match.index + text.length });
       } else {
         current = { tag: name, start: match.index };
       }
@@ -179,7 +184,41 @@ export function findDirectElementRanges(xml: string, tagName: string): { start: 
     }
   }
 
-  return ranges;
+  return entries;
+}
+
+export function findDirectElementRanges(xml: string, tagName: string): { start: number; end: number }[] {
+  return findDirectElementEntries(xml)
+    .filter((entry) => entry.tag === tagName)
+    .map(({ start, end }) => ({ start, end }));
+}
+
+/**
+ * Вид объекта метаданных из КОРНЯ файла (`Catalog`, `InformationRegister`, …) —
+ * тег, вложенный в `<MetaDataObject>`. Им задаются и состав свойств дочерних
+ * полей, и канон порядка `<ChildObjects>`, поэтому реализация одна на всех
+ * потребителей (ObjectXmlReader, генератор дочерних элементов, FormAddService,
+ * заимствование в расширение).
+ *
+ * @param allowBareRoot Считать видом сам корневой тег, если обёртки
+ *   `<MetaDataObject>` нет (нестандартный файл/фрагмент). По умолчанию
+ *   выключено: вызывающий, который дальше ищет `<ChildObjects>` ВЛАДЕЛЬЦА,
+ *   обязан отличать «это вообще не файл объекта метаданных» от «объект без
+ *   детей», иначе первая ошибка маскируется второй.
+ */
+export function detectRootObjectKind(xml: string, allowBareRoot = false): string | undefined {
+  const text = xml.trimStart().replace(/^<\?xml\b[\s\S]*?\?>\s*/, '');
+  const wrapped = /^<MetaDataObject\b[^>]*>\s*<([A-Za-z][A-Za-z0-9]*)\b/.exec(text)?.[1];
+  if (wrapped !== undefined || !allowBareRoot) {
+    return wrapped;
+  }
+  /* c8 ignore next 3 — защитная ветка без достижимого вызывающего: единственный
+     потребитель `allowBareRoot` (ObjectXmlReader.updateType) читает файл объекта
+     метаданных по пути из MetaPathResolver, а такой файл всегда обёрнут
+     <MetaDataObject>. Ветка сохранена как поведение прежней приватной копии
+     функции (замена её на `return undefined` — отдельное решение, не косметика
+     консолидации). */
+  return /^<([A-Za-z][A-Za-z0-9]*)\b/.exec(text)?.[1];
 }
 
 /**
