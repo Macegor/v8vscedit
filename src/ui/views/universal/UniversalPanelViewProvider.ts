@@ -774,8 +774,8 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
       add('v8vscedit.showConfigActions', 'Команды конфигурации/расширения', codicon('tools'));
       add('v8vscedit.importConfigurationFromDb', 'Импортировать из базы', codicon('cloud-download'));
       add('v8vscedit.updateConfigurationInDb', 'Обновить в базе', codicon('sync'));
-      add('v8vscedit.dumpConfigurationToCf', 'Выгрузить в CF-файл', codicon('package'));
-      add('v8vscedit.loadConfigurationFromCf', 'Загрузить из CF-файла', codicon('folder-opened'));
+      add('v8vscedit.dumpConfigurationToCf', 'Выгрузить в файл', codicon('package'));
+      add('v8vscedit.loadConfigurationFromCf', 'Загрузить из файла', codicon('folder-opened'));
     }
     if (ctxValue.startsWith('extensions-root')) {
       add('v8vscedit.connectExtension', 'Подключить расширение', codicon('plug'));
