@@ -74,7 +74,7 @@ export function buildEmptyRightsXml(formatVersion: string): string {
 
 export function buildBusinessProcessFlowchartXml(formatVersion: string): string {
   return [
-    '<?xml version="1.0" encoding="utf-8"?>',
+    '<?xml version="1.0" encoding="UTF-8"?>',
     `<Flowchart xmlns="http://v8.1c.ru/8.3/MDClasses" version="${formatVersion}"/>`,
     '',
   ].join('\n');
@@ -126,7 +126,7 @@ export function buildManagedFormXml(formatVersion: string): string {
 
 export function buildTemplateXml(name: string, formatVersion: string, templateType: TemplateType, ruleset: FormatRuleset): string {
   return [
-    '<?xml version="1.0" encoding="utf-8"?>',
+    '<?xml version="1.0" encoding="UTF-8"?>',
     `<MetaDataObject ${ruleset.metaDataObjectXmlns} version="${formatVersion}">`,
     `\t<Template uuid="${newUuid()}">`,
     '\t\t<Properties>',
@@ -143,7 +143,7 @@ export function buildTemplateXml(name: string, formatVersion: string, templateTy
 
 function buildSpreadsheetDocumentTemplateXml(): string {
   return [
-    '<?xml version="1.0" encoding="utf-8"?>',
+    '<?xml version="1.0" encoding="UTF-8"?>',
     '<document xmlns="http://v8.1c.ru/8.2/data/spreadsheet" xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">',
     '\t<languageSettings>',
     '\t\t<currentLanguage>ru</currentLanguage>',
@@ -164,7 +164,7 @@ function buildSpreadsheetDocumentTemplateXml(): string {
 
 function buildDataCompositionSchemaTemplateXml(): string {
   return [
-    '<?xml version="1.0" encoding="utf-8"?>',
+    '<?xml version="1.0" encoding="UTF-8"?>',
     '<DataCompositionSchema xmlns="http://v8.1c.ru/8.1/data-composition-system/schema"',
     '\t\txmlns:dcscom="http://v8.1c.ru/8.1/data-composition-system/common"',
     '\t\txmlns:dcscor="http://v8.1c.ru/8.1/data-composition-system/core"',
@@ -184,7 +184,7 @@ function buildDataCompositionSchemaTemplateXml(): string {
 
 function buildHtmlTemplateDescriptorXml(formatVersion: string): string {
   return [
-    '<?xml version="1.0" encoding="utf-8"?>',
+    '<?xml version="1.0" encoding="UTF-8"?>',
     `<Help xmlns="http://v8.1c.ru/8.3/xcf/extrnprops" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="${formatVersion}">`,
     '\t<Page>ru</Page>',
     '</Help>',
@@ -209,7 +209,7 @@ function buildHtmlDocumentTemplate(): string {
 
 function buildDataCompositionAppearanceTemplateXml(): string {
   return [
-    '<?xml version="1.0" encoding="utf-8"?>',
+    '<?xml version="1.0" encoding="UTF-8"?>',
     '<AppearanceTemplate xmlns="http://v8.1c.ru/8.1/data-composition-system/appearance-template" xmlns:dcscor="http://v8.1c.ru/8.1/data-composition-system/core" xmlns:pal="http://v8.1c.ru/8.1/data/ui/colors/palette" xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:sys="http://v8.1c.ru/8.1/data/ui/fonts/system" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:web="http://v8.1c.ru/8.1/data/ui/colors/web" xmlns:win="http://v8.1c.ru/8.1/data/ui/colors/windows" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">',
     '</AppearanceTemplate>',
     '',
@@ -218,7 +218,7 @@ function buildDataCompositionAppearanceTemplateXml(): string {
 
 function buildGraphicalSchemaTemplateXml(formatVersion: string): string {
   return [
-    '<?xml version="1.0" encoding="utf-8"?>',
+    '<?xml version="1.0" encoding="UTF-8"?>',
     `<GraphicalSchema xmlns="http://v8.1c.ru/8.3/xcf/scheme" xmlns:pal="http://v8.1c.ru/8.1/data/ui/colors/palette" xmlns:sch="http://v8.1c.ru/8.2/data/graphscheme" xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:web="http://v8.1c.ru/8.1/data/ui/colors/web" xmlns:win="http://v8.1c.ru/8.1/data/ui/colors/windows" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="${formatVersion}">`,
     '\t<BackColor>style:FieldBackColor</BackColor>',
     '\t<GridEnabled>false</GridEnabled>',

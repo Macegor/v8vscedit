@@ -15,7 +15,7 @@ import {
 
 export function buildRootObjectXml(kind: MetaKind, name: string, formatVersion: string, ruleset: FormatRuleset, templateType?: TemplateType): string {
   const parts = [
-    '<?xml version="1.0" encoding="utf-8"?>',
+    '<?xml version="1.0" encoding="UTF-8"?>',
     `<MetaDataObject ${ruleset.metaDataObjectXmlns} version="${formatVersion}">`,
     `\t<${kind} uuid="${newUuid()}">`,
     buildInternalInfo(kind, name, '\t\t', ruleset),
