@@ -50,7 +50,21 @@ suite('Status-bar счётчик активных операций — Extension
   // подставить контролируемый StatusBarItem вместо реального UI без `any`.
   const windowRef = vscode.window as { createStatusBarItem: typeof vscode.window.createStatusBarItem };
 
-  setup(() => {
+  setup(async () => {
+    // Синглтон statusBarItem — МОДУЛЬНЫЙ (не только между тестами ВНУТРИ этого
+    // файла, но и между ЛЮБЫМИ файлами сьюта, исполняющимися в одном процессе
+    // Extension Host). Если какой-то файл, отработавший РАНЬШЕ этого (порядок
+    // зависит от того, как раннер собирает `*.test.js` — при дроблении на
+    // шарды порядок меняется), успел вызвать setConfigurationOperationStatus
+    // и не задиспозить результат, `statusBarItem` уже ненулевой на момент
+    // старта этого теста. Тогда `ensureStatusBarItem()` внутри первого же
+    // вызова теста НЕ вызовет (уже подменённую ниже) фабрику
+    // `createStatusBarItem` — `fakeItems` останется пустым, и тест ложно
+    // падает на `assert.ok(item, 'статус-бар должен быть создан...')`,
+    // хотя сам счётчик активных операций работает верно. Сброс синглтона ЗДЕСЬ
+    // (а не только в teardown, как было) делает тест не зависящим от того,
+    // какие файлы исполнялись до него.
+    await disposeCachedAgentOperationServices();
     fakeItems = [];
     originalCreateStatusBarItem = vscode.window.createStatusBarItem;
     windowRef.createStatusBarItem = () => {

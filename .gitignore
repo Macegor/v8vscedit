@@ -11,8 +11,11 @@ node_modules/
 dist/
 out/
 *.vsix
-coverage/
-coverage-*
+# Привязка к корню обязательна: без ведущего слэша шаблон совпадает с ЛЮБЫМ
+# каталогом coverage на любой глубине и молча прячет, например, тестовые
+# фикстуры src/test/fixtures/coverage/.
+/coverage/
+/coverage-*
 
 # Примеры конфигураций (только для справки, не для VCS)
 example2/

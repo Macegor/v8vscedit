@@ -164,7 +164,10 @@ export default tseslint.config(
     },
   },
   {
-    files: ['*.js', '*.mjs'],
+    // Корневые скрипты и модули гейта покрытия: без этого блока плоский glob
+    // `*.mjs` не достаёт вложенные scripts/patch-coverage/**, и линт требует
+    // прагму /* global */ в каждом таком файле.
+    files: ['*.js', '*.mjs', 'scripts/**/*.mjs'],
     languageOptions: {
       ecmaVersion: 2020,
       globals: nodeGlobals,

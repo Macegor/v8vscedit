@@ -16,6 +16,7 @@
   ],
   "extension": [
     ".js",
+    ".mjs",
     ".ts"
   ],
   "exclude-after-remap": false,
