@@ -173,7 +173,10 @@ src/
 │   ├── environment/                  # bsl-analyzer.toml, окружение проекта, реестр баз
 │   ├── cfFile/                       # CfFileArgs (вектор аргументов /DumpCfg,/LoadCfg),
 │   │                                  # CfFileValidation (guard'ы: суффикс, staging-путь,
-│   │                                  # запрет -AllExtensions) — см. docs/architecture.md
+│   │                                  # запрет -AllExtensions, DUMP_STAGING_SUFFIX — маркер
+│   │                                  # принадлежности staging-файла), CfeBatch* (пакетная
+│   │                                  # выгрузка/загрузка всех расширений: Naming/Manifest/
+│   │                                  # Plan/Report) — см. docs/architecture.md
 │   ├── process/                      # поиск платформы, spawn, декодер OEM/Win1251,
 │   │                                  # SensitiveArgs (маскирование -Password в логах)
 │   ├── mcp/                          # McpServerIdentity/McpStartDecision/McpPortProbe/
@@ -494,7 +497,15 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
   для выгрузки — `CfFileValidation.resolveDumpStagingPath` (перенос на целевой путь только при
   `exitCode === 0`), а не прямая запись в целевой файл. Post-mutation путь для `load`-операции —
   СОЗНАТЕЛЬНОЕ отклонение от общего (см. architecture.md выше), не «чинить» его к единому пути без
-  повторного замера платформы.
+  повторного замера платформы. **Пакетная версия такой операции («все расширения базы»)** — ЦИКЛ по
+  именам из `/DumpDBCfgList -AllExtensions`, а не флаг `/DumpCfg`/`/LoadCfg` (у них ключа нет, платформа
+  принимает его молча и работает с ОСНОВНОЙ конфигурацией); вектор КАЖДОЙ итерации сверяется поэлементно,
+  включая «`-AllExtensions` есть ровно у `/DumpDBCfgList`». Политики отказа разные намеренно: dump
+  продолжается после сбоя одного расширения, load останавливается на первом с `failedAt`/
+  `stateUncertain`; манифест `cfe-dump.json` описывает только ТЕКУЩИЙ прогон (не сливать записи прошлых);
+  staging-остаток опознаётся по маркеру `DUMP_STAGING_SUFFIX`, а не по форме суффикса; перенос staging —
+  `moveStagingToTarget` из `cli/core/onecCommon.ts`, второй копии temp+rename не заводить. Подробности и
+  обоснования — [architecture.md](./docs/architecture.md#пакетный-случай-все-расширения-базы-одной-операцией-dump-cfe-allload-cfe-all).
 - **Открытие BSL-модулей:** только реальные `file://` документы (виртуальная схема `onec://` удалена). Readonly — через `ui/readonly/BslReadonlyGuard.ts`.
 - **Изменение жизненного цикла/безопасности встроенного MCP-сервера** (порт, идентичность процесса,
   graceful shutdown, Host/Origin, отличается от «новый MCP-инструмент» из раздела выше): чистая логика —
