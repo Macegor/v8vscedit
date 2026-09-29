@@ -5,6 +5,7 @@ import * as path from 'path';
 import { ObjectXmlReader } from '../../infra/xml/ObjectXmlReader';
 import { ensureStandardAttributeXml } from '../../infra/xml/XmlUtils';
 import { buildRootMetaObjectProperties } from '../../ui/views/properties/PropertyBuilder';
+import { skipWithoutCorpus } from './support/corpus';
 
 const EXAMPLE_CF = path.resolve(__dirname, '../../../example/2.20/src/cf');
 const objectReader = new ObjectXmlReader();
@@ -29,6 +30,12 @@ function findFirstCatalogWithoutStandardAttributes(): string | null {
 }
 
 suite('Properties — справочник', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('Показывает свойства справочника по разделам конфигуратора', () => {
     // Тест проверяет наличие ключевых свойств, общих для любого справочника;
     // конкретные значения зависят от выгрузки и не проверяются.

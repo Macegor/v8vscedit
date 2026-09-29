@@ -6,6 +6,7 @@ import {
   extractMethodXmlFromUrlTemplate,
   findMethodRangeInUrlTemplate,
 } from '../../infra/xml/XmlUtils';
+import { skipWithoutCorpus } from './support/corpus';
 
 const SERVICE_ENTRY_XML = path.resolve(__dirname, '../../../example/2.21/src/cf/HTTPServices/ServiceEntry.xml');
 
@@ -18,6 +19,12 @@ const SERVICE_ENTRY_XML = path.resolve(__dirname, '../../../example/2.21/src/cf/
  * характеризацию/регресс.
  */
 suite('XmlUtils — извлечение Method из URLTemplate (донор ServiceEntry.xml)', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('extractChildMetaElementXml("URLTemplate", "PostEntries") отдаёт блок с <Template>/post/entries</Template>', () => {
     const xml = fs.readFileSync(SERVICE_ENTRY_XML, 'utf-8');
     const block = extractChildMetaElementXml(xml, 'URLTemplate', 'PostEntries');

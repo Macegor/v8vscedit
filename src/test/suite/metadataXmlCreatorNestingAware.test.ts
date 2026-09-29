@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { MetadataXmlCreator } from '../../infra/xml/MetadataXmlCreator';
+import { skipWithoutCorpus } from './support/corpus';
 
 // Реальная фикстура с BOM+CRLF — существующий справочник "Контрагенты" из example/2.20,
 // у которого есть реквизит "Регион". Используется для проверки инварианта №12
@@ -29,6 +30,12 @@ function buildConfigXml(): string {
 }
 
 suite('MetadataXmlCreator — вставка дочерних элементов не путает блоки при вложенности/подстроках имён (M1)', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('Attribute с именем — подстрокой имени существующего реквизита — вставляется как отдельный элемент, не подменяя существующий', () => {
     assert.strictEqual(EXAMPLE_CATALOG_WITH_BOM_CRLF.length > 0, true);
     const originalXml = fs.readFileSync(EXAMPLE_CATALOG_WITH_BOM_CRLF, 'utf-8');

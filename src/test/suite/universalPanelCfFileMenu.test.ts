@@ -41,6 +41,7 @@ import { GitMetadataStatusService } from '../../infra/git/GitMetadataStatusServi
 import { MetadataTreeProvider } from '../../ui/tree/MetadataTreeProvider';
 import { UniversalPanelViewProvider } from '../../ui/views/universal/UniversalPanelViewProvider';
 import { tryRequireProductionModule } from './support/tryRequireProductionModule';
+import { skipWithoutCorpus } from './support/corpus';
 
 const EXTENSION_ROOT = path.resolve(__dirname, '../../../');
 const CF_ROOT = path.resolve(__dirname, '../../../example/2.20/src/cf');
@@ -138,6 +139,12 @@ function actionCommands(node: TreeNodeDtoLike): string[] {
 }
 
 suite('UniversalPanelViewProvider — пункты меню CF-файла в контекстном меню корня (новое требование)', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   let cacheRoot: string;
   let treeProvider: MetadataTreeProvider;
   let provider: UniversalPanelViewProvider;

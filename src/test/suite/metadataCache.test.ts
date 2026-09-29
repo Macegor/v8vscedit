@@ -13,6 +13,7 @@ import {
 import { getObjectLocationFromXml } from '../../infra/fs/MetaPathResolver';
 import { parseConfigXml } from '../../infra/xml';
 import { MetadataXmlCreator } from '../../infra/xml/MetadataXmlCreator';
+import { skipWithoutCorpus } from './support/corpus';
 
 const EXAMPLE_CFE_ROOT = path.resolve(__dirname, '../../../example/2.21/src/cfe');
 const EXAMPLE_CF = path.resolve(__dirname, '../../../example/2.20/src/cf');
@@ -34,6 +35,12 @@ function findFirstCfeRoot(): string | null {
 }
 
 suite('MetadataCache', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('Для объектов с плоским XML Git-декорация учитывает XML и каталог объекта', function () {
     // Проверяем инвариант на любой доступной конфигурации: либо CFE из example/2.21/src/cfe,
     // либо CF из example/2.20/src/cf — оба сценария содержат плоские XML объекты с боковым каталогом.

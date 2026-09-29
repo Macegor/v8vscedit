@@ -11,6 +11,7 @@ import * as path from 'path';
 // графа для чтения содержимого файла на любом коммите истории, не только
 // HEAD/индексе. `readBlobAtRef` ещё не реализован — импорт обязан провалиться.
 import { readBlobAtHead, readBlobAtIndex, readBlobAtRef } from '../../infra/git/GitBlobReader';
+import { skipWithoutCorpus } from './support/corpus';
 
 const FIXTURE_BSL = path.resolve(
   __dirname,
@@ -22,6 +23,12 @@ function git(repo: string, args: string[]): string {
 }
 
 suite('GitBlobReader — чтение содержимого blob из HEAD и индекса', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   let repo: string;
   let filePath: string;
   let baselineContent: string;
@@ -96,6 +103,12 @@ suite('GitBlobReader — чтение содержимого blob из HEAD и �
 });
 
 suite('GitBlobReader — readBlobAtRef: чтение содержимого на произвольном ref/commit-ish', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   let repo: string;
   let filePath: string;
   let v1Content: string;

@@ -10,8 +10,15 @@ import * as path from 'path';
 import { readGitLog } from '../../infra/git/GitLogReader';
 import type { RawCommit } from '../../infra/git/GitLogParser';
 import { buildHistoryRepo, removeHistoryRepo } from './support/changesFixtures';
+import { skipWithoutCorpus } from './support/corpus';
 
 suite('GitLogReader — readGitLog: реальный запуск `git log` для графа истории', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   let fixture: ReturnType<typeof buildHistoryRepo>;
 
   suiteSetup(() => {

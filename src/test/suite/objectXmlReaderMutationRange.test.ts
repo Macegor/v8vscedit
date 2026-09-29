@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { ObjectXmlReader } from '../../infra/xml/ObjectXmlReader';
+import { skipWithoutCorpus } from './support/corpus';
 
 const EXAMPLE_CF_220 = path.resolve(__dirname, '../../../example/2.20/src/cf');
 
@@ -17,6 +18,12 @@ const DOCUMENT_WITH_DUPLICATE_TYPES = path.join(EXAMPLE_CF_220, 'Documents', 'П
 const SESSION_PARAMETER_XML = path.join(EXAMPLE_CF_220, 'SessionParameters', 'ТекущийПользователь.xml');
 
 suite('ObjectXmlReader — мутация по диапазону, а не по значению (X2)', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('updateTypeInObject меняет тип ВТОРОЙ колонки ТЧ с текстуально совпадающим Type-блоком; первая нетронута; BOM/EOL сохранены', () => {
     const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-x2-column-'));
     const xmlPath = path.join(configRoot, 'ПриходТовара.xml');

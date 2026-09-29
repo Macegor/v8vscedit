@@ -29,10 +29,17 @@ import {
   type ChangesFixture,
   type HistoryFixture,
 } from './support/changesFixtures';
+import { skipWithoutCorpus } from './support/corpus';
 
 // ─── loadHistoryState ────────────────────────────────────────────────────
 
 suite('historyGraphController — loadHistoryState: readGitLog + assignLanes + buildHistoryGraphState на реальном ветвлении+merge', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   let fixture: HistoryFixture;
 
   suiteSetup(() => {
@@ -91,6 +98,12 @@ suite('historyGraphController — loadHistoryState: readGitLog + assignLanes + b
 // ─── loadCommitChanges / resolveCommitDiff ──────────────────────────────
 
 suite('historyGraphController — loadCommitChanges: агрегирует readCommitChanges(isRoot) в ChangesModel на реальном объекте метаданных', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   let fixture: ChangesFixture;
 
   setup(() => {

@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { FormToolsService } from '../../infra/xml';
 import { EXAMPLE_ROOT, findAllFormXmlFiles, hasFormCorpus, writeFormCopy } from './support/formFixtures';
+import { skipWithoutCorpus } from './support/corpus';
 
 /**
  * Поведенческие тесты `FormValidateService.validate()` после переноса секций
@@ -63,6 +64,12 @@ function shortLabel(formPath: string): string {
 const service = new FormToolsService();
 
 suite('FormValidateService — T-8: воспроизведение дефекта (служебные теги невидимы для дублей)', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('подмена id обычного InputField на id служебного ContextMenu внутри Table → validate() обязан обнаружить дубль', () => {
     const donor = readFixture(RASHODY_FORM);
 
@@ -121,6 +128,12 @@ suite('FormValidateService — T-9: регресс «ноль ложных ср�
 });
 
 suite('FormValidateService — T-10: гейт по 11 новым тегам на формах-носителях', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   for (const carrier of NEW_FIELD_CARRIER_FORMS) {
     test(`[ERROR]-строки не содержат имена новых тегов: ${carrier.tag} (${shortLabel(carrier.formPath)})`, () => {
       const result = service.validate({ formPath: carrier.formPath, detailed: false });
@@ -238,6 +251,12 @@ suite('FormValidateService — T-12: точный контракт сообще�
 });
 
 suite('FormValidateService — T-13/T-14: OK-строки, счётчики, detailed', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('T-13a: чистая форма (РасходыПриИмпорте) — все 4 OK-строки с точными golden-числами', () => {
     // Golden-числа сверены независимо (grep + python xml.etree, см. подготовку
     // задачи): 342 element-записи (id != "-1"), 36 attribute-записей,
@@ -334,6 +353,12 @@ suite('FormValidateService — T-15: инвариант maxErrors/stopped', () =
 });
 
 suite('FormValidateService — T-16: BaseForm-иммунитет', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('T-16a: реальная CFE-форма Пользователи (own+BaseForm с зеркальными id) даёт 0 Duplicate-ошибок', () => {
     const result = service.validate({ formPath: POLZOVATELI_CFE_FORM, detailed: true });
     assert.deepStrictEqual(result.lines.filter((l) => l.includes('Duplicate')), [], result.lines.join('\n'));

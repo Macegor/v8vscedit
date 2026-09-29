@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { GitMetadataStatusService } from '../../infra/git/GitMetadataStatusService';
+import { skipWithoutCorpus } from './support/corpus';
 
 /**
  * Дополняет `gitMetadataStatusServiceCharacterization.test.ts` (сфокусирован на
@@ -48,6 +49,12 @@ function buildBaselineRepo(): { repo: string; catalogsDir: string; xmlPath: stri
 }
 
 suite('GitMetadataStatusService — дополнительное покрытие (clear/invalidate/child/group/directory)', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('clear() сбрасывает весь кэш: устаревший статус до вызова, актуальный — после', () => {
     const { repo, xmlPath } = buildBaselineRepo();
     try {

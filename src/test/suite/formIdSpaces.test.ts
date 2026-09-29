@@ -9,6 +9,7 @@ import {
 } from '../../infra/xml/form/FormIdSpaces';
 import type { FormIdSpace, IdSpaceKind } from '../../infra/xml/form/FormIdSpaces';
 import { EXAMPLE_ROOT, findAllFormXmlFiles } from './support/formFixtures';
+import { skipWithoutCorpus } from './support/corpus';
 
 /**
  * Юнит-тесты нового чистого модуля `FormIdSpaces` — сердца исправления дефекта
@@ -35,6 +36,12 @@ function findSpace(spaces: readonly FormIdSpace[], kind: IdSpaceKind): FormIdSpa
 }
 
 suite('FormIdSpaces — splitBaseForm', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('T-1a: форма без BaseForm — own===xml, baseForm===null', () => {
     const xml = readFixture(OSTATKI_FORM);
     const { own, baseForm } = splitBaseForm(xml);
@@ -82,6 +89,12 @@ suite('FormIdSpaces — splitBaseForm', () => {
 });
 
 suite('FormIdSpaces — collectIdSpaces: базовые пространства', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('T-2: element vs attribute — пересечение id=3 между разными пространствами не дублируется', () => {
     // Реальный донор (61 строка): элементы UsualGroup=1, ExtendedTooltip=2,
     // SpreadSheetDocumentField=3, ContextMenu=4, ExtendedTooltip=5 (проверено grep).
@@ -142,6 +155,12 @@ suite('FormIdSpaces — collectIdSpaces: базовые пространства
 });
 
 suite('FormIdSpaces — collectIdSpaces: граничные случаи сканера', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   // BOM и CRLF — реальные свойства донора (ОстаткиТоваровНаСкладах хранится с
   // BOM и CRLF на диске, см. `file` в шелле), поэтому для этих двух случаев
   // достаточно точечной мутации реального файла, а не выдуманного фрагмента.
@@ -247,6 +266,12 @@ suite('FormIdSpaces — collectIdSpaces: граничные случаи ска�
 });
 
 suite('FormIdSpaces — maxIdByKind', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('T-6a: element-максимум учитывает ColumnGroup id=180 на реальной CFE-форме', () => {
     const xml = readFixture(POLZOVATELI_CFE_FORM);
     const m = maxIdByKind(xml);
@@ -277,6 +302,12 @@ suite('FormIdSpaces — maxIdByKind', () => {
 });
 
 suite('FormIdSpaces — детерминизм', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('T-7: entries идут в документном порядке (offset монотонно растёт), повторный вызов идентичен', () => {
     const xml = readFixture(RASHODY_FORM);
     const spaces1 = collectIdSpaces(xml);
@@ -295,6 +326,12 @@ suite('FormIdSpaces — детерминизм', () => {
 });
 
 suite('FormIdSpaces — широкий sweep по корпусу example/ (регресс «ноль ложных срабатываний»)', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('T-11: 0 коллизий во всех пространствах на детерминированной подвыборке ~10% файлов example/', function () {
     this.timeout(60000);
     // Полный корпус — 6329 файлов Form.xml (~239 МБ). Чтобы уложиться в разумный

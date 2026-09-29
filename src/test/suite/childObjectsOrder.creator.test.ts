@@ -17,6 +17,7 @@ import {
   directChildObjectsEntries,
   directChildObjectsTagSequence,
 } from './support/childObjectsCorpus';
+import { skipWithoutCorpus } from './support/corpus';
 
 /**
  * Задача «порядок дочерних элементов в `<ChildObjects>` по виду владельца +
@@ -295,6 +296,12 @@ suite('ChildObjects: T-5 (КЛЮЧЕВОЙ) — итог НЕ зависит о�
 // ── T-6: пред-существующие теги вне API создания (AccountingFlag/ExtDimensionAccountingFlag/Column) ──
 
 suite('ChildObjects: T-6 — вставка относительно существующих тегов, которые мы НЕ создаём (реальный эталон)', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('ChartOfAccounts (реальный файл example/2.20/.../Хозрасчетный.xml): добавляемая ТЧ встаёт ПЕРЕД AccountingFlag, форма — ПОСЛЕ ExtDimensionAccountingFlag', function () {
     const sourcePath = path.resolve(__dirname, '../../../example/2.20/src/cf/ChartsOfAccounts/Хозрасчетный.xml');
     if (!fs.existsSync(sourcePath)) {

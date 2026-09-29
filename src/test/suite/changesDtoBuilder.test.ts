@@ -32,6 +32,7 @@ import {
   removeFixtureRepo,
   type ChangesFixture,
 } from './support/changesFixtures';
+import { skipWithoutCorpus } from './support/corpus';
 
 /**
  * Фейковый резолвер иконок — единственная внешняя зависимость builder'а
@@ -61,6 +62,12 @@ function groupIndex(model: ChangesModel, side: 'staged' | 'unstaged', canonicalP
 }
 
 suite('changesDtoBuilder — buildObjectNode/buildPartNode строят TreeNodeDto объекта и его частей', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   let fixture: ChangesFixture;
 
   setup(() => {
@@ -302,6 +309,12 @@ suite('changesDtoBuilder — buildObjectNode/buildPartNode строят TreeNode
 });
 
 suite('changesDtoBuilder — buildOtherSection строит плоскую секцию «Прочие» из RawChange', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   let fixture: ChangesFixture;
 
   setup(() => {
@@ -369,6 +382,12 @@ suite('changesDtoBuilder — buildOtherSection строит плоскую се�
 });
 
 suite('changesDtoBuilder — resolveChangeAddress восстанавливает адрес узла по id', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   let fixture: ChangesFixture;
 
   setup(() => {

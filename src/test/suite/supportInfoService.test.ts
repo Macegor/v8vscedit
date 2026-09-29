@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { SupportInfoService, SupportMode } from '../../infra/support/SupportInfoService';
 import type { Logger } from '../../infra/support/Logger';
+import { skipWithoutCorpus } from './support/corpus';
 
 const EXAMPLE_CF = path.resolve(__dirname, '../../../example/2.20/src/cf');
 
@@ -15,6 +16,12 @@ class TestLogger implements Logger {
 }
 
 suite('SupportInfoService', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('Трактует код 1 из ParentConfigurations.bin как редактирование с сохранением поддержки', function () {
     // Тест требует наличия ParentConfigurations.bin в example/. В минимальной
     // выгрузке без поддержки бинарника нет — тогда тест неприменим, а сервис

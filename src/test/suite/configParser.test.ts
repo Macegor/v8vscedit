@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { ConfigXmlReader } from '../../infra/xml/ConfigXmlReader';
 import { ObjectXmlReader } from '../../infra/xml/ObjectXmlReader';
+import { skipWithoutCorpus } from './support/corpus';
 
 const EXAMPLE_CFE_ROOT = path.resolve(__dirname, '../../../example/2.21/src/cfe');
 const EXAMPLE_CF = path.resolve(__dirname, '../../../example/2.20/src/cf');
@@ -35,6 +36,12 @@ function firstChildObject(cfeRoot: string, tag: string): string | null {
 }
 
 suite('ConfigParser — Configuration.xml', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('Парсит имя и namePrefix расширения CFE', function () {
     const cfeRoot = findFirstCfeRoot();
     if (!cfeRoot) {

@@ -7,6 +7,7 @@ import {
   type PlatformTypeGroup,
   type TypeContext,
 } from '../../infra/xml/PlatformTypeRegistry';
+import { skipWithoutCorpus } from './support/corpus';
 
 const CONFIG_XML = path.resolve(__dirname, '../../../example/2.20/src/cf/Configuration.xml');
 
@@ -69,6 +70,12 @@ suite('PlatformTypeRegistry — базовая группа без configXmlPath
 });
 
 suite('PlatformTypeRegistry — ссылочные типы по Configuration.xml', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('metadataAttribute даёт только *Ссылка для Catalog', () => {
     const groups = getPlatformTypeRegistry(CONFIG_XML, 'metadataAttribute');
     const catalog = findGroup(groups, 'Catalog');
@@ -170,7 +177,9 @@ suite('PlatformTypeRegistry — конверсия токенов', () => {
     assert.strictEqual(canonicalToXmlToken('Массив', 'formAttribute'), 'v8:Array');
   });
 
-  test('Все контексты вычисляются без ошибок для всех поддерживаемых типов', () => {
+  test('Все контексты вычисляются без ошибок для всех поддерживаемых типов', function () {
+    // Тест работает на эталоне `example/` (не в git) — без корпуса пропускается.
+    skipWithoutCorpus(this);
     const contexts: TypeContext[] = ['metadataAttribute', 'formAttribute', 'commandParameter', 'eventSource'];
     for (const ctx of contexts) {
       const groups = getPlatformTypeRegistry(CONFIG_XML, ctx);

@@ -2,10 +2,17 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ExchangePlanContentService } from '../../infra/xml/ExchangePlanContentService';
+import { skipWithoutCorpus } from './support/corpus';
 
 const EXAMPLE_CF = path.resolve(__dirname, '../../../example/2.20/src/cf');
 
 suite('ExchangePlanContentService', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('Находит планы обмена, в состав которых входит объект метаданных', function () {
     // Тест применим только при наличии планов обмена в example/2.20/src/cf/ExchangePlans;
     // в минимальной выгрузке их может не быть.

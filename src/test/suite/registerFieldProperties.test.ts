@@ -14,6 +14,7 @@ import {
 // `getTypedFieldPropertyKeys` и «регистрового» сужения владельца больше нет —
 // регистр частный случай той же таблицы.
 import { getGeneratedPropertyKeys } from '../../infra/xml/typedField/TypedFieldOwnerRules';
+import { skipWithoutCorpus } from './support/corpus';
 
 const EXAMPLE_CF_2_21 = path.resolve(__dirname, '../../../example/2.21/src/cf');
 
@@ -373,7 +374,9 @@ suite('registerFieldProperties — состав свойств полей рег
     assert.ok(!arResource.includes('UseInTotals'));
   });
 
-  test('регистр расчёта: панель показывает записанное и не предлагает непроверенного', () => {
+  test('регистр расчёта: панель показывает записанное и не предлагает непроверенного', function () {
+    // Тест работает на эталоне `example/` (не в git) — без корпуса пропускается.
+    skipWithoutCorpus(this);
     // Правила полей регистра расчёта с эталона не сняты, поэтому и показ, и запись
     // идут консервативным путём: ролевые свойства берутся из самого XML.
     const dimensionXml = readReferenceElementXml(
@@ -450,7 +453,9 @@ suite('registerFieldProperties — состав свойств полей рег
     }
   });
 
-  test('генерируемый набор свойств — подпоследовательность эталонного поля из example', () => {
+  test('генерируемый набор свойств — подпоследовательность эталонного поля из example', function () {
+    // Тест работает на эталоне `example/` (не в git) — без корпуса пропускается.
+    skipWithoutCorpus(this);
     // Схема 1С — xs:sequence, поэтому проверяем не множество, а порядок: всё, что
     // пишет генератор, должно идти в том же порядке, что и в реальной выгрузке,
     // и не содержать ключей, которых у эталонного поля нет.
@@ -513,7 +518,9 @@ suite('registerFieldProperties — проверка принадлежности
     assert.ok(!result.objects[0].issues.some((issue) => issue.code === 'property-not-allowed'));
   });
 
-  test('на реальных выгрузках проверка не даёт ложных срабатываний', () => {
+  test('на реальных выгрузках проверка не даёт ложных срабатываний', function () {
+    // Тест работает на эталоне `example/` (не в git) — без корпуса пропускается.
+    skipWithoutCorpus(this);
     // Ложное срабатывание здесь опаснее пропуска: оно заваливает validate_metadata
     // ошибками на типовой конфигурации. Берём реальные объекты всех видов, у
     // которых есть типизированные поля.

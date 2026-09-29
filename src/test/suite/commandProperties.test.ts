@@ -10,6 +10,7 @@ import { MetadataNode } from '../../ui/tree/TreeNode';
 import { buildCommandProperties } from '../../ui/views/properties/PropertyBuilder';
 import { TypeRegistryService } from '../../ui/views/properties/TypeRegistryService';
 import type { EnumPropertyValue } from '../../ui/views/properties/_types';
+import { skipWithoutCorpus } from './support/corpus';
 
 const EXAMPLE_CF = path.resolve(__dirname, '../../../example/2.20/src/cf');
 
@@ -28,6 +29,12 @@ function findFirstXmlInGroup(group: string): string | null {
 }
 
 suite('Properties — команды', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('Показывает свойства команды объекта из XML владельца', function () {
     // Тест требует наличие документа с Command внутри. В минимальной выгрузке example/
     // может не быть подходящего объекта — тогда тест неприменим.

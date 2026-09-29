@@ -35,6 +35,7 @@ import {
   type ChangesFixture,
   type HistoryFixture,
 } from './support/changesFixtures';
+import { skipWithoutCorpus } from './support/corpus';
 
 // ─── formatRelativeDate ──────────────────────────────────────────────────
 
@@ -95,6 +96,12 @@ suite('historyGraphDtoBuilder — formatRelativeDate: относительная
 // ─── buildGraphRows / buildHistoryGraphState ────────────────────────────
 
 suite('historyGraphDtoBuilder — buildGraphRows/buildHistoryGraphState на реальной раскладке ветвления+merge', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   let fixture: HistoryFixture;
   let layout: GraphLayout;
 
@@ -216,6 +223,12 @@ function fakeIconResolver(): IconResolver {
 }
 
 suite('historyGraphDtoBuilder — buildCommitChangesSection: read-only секция изменений коммита (staged + unresolved)', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   let fixture: ChangesFixture;
 
   setup(() => {

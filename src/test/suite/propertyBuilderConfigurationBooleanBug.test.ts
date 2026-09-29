@@ -5,6 +5,7 @@ import {
   buildConfigurationProperties,
   buildPropertyItemsForKeys,
 } from '../../ui/views/properties/PropertyBuilder';
+import { skipWithoutCorpus } from './support/corpus';
 
 // Реальный CFE-Configuration.xml (BOM+CRLF, реальная выгрузка) — используем как
 // каркас, подменяя только значение исследуемого known-boolean тега, чтобы не
@@ -29,6 +30,12 @@ const CFE_CONFIG_XML_PATH = path.resolve(
  * двумя функциями на одном и том же "битом" входе.
  */
 suite('PropertyBuilder — B1: мёртвый терм булева в buildConfigurationProperties', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('known-boolean тег KeepMappingToExtendedConfigurationObjectsByIDs с пустым (self-closing) значением должен остаться kind:boolean', () => {
     const originalXml = fs.readFileSync(CFE_CONFIG_XML_PATH, 'utf-8');
     assert.ok(

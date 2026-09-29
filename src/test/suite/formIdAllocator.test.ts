@@ -4,6 +4,7 @@ import * as path from 'path';
 import { createIdAllocator } from '../../infra/xml/form/FormShared';
 import { FormToolsService } from '../../infra/xml';
 import { EXAMPLE_ROOT, writeFormCopy } from './support/formFixtures';
+import { skipWithoutCorpus } from './support/corpus';
 
 /**
  * Тесты `createIdAllocator` после переноса на `maxIdByKind` (см. бриф задачи —
@@ -31,6 +32,12 @@ suite('createIdAllocator — T-18: инвариант байт-goldens (formBuil
 });
 
 suite('createIdAllocator — T-19: учёт 11 новых тегов и независимость пространств', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('nextElement() учитывает id одного из 11 новых тегов (SpreadSheetDocumentField), даже перекрывая floor расширения', () => {
     // Донор без BaseForm: инъекция SpreadSheetDocumentField с id=1000050 — заведомо
     // выше пола расширения (999999) — старый allocator (не знающий об этом теге)
@@ -63,6 +70,12 @@ suite('createIdAllocator — T-19: учёт 11 новых тегов и неза
 });
 
 suite('createIdAllocator — T-20: BaseForm-форма', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('все три счётчика >= 1000000 на реальной CFE-форме с BaseForm', () => {
     const xml = readFixture(POLZOVATELI_CFE_FORM);
     const allocator = createIdAllocator(xml);
@@ -82,6 +95,12 @@ suite('createIdAllocator — T-20: BaseForm-форма', () => {
 });
 
 suite('createIdAllocator — T-21: E2E-согласованность генератора и валидатора (defect B на практике)', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('FormToolsService.edit на форме, где новый вид поля владеет фактическим максимумом id, не создаёт коллизию', () => {
     // Мутация: SpreadSheetDocumentField получает id=6 — ровно на 1 больше старого
     // (некорректного) максимума 5, вычисляемого без учёта этого тега. Если

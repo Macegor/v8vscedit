@@ -1,13 +1,14 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { EXAMPLE_ROOT, hasCorpus } from './corpus';
 
 /**
- * Корень эталонных выгрузок 1С (генерации формата 2.20 и 2.21), общий для
- * всех тестов дефекта «слепота validate_form к дублям id». Вынесен в support,
- * т.к. используется несколькими тестовыми файлами (formIdSpaces, formValidateIds).
+ * Корень эталонных выгрузок 1С (генерации формата 2.20 и 2.21) и признак его
+ * наличия — реэкспорт из `support/corpus.ts`: знание о корпусе одно на проект,
+ * здесь оставлено только ради привычного для тестов форм имени `hasFormCorpus`.
  */
-export const EXAMPLE_ROOT = path.resolve(__dirname, '../../../../example');
+export { EXAMPLE_ROOT };
 
 /**
  * Рекурсивно находит все `Form.xml` под заданным корнем. Используется для
@@ -53,5 +54,5 @@ export function writeFormCopy(xml: string, root?: string): string {
 
 /** Есть ли локальный корпус эталонов: без него корпус-зависимые сьюты пропускаются, а не падают. */
 export function hasFormCorpus(): boolean {
-  return fs.existsSync(EXAMPLE_ROOT);
+  return hasCorpus();
 }

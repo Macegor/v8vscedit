@@ -4,6 +4,7 @@ import * as path from 'path';
 import { RepositoryService, type RepositoryTarget } from '../../infra/repository/RepositoryService';
 import { ProjectSecretStorage } from '../../infra/environment/ProjectSecretStorage';
 import type { SecretStore } from '../../infra/ai/AiSecretStorage';
+import { skipWithoutCorpus } from './support/corpus';
 
 /** Фейковый SecretStore на Map — структурный контракт vscode.SecretStorage. */
 function createFakeSecretStore(): SecretStore {
@@ -25,6 +26,12 @@ const EXAMPLE_ROOT = path.resolve(__dirname, '../../../example/2.20');
 const EXAMPLE_CF = path.join(EXAMPLE_ROOT, 'src', 'cf');
 
 suite('RepositoryService', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   let service: RepositoryService;
   let envBackup: string | undefined;
   let stateBackup: string | undefined;

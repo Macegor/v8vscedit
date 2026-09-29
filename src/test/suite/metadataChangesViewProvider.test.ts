@@ -43,6 +43,7 @@ import {
   statusOf,
   type ChangesFixture,
 } from './support/changesFixtures';
+import { skipWithoutCorpus } from './support/corpus';
 
 // Корень расширения нужен реальный — WebviewHtmlFactory читает настоящий
 // dist/ui/manifest.json, собранный шагом pretest (см. treeSearchViewProvider.test.ts).
@@ -185,6 +186,12 @@ function commitChangesMessages(posted: readonly unknown[]): { hash: string; sect
 }
 
 suite('MetadataChangesViewProvider — webview-презентация представления «Изменения метаданных»', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   let fixture: ChangesFixture;
   let provider: MetadataChangesViewProvider;
   let fakeWebview: ReturnType<typeof createFakeWebview>;

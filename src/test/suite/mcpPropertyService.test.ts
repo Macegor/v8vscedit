@@ -7,8 +7,15 @@ import { ConfigurationXmlEditor, SubsystemToolsService, SubsystemXmlService } fr
 import { MetadataXmlCreator } from '../../infra/xml/MetadataXmlCreator';
 import { MetadataNode } from '../../ui/tree/TreeNode';
 import { McpPropertyService } from '../../ui/mcp/McpPropertyService';
+import { skipWithoutCorpus } from './support/corpus';
 
 suite('McpPropertyService', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('возвращает enum-контракт конкретного свойства конкретного реквизита', () => {
     const xmlPath = path.resolve(__dirname, '../../../example/2.20/src/cf/Catalogs/Пользователи.xml');
     const node = createAttributeNode(xmlPath);

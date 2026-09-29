@@ -30,12 +30,12 @@ import {
   assertWellFormedXml,
   EXAMPLE_GENERATIONS,
   fieldOwnerKinds,
-  hasExampleCorpus,
   isUncorruptedObjectXml,
   KNOWN_CORRUPTED_FIXTURE,
   scanCorpusFields,
   type CorpusField,
 } from './support/typedFieldCorpus';
+import { skipWithoutCorpus } from './support/corpus';
 
 const STRING_TYPE = '<v8:Type>xs:string</v8:Type>';
 const NUMBER_TYPE = '<v8:Type>xs:decimal</v8:Type>';
@@ -57,14 +57,14 @@ const CHILD_ROLES = ['Attribute', 'AddressingAttribute', 'Dimension', 'Resource'
 
 /**
  * Гейт эталонного корпуса: `example/` в `.gitignore`, на чистом клоне его нет —
- * такие тесты пропускаются, а не красят прогон (образец: configParser.test.ts,
- * metadataCache.test.ts). Проверки полноты корпуса ВНУТРИ тестов при этом
- * сохранены: корпус есть, но подозрительно мал — падение.
+ * такие тесты пропускаются, а не красят прогон. Проверка наличия — общая
+ * (`support/corpus.ts`), здесь только требование «обе генерации формата»:
+ * правило владелец×роль снимается с обеих, половина корпуса его не подтверждает.
+ * Проверки полноты корпуса ВНУТРИ тестов сохранены: корпус есть, но
+ * подозрительно мал — падение.
  */
 function requireExampleCorpus(context: Mocha.Context): void {
-  if (!hasExampleCorpus()) {
-    context.skip();
-  }
+  skipWithoutCorpus(context, EXAMPLE_GENERATIONS.cf20, EXAMPLE_GENERATIONS.cf21);
 }
 
 suite('typedFieldOwnerRoleRules — страховка реестра: роли типизированного поля не расходятся с META_TYPES', () => {

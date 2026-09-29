@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { RoleRightsService } from '../../infra/role';
 import { ConfigurationInfoService, ConfigurationScaffoldService } from '../../infra/xml';
+import { EXAMPLE_GENERATIONS, hasCorpus } from './support/corpus';
 
 suite('roleRightsService', () => {
   test('читает сводку прав роли из реального Rights.xml', function () {
@@ -249,8 +250,10 @@ suite('roleRightsService', () => {
 // Самозакрывающийся <Rights/> валиден как XML, но не соответствует контракту
 // RoleRightsXml.readRole — такие роли пропускаются.
 function findFirstRoleRightsPath(): { rightsPath: string; roleName: string } | null {
-  const rolesDir = path.join(__dirname, '..', '..', '..', 'example', '2.20', 'src', 'cf', 'Roles');
-  if (!fs.existsSync(rolesDir)) {
+  // Наличие корпуса — через общий гейт (support/corpus.ts): `example/` не в git,
+  // на чистом клоне такие тесты пропускаются (null → this.skip()), а не падают.
+  const rolesDir = path.join(EXAMPLE_GENERATIONS.cf20, 'Roles');
+  if (!hasCorpus(rolesDir)) {
     return null;
   }
   for (const entry of fs.readdirSync(rolesDir, { withFileTypes: true })) {

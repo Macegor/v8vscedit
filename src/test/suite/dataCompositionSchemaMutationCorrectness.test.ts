@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { DataCompositionSchemaService } from '../../infra/xml/DataCompositionSchemaService';
+import { skipWithoutCorpus } from './support/corpus';
 
 const EXAMPLE_CF_221 = path.resolve(__dirname, '../../../example/2.21/src/cf');
 
@@ -24,6 +25,12 @@ const REAL_SKD_WITH_UNION_AND_VARIANTS = path.join(
 );
 
 suite('DataCompositionSchemaService — корректность мутаторов при вложенности (M1) и прицельный rename (M3)', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('документирует реальную форму СКД-выгрузки: dataSetLink без обёртки field, несколько settingsVariant, DataSetUnion присутствует', () => {
     const xml = fs.readFileSync(REAL_SKD_WITH_UNION_AND_VARIANTS, 'utf-8');
     assert.ok(xml.includes('<dataSetLink>'), 'ожидался dataSetLink в реальной выгрузке');
@@ -107,6 +114,12 @@ suite('DataCompositionSchemaService — корректность мутатор�
 });
 
 suite('DataCompositionSchemaService — rename-parameter должен быть прицельным (M3)', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('rename-parameter меняет <name> параметра и ссылки &Имя, но НЕ трогает dataPath/field/значение фильтра с тем же текстом', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-skd-rename-'));
     const templatePath = path.join(root, 'Схема', 'Ext', 'Template.xml');

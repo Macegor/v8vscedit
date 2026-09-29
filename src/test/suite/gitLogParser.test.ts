@@ -16,6 +16,7 @@ import * as assert from 'assert';
 // потребителю графа определить текущую ветку по единственному флагу kind.
 import { parseGitLog, type RawCommit } from '../../infra/git/GitLogParser';
 import { buildHistoryRepo, git, removeHistoryRepo } from './support/changesFixtures';
+import { skipWithoutCorpus } from './support/corpus';
 
 /** Собирает один "сырой" фрагмент вывода git log из полей записи. */
 function record(fields: readonly [string, string, string, string, string, string]): string {
@@ -182,6 +183,12 @@ suite('GitLogParser — разбор вывода `git log --pretty=format`', ()
    * git при подготовке этого набора тестов.
    */
   suite('на реальном репозитории с ветвлением и merge', () => {
+    // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+    // (единый гейт: support/corpus.ts).
+    suiteSetup(function () {
+      skipWithoutCorpus(this);
+    });
+
     let fixture: ReturnType<typeof buildHistoryRepo>;
     let commits: RawCommit[];
 

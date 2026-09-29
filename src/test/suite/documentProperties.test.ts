@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { buildRootMetaObjectProperties } from '../../ui/views/properties/PropertyBuilder';
+import { skipWithoutCorpus } from './support/corpus';
 
 const EXAMPLE_CF = path.resolve(__dirname, '../../../example/2.20/src/cf');
 
@@ -15,6 +16,12 @@ function findFirstDocument(): string {
 }
 
 suite('Properties — документ', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('Показывает свойства документа по разделам конфигуратора', () => {
     const xml = fs.readFileSync(findFirstDocument(), 'utf-8');
     const props = buildRootMetaObjectProperties(xml, 'Document');

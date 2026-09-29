@@ -15,6 +15,7 @@ import * as path from 'path';
 import type { PorcelainEntry } from '../../infra/git/GitPorcelainReader';
 import { parseNameStatus, readCommitChanges } from '../../infra/git/GitCommitChangesReader';
 import { buildHistoryRepo, git, removeHistoryRepo } from './support/changesFixtures';
+import { skipWithoutCorpus } from './support/corpus';
 
 suite('GitCommitChangesReader — разбор `git diff-tree --name-status`', () => {
   test('изменённый файл: M\\tpath — index=M, worktree=пробел', () => {
@@ -82,6 +83,12 @@ suite('GitCommitChangesReader — разбор `git diff-tree --name-status`', (
    * фикстура его НЕ отключает, см. комментарий в `changesFixtures.ts`).
    */
   suite('на реальном коммите с переименованием и кириллическим именем файла', () => {
+    // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+    // (единый гейт: support/corpus.ts).
+    suiteSetup(function () {
+      skipWithoutCorpus(this);
+    });
+
     let fixture: ReturnType<typeof buildHistoryRepo>;
     let entries: PorcelainEntry[];
 
@@ -124,6 +131,12 @@ suite('GitCommitChangesReader — разбор `git diff-tree --name-status`', (
  * `--root` для корневого коммита), и мягкий фолбэк.
  */
 suite('GitCommitChangesReader — readCommitChanges: реальный запуск `git diff-tree`', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   let fixture: ReturnType<typeof buildHistoryRepo>;
 
   suiteSetup(() => {

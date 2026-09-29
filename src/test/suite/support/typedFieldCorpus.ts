@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import { META_TYPES, type MetaKind } from '../../../domain/MetaTypes';
+import { EXAMPLE_GENERATIONS, hasCorpus } from './corpus';
 
 /**
  * Разведочный доступ к эталонному корпусу `example/` для тестов задачи
@@ -18,29 +19,18 @@ import { META_TYPES, type MetaKind } from '../../../domain/MetaTypes';
  * как вход теста «повреждённый файл», а не как эталон.
  */
 
-// Компилированный `out/test/suite/support/typedFieldCorpus.js` лежит на 4
-// уровня глубже корня проекта (support→suite→test→out→корень) — раньше здесь
-// было 5 `../`, что уводило на каталог ВЫШЕ `v8vscedit` (существующий, но
-// чужой `example/` рядом с проектом) и приводило к «пустому корпусу» без
-// единого файла на любой машине, где такого соседнего каталога нет.
-const EXAMPLE_ROOT = path.resolve(__dirname, '../../../../example');
-
-export const EXAMPLE_GENERATIONS = {
-  cf20: path.join(EXAMPLE_ROOT, '2.20/src/cf'),
-  cf21: path.join(EXAMPLE_ROOT, '2.21/src/cf'),
-  cfe21: path.join(EXAMPLE_ROOT, '2.21/src/cfe/EVOLC'),
-} as const;
+// Пути корпуса и признак его наличия — из общего `support/corpus.ts`
+// (единственный источник правды о корпусе на проект). Здесь остаётся только
+// специфика этой задачи: корпусу нужны ОБЕ генерации формата, иначе правило
+// «вид владельца × роль» снималось бы с половины эталона.
+export { EXAMPLE_GENERATIONS };
 
 /**
- * Доступен ли эталонный корпус. `example/` не отслеживается git (см. CLAUDE.md),
- * поэтому на чистом клоне его просто нет — тесты, снимающие правило с эталона,
- * в этом случае ПРОПУСКАЮТСЯ (suite-level `this.skip()`), а не падают: красный
- * прогон без корпуса — не дефект кода. Ослаблением ассертов это не является:
- * когда корпус есть, проверки на его полноту (`fields.length > 1000` и т.п.)
- * работают в полную силу.
+ * Доступен ли эталонный корпус в объёме, нужном для снятия правил: обе
+ * генерации формата. Пропуск вместо падения — см. `support/corpus.ts`.
  */
 export function hasExampleCorpus(): boolean {
-  return fs.existsSync(EXAMPLE_GENERATIONS.cf20) && fs.existsSync(EXAMPLE_GENERATIONS.cf21);
+  return hasCorpus(EXAMPLE_GENERATIONS.cf20, EXAMPLE_GENERATIONS.cf21);
 }
 
 /** Заведомо испорченный нашим же дефектом файл — вход для теста «повреждённый файл», не эталон. */
