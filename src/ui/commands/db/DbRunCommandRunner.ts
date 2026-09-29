@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 import { spawn, type ChildProcess } from 'child_process';
 import { launchInteractiveDesignerWithAgentPause } from '../../../infra/agent';
 import { resolveDbPassword, type ProjectSecretStorage } from '../../../infra/environment';
-import { normalizeInfoBasePath, resolveV8ExecutablePath, resolveV8PathHintFromVersion } from '../../../infra/process';
+import { formatCommandLineForLog, normalizeInfoBasePath, resolveV8ExecutablePath, resolveV8PathHintFromVersion } from '../../../infra/process';
 import { getAgentOperationServiceForInteractiveDesigner, isAgentConfigurationOperationMode } from '../ext/ExtensionCommandRunner';
 
 interface DbRunConnectionParams {
@@ -41,7 +41,8 @@ export async function runDbClientFromWorkspace(
       ? await getAgentOperationServiceForInteractiveDesigner(workspaceFolder, outputChannel)
       : undefined;
 
-    outputChannel.appendLine(`[db-run] Запуск: ${v8Path} ${args.join(' ')}`);
+    // Пароль базы передаётся слитно с ключом (`/P<пароль>`) — маскируем перед журналом.
+    outputChannel.appendLine(`[db-run] Запуск: ${formatCommandLineForLog(v8Path, args)}`);
     await launchInteractiveDesignerWithAgentPause({
       agentSession: agentService?.service,
       forceAgentDisconnect: agentService?.forceDisconnect,
