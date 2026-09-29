@@ -310,7 +310,28 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
 - **Новый слот модуля (`ModuleSlot`):** литерал в `domain/ModuleSlot.ts` → путь в карте `MetaPathResolver` → при необходимости `OpenModuleCommandId` + команда → поле `modules` в записях `META_TYPES`.
 - **Новый дочерний тег (`ChildTag`):** значение в `domain/ChildTag.ts` + `CHILD_TAG_CONFIG` → при своём контейнере расширить `ObjectXmlReader.parseChildren` → тег в `childTags` нужных `META_TYPES`.
 - **Новый контейнерный дочерний тип со своими вложенными листьями** (паттерн ТЧ→Колонка; второй прецедент — HTTPСервис→URLШаблон→Метод, см. [mcp-paths.md](./docs/mcp-paths.md#26-расширенные-примеры-путей) и [metadata-navigator.md](./docs/metadata-navigator.md#контейнерные-дочерние-узлы-тчколонка-и-httpсервисurlшаблонметод)): контейнер и лист — обе отдельные записи `MetaKind`/`META_TYPES`/`ChildTag`; лист парсится в `MetaChild.columns` контейнера через `ObjectXmlReader.toXxxChild` (образец `toTabularSectionChild`) → имя родителя-контейнера пробрасывается ПАРАЛЛЕЛЬНЫМ полем контекста (`tabularSectionName`/`urlTemplateName`), а не переименованием существующего слота и не новым реестром → `domain/CanonicalNames.ts` (`canonicalChildPath`) обобщает контейнерную ветку по этому полю → узел дерева строится симметрично в ДВУХ источниках — `infra/cache/MetadataCache.ts` (webview) и `ui/tree/nodeBuilders/metaObjectTreeBuilder.ts` (нативный TreeView/свойства) → `infra/xml/XmlUtils.ts` получает nesting-aware `findXxxRangeInYyy`/`extractXxxXmlFromYyy` (образец `findColumnRangeInTabularSection`) → MCP add-инструмент для листа получает флаг-аналог `inTabularSection` (например `inUrlTemplate`) в `McpAddToolsRegistration.ts`, владелец — сам контейнер (`allowedOwnerKinds: ['<Контейнер>']`).
-- **Новая схема свойств:** объект-схема в `PROPERTY_SCHEMAS` → при новом `PropertyValueKind` расширить `_types.ts` + `PropertyBuilder.ts`. Регулярки — только в `infra/xml/`.
+- **Новая схема свойств / новый ключ в панели свойств корневого объекта:** порядок и состав ключей задаёт
+  `ui/views/properties/propertyKeyOrder.ts` (`getRootPropertyKeyOrder`) → подпись ключа — `PROPERTY_TITLE_RU`,
+  enum/boolean/localized-классификация — `ENUM_OPTIONS`/множества тегов в `infra/xml/PropertySchema.ts` → при
+  новом `PropertyValueKind` расширить `_types.ts` + `PropertyBuilder.ts`. Свойства выбора форм — отдельная
+  таблица `FORM_PROPERTY_KEYS_BY_KIND` (см. следующий пункт) + `FORM_PROPERTY_SECTION`. Регулярки — только в
+  `infra/xml/`. **Реестр `PROPERTY_SCHEMAS` (вместе с `COMMON_ROOT_KEYS`/`ENUM_ROOT_KEYS`) НЕ читается
+  ничем, кроме собственного определения и `export *`** — правка «объекта-схемы» в нём не даёт никакого
+  эффекта в панели; не отправлять агента туда. Его судьба (удалить/оживить) — отдельный пункт бэклога, до
+  решения код не удалять и не «чинить» вскользь.
+- **Новое свойство-ссылка на форму у вида метаданных** (какие теги `*Form` у вида объекта есть в
+  `<Properties>`, см. [xml-format-rulesets.md](./docs/xml-format-rulesets.md#свойства-выбора-форм-по-виду-метаданных)):
+  запись в `FORM_PROPERTY_KEYS_BY_KIND` (`infra/xml/PropertySchema.ts`; порядок — по эталону, читается через
+  `getFormPropertyKeys`/`isFormPropertyKey`, второй список в UI заводить нельзя — `propertyKeyOrder.ts` берёт
+  таблицу спредом) → правило снимается ЭМПИРИЧЕСКИ с `example/` по признаку НАЛИЧИЯ тега, а не
+  заполненности значения (пустой `<DefaultForm/>` доказывает существование свойства), «0 примеров» у вида без
+  экземпляров в корпусе — вакуумный ноль, не доказательство отсутствия → корпусный гейт обеих осей
+  (`formPropertyKeysCorpus.test.ts`: каждый ключ таблицы есть в эталоне и ни один формовый тег эталона не
+  потерян; сшивка с `META_TYPES`) → при новом виде проверить обе генерации формата (`example/2.20` и
+  `example/2.21`, cf и cfe; ось версии — `Auxiliary*` в 2.20 может отсутствовать) → секция «Формы»
+  проставляется через `applyFormPropertySection`, заголовок — только `FORM_PROPERTY_SECTION`
+  (`propertyKeyOrder.ts`), литерал `'Формы'` не дублировать (webview сравнивает его в
+  `PropertiesView.vue`, страж — `formSectionContract.test.ts`).
 - **Новое правило состава свойств типизированного поля** (какие теги `<Properties>` допустимы у
   реквизита/измерения/ресурса/колонки/адресного реквизита конкретного вида объекта-владельца, см.
   [xml-format-rulesets.md](./docs/xml-format-rulesets.md#состав-свойств-типизированного-поля-по-виду-владельца)):

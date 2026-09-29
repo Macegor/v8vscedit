@@ -224,6 +224,28 @@ MCP-инструментов `v8vscedit_add_url_template`/`v8vscedit_add_method`
 
 `getIconName(kind)` в `iconMap.ts` читает `descriptor.icon` и возвращает имя SVG-файла. Иконки хранятся в `src/icons/light/` и `src/icons/dark/`.
 
+## Панель свойств: где живёт порядок ключей и секция «Формы»
+
+Порядок и состав ключей свойств корневого объекта в панели задаёт `ui/views/properties/propertyKeyOrder.ts`
+(`getRootPropertyKeyOrder(rootMetaKind)`), а не реестр `PROPERTY_SCHEMAS` из `infra/xml/PropertySchema.ts`:
+последний ничем не читается (кроме собственного определения и `export *`), правка его наборов
+(`COMMON_ROOT_KEYS`/`ENUM_ROOT_KEYS`) поведения не меняет. Его судьба (удалить или оживить) — открытый пункт
+бэклога; до решения не править его «чтобы появилось свойство». Действующие источники в `PropertySchema.ts` —
+`PROPERTY_TITLE_RU` (подписи), `ENUM_OPTIONS`, множества boolean/localized-тегов и
+`FORM_PROPERTY_KEYS_BY_KIND`.
+
+Секция «Формы» (контрол выбора формы `PropertyFormsSection.vue`) показывается у всех видов, у которых по
+эталону есть свойства форм: справочник, план видов характеристик, документ, обработка, отчёт, регистры (сведений, накопления,
+бухгалтерии, расчёта), перечисление, план обмена, бизнес-процесс, задача, планы счетов и видов расчёта,
+журнал документов, критерий отбора, хранилище настроек, константа, а также корень конфигурации и
+расширения. Состав ключей по виду — `FORM_PROPERTY_KEYS_BY_KIND` (`infra/xml/PropertySchema.ts`), методика
+снятия и оговорка про виды без экземпляров в эталоне —
+[xml-format-rulesets.md](./xml-format-rulesets.md#свойства-выбора-форм-по-виду-метаданных). Секцию
+проставляет `applyFormPropertySection` по `isFormPropertyKey`; заголовок — константа
+`FORM_PROPERTY_SECTION` (`propertyKeyOrder.ts`), с которой webview сравнивает
+`card.section.title` (`src-ui/apps/dynamic-panel/views/properties/PropertiesView.vue`). Литерал `'Формы'`
+в расширении не дублируется — его стережёт `formSectionContract.test.ts`.
+
 ## Отдельно: панель «Изменения метаданных»
 
 Рядом с навигатором в том же контейнере активности `v8vscedit` есть независимая webview-панель

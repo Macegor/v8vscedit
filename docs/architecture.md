@@ -96,8 +96,11 @@ God-класса», запрет №17): большой класс дробит�
   (`formBuilderShared`, `formElements`, `formAttributes`, `formCommands`,
   `formDocument`) — построение XML управляемых форм.
 - `ui/views/properties/PropertyBuilder.ts` (фасад) + `propertyKeyOrder.ts`
-  (порядок ключей свойств корневых объектов) + `propertyExtractors.ts`
-  (XML-экстракторы и форматтеры значений).
+  (порядок ключей свойств корневых объектов; `FORM_PROPERTY_SECTION` — контракт
+  с webview) + `propertyExtractors.ts` (XML-экстракторы и форматтеры значений).
+  Состав свойств выбора форм по виду — `FORM_PROPERTY_KEYS_BY_KIND` в
+  `infra/xml/PropertySchema.ts`, см.
+  [metadata-navigator.md](./metadata-navigator.md#панель-свойств-где-живёт-порядок-ключей-и-секция-формы).
 - `ui/views/properties/PropertiesViewController.ts` + `propertyEditLock.ts`
   (резолвер блокировки редактирования) + `propertyNodeClassification.ts`
   (классификация и snapshot узлов).
