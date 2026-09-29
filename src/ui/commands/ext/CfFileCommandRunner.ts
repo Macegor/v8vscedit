@@ -12,12 +12,11 @@
  * поэтому операцию нужно останавливать до любых приготовлений.
  */
 import type * as vscode from 'vscode';
-import * as path from 'path';
 import { validateCfFileRequest } from '../../../infra/cfFile';
 import {
   buildConnectionCliArgs,
   resolveConnectionFromSettings,
-  resolveSettingsPath,
+  resolveProjectSettingsPath,
   runInternalCliCommand,
 } from './ExtensionCommandRunner';
 
@@ -111,7 +110,6 @@ export async function runLoadConfigurationFromCf(options: LoadCfFileOptions): Pr
 
 /** Параметры подключения к базе проекта — тем же путём, что `listConnectedDatabaseExtensions`. */
 async function resolveConnectionArgs(workspaceFolder: vscode.WorkspaceFolder): Promise<string[]> {
-  const workspaceRoot = workspaceFolder.uri.fsPath;
-  const settingsPath = resolveSettingsPath(workspaceRoot, path.join(workspaceRoot, 'src', 'cfe', '_probe'));
+  const settingsPath = resolveProjectSettingsPath(workspaceFolder.uri.fsPath);
   return buildConnectionCliArgs(await resolveConnectionFromSettings(settingsPath));
 }

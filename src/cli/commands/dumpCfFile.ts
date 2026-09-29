@@ -1,8 +1,14 @@
-import * as fs from 'fs';
 import * as path from 'path';
 import { getBool, getString } from '../core/args';
 import { resolveConnection } from '../core/connection';
-import { createTempDir, printLogFile, runDesignerAndPrintResult, safeRemoveDir } from '../core/onecCommon';
+import {
+  createTempDir,
+  moveStagingToTarget,
+  printLogFile,
+  runDesignerAndPrintResult,
+  safeRemoveDir,
+  safeRemoveFile,
+} from '../core/onecCommon';
 import type { CliArgs } from '../core/types';
 import {
   assertNoAllExtensionsFlag,
@@ -90,24 +96,6 @@ export async function dumpCfFile(args: CliArgs): Promise<number> {
   } finally {
     safeRemoveFile(stagingPath);
     safeRemoveDir(tempDir);
-  }
-}
-
-/** Переносит успешно выгруженный staging-файл на целевой путь. */
-function moveStagingToTarget(stagingPath: string, outputFile: string): void {
-  // На Windows rename поверх существующего файла падает — удаляем цель явно
-  // (перезапись к этому моменту уже разрешена guard'ом -Overwrite).
-  if (fs.existsSync(outputFile)) {
-    fs.rmSync(outputFile, { force: true });
-  }
-  fs.renameSync(stagingPath, outputFile);
-}
-
-function safeRemoveFile(filePath: string): void {
-  try {
-    fs.rmSync(filePath, { force: true });
-  } catch {
-    // Остаток staging-файла не должен ломать результат операции.
   }
 }
 /* c8 ignore stop */

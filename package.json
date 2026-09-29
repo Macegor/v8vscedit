@@ -116,6 +116,18 @@
         "icon": "$(folder-opened)"
       },
       {
+        "command": "v8vscedit.dumpAllExtensionsToCfe",
+        "title": "Выгрузить все расширения базы в CFE-файлы",
+        "enablement": "!v8vscedit.isUpdatingConfigurations",
+        "icon": "$(archive)"
+      },
+      {
+        "command": "v8vscedit.loadAllExtensionsFromCfe",
+        "title": "Загрузить все расширения базы из CFE-файлов",
+        "enablement": "!v8vscedit.isUpdatingConfigurations",
+        "icon": "$(cloud-upload)"
+      },
+      {
         "command": "v8vscedit.importConfigurations",
         "title": "Импортировать конфигурации из базы",
         "enablement": "!v8vscedit.isUpdatingConfigurations",

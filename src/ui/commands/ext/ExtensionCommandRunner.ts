@@ -519,10 +519,7 @@ export async function listConnectedDatabaseExtensions(
   workspaceFolder: vscode.WorkspaceFolder,
   outputChannel: vscode.OutputChannel
 ): Promise<string[] | undefined> {
-  const settingsPath = resolveSettingsPath(
-    workspaceFolder.uri.fsPath,
-    path.join(workspaceFolder.uri.fsPath, 'src', 'cfe', '_probe')
-  );
+  const settingsPath = resolveProjectSettingsPath(workspaceFolder.uri.fsPath);
   let connection: ConnectionParams;
   try {
     connection = await resolveConnectionFromSettings(settingsPath);
@@ -659,7 +656,13 @@ async function runBatchApplyDatabaseConfiguration(
   );
 }
 
-function createWorkspaceTempDir(workspaceRoot: string, prefix: string): string {
+/**
+ * Временный каталог внутри проекта (не в системном temp): файлы прогона должны
+ * лежать на том же томе, что и выгрузка, и убираться вместе с проектом.
+ * Экспортируется для переиспользования пакетными операциями CFE — заводить
+ * вторую реализацию того же каталога нельзя.
+ */
+export function createWorkspaceTempDir(workspaceRoot: string, prefix: string): string {
   const tempParent = path.join(workspaceRoot, '.v8vscedit', 'import-temp');
   fs.mkdirSync(tempParent, { recursive: true });
   return fs.mkdtempSync(path.join(tempParent, prefix));
@@ -1615,7 +1618,7 @@ function copyAllEntries(sourceDir: string, targetDir: string): void {
   }
 }
 
-function removeTempDir(tempRoot: string, outputChannel: vscode.OutputChannel): void {
+export function removeTempDir(tempRoot: string, outputChannel: vscode.OutputChannel): void {
   try {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   } catch (error) {
@@ -1696,6 +1699,17 @@ export function resolveSettingsPath(workspaceRoot: string, extensionRoot: string
     }
   }
   return candidates[0];
+}
+
+/**
+ * Файл настроек подключения ПРОЕКТА (не конкретного расширения): `env.json`
+ * ищется от корня рабочей папки. Псевдо-корень `src/cfe/_probe` — способ
+ * переиспользовать общий `resolveSettingsPath` там, где конкретного расширения
+ * нет (список расширений базы, операции с CF/CFE-файлами, пакетные операции):
+ * третьей копии этого литерала быть не должно.
+ */
+export function resolveProjectSettingsPath(workspaceRoot: string): string {
+  return resolveSettingsPath(workspaceRoot, path.join(workspaceRoot, 'src', 'cfe', '_probe'));
 }
 
 export async function resolveConnectionFromSettings(settingsPath: string): Promise<ConnectionParams> {

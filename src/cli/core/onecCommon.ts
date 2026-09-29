@@ -53,6 +53,36 @@ export function writeUtf8BomLines(filePath: string, lines: string[]): void {
   fs.writeFileSync(filePath, `\uFEFF${lines.join('\n')}`, 'utf-8');
 }
 
+/**
+ * Переносит успешно выгруженный staging-файл на целевой путь.
+ *
+ * ЕДИНСТВЕННАЯ реализация этого переноса в CLI: и одиночная выгрузка
+ * (`dump-cf`), и пакетная (`dump-cfe-all`) обязаны вести себя одинаково —
+ * разошедшиеся копии никто бы не поймал, обе исполняются только в дочернем
+ * процессе. На Windows `rename` поверх существующего файла падает, поэтому цель
+ * удаляется явно (перезапись к этому моменту уже разрешена guard'ом
+ * `-Overwrite`).
+ */
+export function moveStagingToTarget(stagingPath: string, targetPath: string): void {
+  if (fs.existsSync(targetPath)) {
+    fs.rmSync(targetPath, { force: true });
+  }
+  fs.renameSync(stagingPath, targetPath);
+}
+
+/**
+ * Убирает файл, не роняя операцию. Нужен для staging-остатка: при ошибке
+ * платформа всё равно создаёт выходной файл (замерено: 16 байт мусора), и он не
+ * должен пережить прогон.
+ */
+export function safeRemoveFile(filePath: string): void {
+  try {
+    fs.rmSync(filePath, { force: true });
+  } catch {
+    // Остаток временного файла не должен ломать результат операции.
+  }
+}
+
 export async function runDesignerAndPrintResult(
   connection: OnecConnection,
   designerArgs: string[],

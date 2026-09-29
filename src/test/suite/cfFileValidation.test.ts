@@ -30,6 +30,7 @@ interface CfFileValidationModule {
   validateCfFileInputFile(filePath: string): string | undefined;
   validateCfFileOutputTarget(filePath: string, overwrite: boolean): string | undefined;
   resolveDumpStagingPath(outputFile: string, uniqueSuffix: string): string;
+  isDumpStagingFileName(fileName: string): boolean;
   validateCfFileRequest(request: CfFileRequest): void;
 }
 
@@ -194,6 +195,35 @@ suite('CfFileValidation — guard-функции CF/CFE (реальные вре
     const first = m().resolveDumpStagingPath(outputFile, 'suffix-a');
     const second = m().resolveDumpStagingPath(outputFile, 'suffix-b');
     assert.notStrictEqual(first, second);
+  });
+
+  // ─── isDumpStagingFileName — узнавание собственного staging-остатка ───
+
+  test('isDumpStagingFileName: имя, реально построенное resolveDumpStagingPath, узнаётся — при ОБЕИХ формах уникального суффикса', () => {
+    // Форм суффикса две: `pid-время` у одиночной выгрузки (dumpCfFile) и
+    // `pid-время-индекс` у пакетной (dumpCfeAll). Узнавание обязано читать
+    // результат САМОЙ функции построения и покрывать обе — предикат, знающий
+    // одну форму, оставил бы остатки второй в каталоге навсегда.
+    const suffixes = [`${String(process.pid)}-${String(Date.now())}`, `${String(process.pid)}-${String(Date.now())}-7`];
+    for (const target of ['Ext01.cfe', 'A_B.cfe', 'Расш Тест.cfe', 'result.cf']) {
+      for (const suffix of suffixes) {
+        const staging = m().resolveDumpStagingPath(path.join(tempDir, target), suffix);
+        assert.ok(m().isDumpStagingFileName(path.basename(staging)), `не узнан собственный staging-файл: ${staging}`);
+      }
+    }
+  });
+
+  test('isDumpStagingFileName: посторонние, бэкапы и чужие ".part" НЕ узнаются (их уборка стёрла бы чужие данные)', () => {
+    for (const name of [
+      'Ext01.cfe', 'cfe-dump.json', 'notes.txt', 'Main.cf',
+      // Пользовательский файл, чья форма имени случайно похожа на «дата-с-дефисами»:
+      // именно на нём предикат «по форме суффикса» уничтожал бы чужие данные.
+      '.backup.2024-01-15.part', '.2024-01-15.part',
+      '.hidden.part', '.Ext01.cfe.part', '.Ext01.cfe.123-456.part',
+      '.Ext01.cfe.1-2-3.v8vscedit.part.bak', 'Ext01.cfe.1-2-3.v8vscedit.part', '.v8vscedit.part',
+    ]) {
+      assert.strictEqual(m().isDumpStagingFileName(name), false, name);
+    }
   });
 
   // ─── validateCfFileRequest — композиция, порядок guard'ов (Часть 4, B.11) ───

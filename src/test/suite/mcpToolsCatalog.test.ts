@@ -12,11 +12,12 @@
  * провалить именно этот тест.
  *
  * Зафиксировано:
- *  1) Полный каталог из 59 tools, регистрируемых НЕПОСРЕДСТВЕННО телом
+ *  1) Полный каталог из 61 tool, регистрируемых НЕПОСРЕДСТВЕННО телом
  *     `registerTools` (`server.registerTool(...)` прямо в V8McpServer.ts).
  *     Для каждого — имя, title, description (построчно, дословно) и набор
- *     ключей inputSchema с их опциональностью. Ровно 59 — см. `grep`/`awk`
- *     подсчёт по исходнику; ~60 из архитектурной оценки включает round-off.
+ *     ключей inputSchema с их опциональностью. Было 59 на момент снятия эталона;
+ *     +2 — пакетные v8vscedit_dump_all_cfe/v8vscedit_load_all_cfe (новая
+ *     функциональность, а не дробление: см. cfeBatch*.test.ts).
  *     Отдельно вызываемые `registerAllAddTools` (45 root + 11 child = 56 tools)
  *     сюда не входят — они уже застрахованы `mcpAddTools.test.ts` как
  *     самостоятельный декомпозированный модуль.
@@ -511,7 +512,7 @@ const EXPECTED_TOOLS: readonly ExpectedTool[] = [
   {
     name: 'v8vscedit_dump_cf',
     title: 'Выгрузить конфигурацию в CF-файл',
-    description: 'Выгружает конфигурацию базы в бинарный файл через пакетный Конфигуратор: основную конфигурацию в .cf, расширение — в .cfe (если задан extensionName). Файл появляется на целевом пути только при успешном завершении; overwrite разрешает заменить существующий файл. Выгрузить все расширения одним вызовом нельзя — получите список через v8vscedit_workspace_overview или CLI list-db-extensions и выгружайте поштучно.',
+    description: 'Выгружает конфигурацию базы в бинарный файл через пакетный Конфигуратор: основную конфигурацию в .cf, расширение — в .cfe (если задан extensionName). Файл появляется на целевом пути только при успешном завершении; overwrite разрешает заменить существующий файл. Для выгрузки ВСЕХ расширений базы одной операцией используйте v8vscedit_dump_all_cfe — этот инструмент работает с одним объектом за вызов.',
     schemaKeys: { outputFile: false, extensionName: true, overwrite: true },
   },
   {
@@ -519,6 +520,18 @@ const EXPECTED_TOOLS: readonly ExpectedTool[] = [
     title: 'Загрузить конфигурацию из CF-файла',
     description: 'Загружает конфигурацию из бинарного файла в базу через пакетный Конфигуратор: .cf — в основную конфигурацию, .cfe — в расширение (если задан extensionName; несуществующее расширение при этом создаётся в базе). Операция необратима и требует confirm: true. Конфигурация БАЗЫ при загрузке не обновляется — примените изменения отдельно через applyToDatabase: true. XML-выгрузка проекта после загрузки перестаёт соответствовать базе: выполните импорт конфигураций.',
     schemaKeys: { inputFile: false, extensionName: true, confirm: false, applyToDatabase: true },
+  },
+  {
+    name: 'v8vscedit_dump_all_cfe',
+    title: 'Выгрузить все расширения базы в CFE-файлы',
+    description: 'Выгружает КАЖДОЕ подключённое к базе расширение в отдельный .cfe-файл каталога outputDir. Список расширений берётся у самой базы; рядом с файлами пишется манифест cfe-dump.json, по которому загрузка восстанавливает исходные имена расширений (имя файла санитизируется необратимо). Отказ по отдельному расширению не останавливает операцию: такие расширения возвращаются в failed, их прежние файлы остаются нетронутыми. overwrite разрешает заменять уже существующие файлы каталога.',
+    schemaKeys: { outputDir: false, overwrite: true },
+  },
+  {
+    name: 'v8vscedit_load_all_cfe',
+    title: 'Загрузить все расширения базы из CFE-файлов',
+    description: 'Загружает в базу КАЖДОЕ расширение из .cfe-файлов каталога inputDir (имена восстанавливаются по манифесту cfe-dump.json). Операция необратима и требует confirm: true. При отказе на любом расширении загрузка ОСТАНАВЛИВАЕТСЯ: состояние сбойного расширения в базе неопределённо, остальные не трогаются. createMissing разрешает создавать в базе расширения, которых в ней ещё нет. Конфигурация БАЗЫ при загрузке не обновляется — примените изменения отдельно через applyToDatabase: true. XML-выгрузка проекта после загрузки перестаёт соответствовать базе: выполните импорт конфигураций.',
+    schemaKeys: { inputDir: false, confirm: false, createMissing: true, applyToDatabase: true },
   },
   {
     name: 'v8vscedit_get_properties',
@@ -596,21 +609,21 @@ const EXPECTED_TOOLS: readonly ExpectedTool[] = [
 ];
 
 suite('V8McpServer.registerTools — golden-каталог перед декомпозицией (характеризационный)', () => {
-  test('регистрирует ровно 59 прямых tools (без учёта registerAllAddTools)', () => {
+  test('регистрирует ровно 61 прямой tool (без учёта registerAllAddTools)', () => {
     const { tools } = registerAllTools(createBaselineServices());
     // registerAllAddTools добавляет ещё 45 root + 11 child = 56 tool-ов поверх
-    // этих 59 — их каталог отдельно застрахован mcpAddTools.test.ts. Здесь
+    // этих 61 — их каталог отдельно застрахован mcpAddTools.test.ts. Здесь
     // фиксируем именно прямые регистрации, чтобы дробление не потеряло и не
     // задвоило ни одну из них.
     assert.strictEqual(tools.size, EXPECTED_TOOLS.length + 56,
-      `фактический размер каталога (${String(tools.size)}) разошёлся с ожидаемым (59 прямых + 56 add-tools)`);
+      `фактический размер каталога (${String(tools.size)}) разошёлся с ожидаемым (61 прямой + 56 add-tools)`);
     for (const expected of EXPECTED_TOOLS) {
       assert.ok(tools.has(expected.name), `должен быть зарегистрирован tool "${expected.name}"`);
     }
   });
 
-  test('ровно 59 прямых tools описаны в эталоне EXPECTED_TOOLS (защита от рассинхронизации самого теста)', () => {
-    assert.strictEqual(EXPECTED_TOOLS.length, 59);
+  test('ровно 61 прямой tool описан в эталоне EXPECTED_TOOLS (защита от рассинхронизации самого теста)', () => {
+    assert.strictEqual(EXPECTED_TOOLS.length, 61);
     const uniqueNames = new Set(EXPECTED_TOOLS.map((tool) => tool.name));
     assert.strictEqual(uniqueNames.size, EXPECTED_TOOLS.length, 'имена tools в эталоне не должны повторяться');
   });

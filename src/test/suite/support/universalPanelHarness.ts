@@ -57,6 +57,25 @@ export interface UniversalPanelFixture {
   dispose(): void;
 }
 
+/**
+ * Ждёт появления значения, опрашивая очередь микрозадач: возвращает управление
+ * сразу, как только условие выполнено. Тайм-аут — страховка от зависания
+ * (тест должен падать с внятным текстом, а не висеть), а не единица ожидания.
+ */
+async function waitFor<T>(probe: () => T | undefined, failureMessage: string, timeoutMs = 30_000): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = probe();
+    if (value !== undefined) {
+      return value;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(failureMessage);
+    }
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
+
 function createFakeMemento(): vscode.Memento {
   const store = new Map<string, unknown>();
   return {
@@ -133,18 +152,27 @@ export function createUniversalPanelFixture(): UniversalPanelFixture {
     loadChildren: async (nodeId: string) => {
       requestCounter += 1;
       messageEmitter.fire({ type: 'request', requestId: `load-${String(requestCounter)}`, name: 'loadChildren', payload: { nodeId } });
-      // loadChildren может слать НЕСКОЛЬКО чанков асинхронно — ждём с запасом.
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      const message = postedMessages.find(
+      // Провайдер шлёт детей НЕСКОЛЬКИМИ чанками асинхронно и закрывает серию
+      // чанком `done: true`. Ждём именно его, а не «достаточную» паузу: пауза
+      // угадывает тайминг и на загруженной машине даёт флейк, причём молчаливый
+      // — тест увидел бы часть детей и счёл её полным ответом.
+      const finalChunk = await waitFor(
+        () => postedMessages.find(
+          (item): item is ChildrenLoadedMessage =>
+            typeof item === 'object' && item !== null
+            && (item as { type?: string }).type === 'childrenLoaded'
+            && (item as { nodeId?: string }).nodeId === nodeId
+            && (item as { done?: boolean }).done === true
+        ),
+        `не получено завершающее сообщение childrenLoaded (done) для узла ${nodeId}`
+      );
+      const children = postedMessages.filter(
         (item): item is ChildrenLoadedMessage =>
           typeof item === 'object' && item !== null
           && (item as { type?: string }).type === 'childrenLoaded'
           && (item as { nodeId?: string }).nodeId === nodeId
-      );
-      if (!message) {
-        throw new Error(`не получено сообщение childrenLoaded для узла ${nodeId}`);
-      }
-      return message.children;
+      ).flatMap((message) => [...message.children]);
+      return children.length > 0 ? children : [...finalChunk.children];
     },
     dispose: () => {
       treeProvider.dispose();

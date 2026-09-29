@@ -9,6 +9,8 @@ import * as vscode from 'vscode';
 import * as z from 'zod/v4';
 import { canonicalToLegacyModulePath } from '../McpPathResolvers';
 import { runDumpConfigurationToCf, runLoadConfigurationFromCf } from '../../commands/ext/CfFileCommandRunner';
+import { runDumpAllExtensionsToCfe, runLoadAllExtensionsFromCfe } from '../../commands/ext/CfeBatchCommandRunner';
+import { CFE_MANIFEST_FILE_NAME, type CfeBatchReport } from '../../../infra/cfFile';
 import { buildCfApplyTarget } from '../../commands/ext/CfFileTarget';
 import { runApplyDatabaseConfiguration } from '../../commands/ext/ExtensionCommandRunner';
 import {
@@ -88,7 +90,7 @@ export function registerConfigLifecycleTools(server: McpServer, deps: McpRegistr
         'Выгружает конфигурацию базы в бинарный файл через пакетный Конфигуратор: основную конфигурацию в .cf,',
         'расширение — в .cfe (если задан extensionName).',
         'Файл появляется на целевом пути только при успешном завершении; overwrite разрешает заменить существующий файл.',
-        'Выгрузить все расширения одним вызовом нельзя — получите список через v8vscedit_workspace_overview или CLI list-db-extensions и выгружайте поштучно.',
+        'Для выгрузки ВСЕХ расширений базы одной операцией используйте v8vscedit_dump_all_cfe — этот инструмент работает с одним объектом за вызов.',
       ].join(' '),
       inputSchema: z.object({
         outputFile: z.string(),
@@ -178,6 +180,138 @@ export function registerConfigLifecycleTools(server: McpServer, deps: McpRegistr
           inputFile,
           extensionName: extensionName ?? '',
           databaseConfigurationUpdated: applied,
+          projectSourcesOutdated: true,
+        };
+      }));
+    }
+  );
+
+  server.registerTool(
+    'v8vscedit_dump_all_cfe',
+    {
+      title: 'Выгрузить все расширения базы в CFE-файлы',
+      description: [
+        'Выгружает КАЖДОЕ подключённое к базе расширение в отдельный .cfe-файл каталога outputDir.',
+        'Список расширений берётся у самой базы; рядом с файлами пишется манифест cfe-dump.json,',
+        'по которому загрузка восстанавливает исходные имена расширений (имя файла санитизируется необратимо).',
+        'Отказ по отдельному расширению не останавливает операцию: такие расширения возвращаются в failed,',
+        'их прежние файлы остаются нетронутыми. overwrite разрешает заменять уже существующие файлы каталога.',
+      ].join(' '),
+      inputSchema: z.object({
+        outputDir: z.string(),
+        overwrite: z.boolean().optional(),
+      }),
+      annotations: {
+        // Выгрузка не меняет ни базу, ни файлы проекта.
+        destructiveHint: false,
+      },
+    },
+    async ({ outputDir, overwrite }) => gate.wrapAsync(async () => withConfigurationOperationLock(async () => {
+      const result = await runDumpAllExtensionsToCfe({
+        workspaceFolder: services.workspaceFolder,
+        outputChannel: services.outputChannel,
+        outputDir,
+        overwrite: overwrite ?? false,
+        silent: true,
+      });
+      const report = assertBatchReport(result.report, 'Пакетная выгрузка расширений не выполнена.');
+      // Частичный отказ — УСПЕХ со списком failed: выгрузка базу не меняет, а
+      // готовые бэкапы ценны сами по себе и исключение их бы скрыло.
+      return {
+        outputDir,
+        overwrite: overwrite ?? false,
+        manifestFile: CFE_MANIFEST_FILE_NAME,
+        dumped: report.items.filter((item) => item.status === 'ok').map((item) => ({ extensionName: item.extensionName, fileName: item.fileName })),
+        failed: report.items
+          .filter((item) => item.status !== 'ok')
+          .map((item) => ({ extensionName: item.extensionName, fileName: item.fileName, status: item.status, message: item.message })),
+      };
+    }))
+  );
+
+  server.registerTool(
+    'v8vscedit_load_all_cfe',
+    {
+      title: 'Загрузить все расширения базы из CFE-файлов',
+      description: [
+        'Загружает в базу КАЖДОЕ расширение из .cfe-файлов каталога inputDir (имена восстанавливаются по манифесту cfe-dump.json).',
+        'Операция необратима и требует confirm: true.',
+        'При отказе на любом расширении загрузка ОСТАНАВЛИВАЕТСЯ: состояние сбойного расширения в базе неопределённо,',
+        'остальные не трогаются. createMissing разрешает создавать в базе расширения, которых в ней ещё нет.',
+        'Конфигурация БАЗЫ при загрузке не обновляется — примените изменения отдельно через applyToDatabase: true.',
+        'XML-выгрузка проекта после загрузки перестаёт соответствовать базе: выполните импорт конфигураций.',
+      ].join(' '),
+      inputSchema: z.object({
+        inputDir: z.string(),
+        confirm: z.boolean(),
+        createMissing: z.boolean().optional(),
+        applyToDatabase: z.boolean().optional(),
+      }),
+      annotations: {
+        destructiveHint: true,
+      },
+    },
+    async ({ inputDir, confirm, createMissing, applyToDatabase }) => {
+      // Проверяем значение, а не наличие поля: неявного согласия у необратимой
+      // операции быть не должно.
+      if (!confirm) {
+        return gate.toolError(new Error(
+          'Загрузка необратимо заменяет содержимое расширений в базе: текущее содержимое будет потеряно, '
+          + 'а при сбое часть расширений всё равно окажется загруженной. '
+          + 'Передайте confirm: true, чтобы подтвердить операцию.'
+        ));
+      }
+      return gate.wrapAsync(async () => withConfigurationOperationLock(async () => {
+        const result = await runLoadAllExtensionsFromCfe({
+          workspaceFolder: services.workspaceFolder,
+          outputChannel: services.outputChannel,
+          inputDir,
+          createMissing: createMissing ?? false,
+          silent: true,
+        });
+        const report = assertBatchReport(result.report, 'Пакетная загрузка расширений не выполнена.');
+        if (report.failedAt) {
+          // Частичный отказ загрузки — исключение, а не «успех со списком»:
+          // база в промежуточном состоянии, и штатным итогом это не является.
+          throw new Error(
+            `Загрузка остановлена на расширении "${report.failedAt.extensionName}" (файл ${report.failedAt.fileName}): `
+            + 'состояние этого расширения в базе НЕОПРЕДЕЛЕНО (неудачная загрузка всё равно регистрирует расширение в базе). '
+            + 'Расширения после него не загружались, конфигурация базы не обновлялась.'
+          );
+        }
+
+        const loaded = report.items.filter((item) => item.status === 'ok').map((item) => item.extensionName);
+        const applied: string[] = [];
+        if (applyToDatabase === true) {
+          // Применение — по расширению на вызов через ТОТ ЖЕ путь, что у
+          // одиночной загрузки: `/UpdateDBCfg -AllExtensions` применил бы и
+          // расширения, которых мы не грузили.
+          for (const extensionName of loaded) {
+            const ok = await runApplyDatabaseConfiguration(
+              buildCfApplyTarget(services.workspaceFolder.uri.fsPath, extensionName),
+              services.workspaceFolder,
+              services.outputChannel
+            );
+            if (!ok) {
+              throw new Error(`Расширения загружены, но применение к базе не выполнено на "${extensionName}". Подробности — в журнале «1С Редактор».`);
+            }
+            applied.push(extensionName);
+          }
+        }
+        // Конфигурация проекта НЕ помечается изменённой: файлы проекта не
+        // менялись, а пометка заставила бы «обновить изменённые конфигурации»
+        // залить СТАРЫЕ файлы обратно в базу поверх загруженного.
+        return {
+          inputDir,
+          loaded,
+          applied,
+          notInDirectory: report.notInDirectory,
+          ignoredFiles: report.ignoredFiles,
+          // Имя расширения для этих файлов взято из ИМЕНИ ФАЙЛА, а не из
+          // манифеста (`A_B.cfe` — это и `A:B`, и `A/B`): единственный признак,
+          // что в базу могло уехать чужое поколение бэкапа.
+          restoredByFileName: report.restoredByFileName,
+          databaseConfigurationUpdated: applyToDatabase === true,
           projectSourcesOutdated: true,
         };
       }));
@@ -276,6 +410,26 @@ export function registerConfigLifecycleTools(server: McpServer, deps: McpRegistr
       return { command, result: result ?? null };
     })
   );
+}
+
+/**
+ * Отчёт прогона пакетной операции.
+ *
+ * Три случая — не итог, а отказ, и молчать о них нельзя: отчёта нет вовсе (CLI
+ * не дошёл до его записи — например, платформа недоступна), отказ ДО старта
+ * (`errors`: ни одного спавна Конфигуратора не было) и прерывание сигналом
+ * (обработаны не все расширения). «Успехом с пустым результатом» агент принял
+ * бы любой из них за штатный итог.
+ */
+function assertBatchReport(report: CfeBatchReport | undefined, failureMessage: string): CfeBatchReport {
+  if (!report) {
+    throw new Error(`${failureMessage} Подробности — в журнале «1С Редактор».`);
+  }
+  const errors = report.errors ?? [];
+  if (errors.length > 0 || report.interrupted) {
+    throw new Error([failureMessage, ...errors, 'Подробности — в журнале «1С Редактор».'].join(' '));
+  }
+  return report;
 }
 
 /**

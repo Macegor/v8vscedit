@@ -323,6 +323,18 @@ export const EXTENSION_MCP_TOOLS: readonly AiMcpToolInfo[] = [
   },
   {
     profile: 'extension',
+    name: 'v8vscedit_dump_all_cfe',
+    description: 'Пакетная выгрузка ВСЕХ расширений базы в каталог .cfe-файлов с манифестом cfe-dump.json; отказ по отдельному расширению операцию не останавливает.',
+    requirement: 'Настроенное подключение к базе (env.json), существующий каталог выгрузки',
+  },
+  {
+    profile: 'extension',
+    name: 'v8vscedit_load_all_cfe',
+    description: 'Пакетная загрузка ВСЕХ расширений из каталога .cfe-файлов в базу; необратима, останавливается на первом отказе, конфигурацию базы обновляет отдельным шагом.',
+    requirement: 'Настроенное подключение к базе (env.json), каталог с .cfe и манифестом, confirm: true',
+  },
+  {
+    profile: 'extension',
     name: 'v8vscedit_get_properties',
     description: 'ВСЕ свойства объекта по каноническому пути, включая readonly, со всеми допустимыми enum/multiEnum-значениями; для metadataType-свойств в notes указано, каким tool менять значение.',
     requirement: 'Канонический путь (path)',
