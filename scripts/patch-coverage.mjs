@@ -27,7 +27,7 @@
 // Использование: `npm run coverage:changed` (стадия qa-e2e TDD-конвейера).
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
 import * as path from 'node:path';
 import { globSync } from 'glob';
 import { branchRangesOfSource } from './patch-coverage/branchFacts.mjs';
@@ -182,8 +182,23 @@ function readEmittedJs(rel) {
   if (!rel.startsWith('src/') || !rel.endsWith('.ts')) {
     return null;
   }
+  const srcPath = path.join(ROOT, rel);
   const outPath = path.join(ROOT, 'out', rel.slice('src/'.length).replace(/\.ts$/, '.js'));
   if (!existsSync(outPath)) {
+    return null;
+  }
+  // Устаревший emit врёт в САМУЮ опасную сторону: файл, который когда-то был
+  // чисто-типовым, а с тех пор обзавёлся кодом, был бы классифицирован как
+  // «покрывать нечего» и ТИХО выпал из гейта. Поэтому вывод старше исходника
+  // не считается фактом — вызывающий уходит на текстовую эвристику, а она при
+  // наличии кода даёт «не типовой», то есть покрытие всё-таки потребуется.
+  // Ошибаться этот гейт обязан в красную сторону, а не в зелёную.
+  try {
+    if (statSync(outPath).mtimeMs < statSync(srcPath).mtimeMs) {
+      return null;
+    }
+  } catch {
+    // Исходник исчез между diff и проверкой — факта нет, решает эвристика.
     return null;
   }
   return readFileSync(outPath, 'utf-8')
