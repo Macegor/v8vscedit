@@ -33,6 +33,16 @@ function writeShardReport(
   fs.writeFileSync(reportPath, JSON.stringify(report), 'utf-8');
 }
 
+/**
+ * Число тестов во ВСЁМ загруженном наборе, без учёта `MOCHA_GREP`.
+ * Mocha не вырезает отфильтрованные тесты из дерева сьютов — она пропускает их
+ * при обходе, поэтому полный размер набора считается обходом `mocha.suite`, а
+ * отобранный берётся из `runner.total`.
+ */
+function countAllTests(suite: Mocha.Suite): number {
+  return suite.tests.length + suite.suites.reduce((sum, child) => sum + countAllTests(child), 0);
+}
+
 export function run(): Promise<void> {
   const mocha = new Mocha({ ui: 'tdd', color: true });
   // Фильтр одного теста/сьюта без правки кода `.only`: `MOCHA_GREP='<regex>' npm run test:fast`.
@@ -68,6 +78,20 @@ export function run(): Promise<void> {
         }
       });
       run.stats = runner.stats;
+      // Видимость частичного прогона. `MOCHA_GREP` — это regex, и он
+      // регистрозависим; фильтр строчными буквами по сьюте с заглавной
+      // отбирает часть набора и даёт ЗЕЛЁНЫЙ отчёт на шестой части тестов —
+      // так уже случалось (41 тест из ~310 по теме, прогон выглядел успешным).
+      // Семантику regex менять не нужно, нужна видимость: несоответствие чисел
+      // обязано бросаться в глаза в первой же строке вывода.
+      if (grep) {
+        const selectedTests = runner.total;
+        const allTests = countAllTests(mocha.suite);
+        console.log(`[runner] MOCHA_GREP='${grep}' — отобрано ${String(selectedTests)} из ${String(allTests)} тестов`);
+        if (selectedTests === 0) {
+          console.log('[runner] ВНИМАНИЕ: фильтр не отобрал ни одного теста — «успех» такого прогона ничего не значит.');
+        }
+      }
     } catch (err) {
       reject(err instanceof Error ? err : new Error(String(err)));
     }
