@@ -213,12 +213,12 @@ export function detectRootObjectKind(xml: string, allowBareRoot = false): string
   if (wrapped !== undefined || !allowBareRoot) {
     return wrapped;
   }
-  /* c8 ignore next 3 — защитная ветка без достижимого вызывающего: единственный
-     потребитель `allowBareRoot` (ObjectXmlReader.updateType) читает файл объекта
-     метаданных по пути из MetaPathResolver, а такой файл всегда обёрнут
-     <MetaDataObject>. Ветка сохранена как поведение прежней приватной копии
-     функции (замена её на `return undefined` — отдельное решение, не косметика
-     консолидации). */
+  // Из production-пути сюда не попасть: единственный потребитель `allowBareRoot`
+  // (ObjectXmlReader.updateType) читает файл объекта по пути из MetaPathResolver,
+  // а такой файл всегда обёрнут <MetaDataObject>. Но функция экспортирована, и
+  // ветка тривиально достижима вызовом — значит покрывается тестом, а не
+  // прячется под `c8 ignore`: подавлять покрытие там, где его можно измерить,
+  // значит приучать не доверять собственному гейту.
   return /^<([A-Za-z][A-Za-z0-9]*)\b/.exec(text)?.[1];
 }
 

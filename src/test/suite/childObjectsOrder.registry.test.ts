@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { META_TYPES, type MetaKind } from '../../domain/MetaTypes';
-import type { ChildTag } from '../../domain/ChildTag';
+import { CHILD_TAG_CONFIG, type ChildTag } from '../../domain/ChildTag';
 import { hasExampleCorpus, scanOwnerFiles } from './support/childObjectsCorpus';
 import { tryRequireProductionModule } from './support/tryRequireProductionModule';
 
@@ -25,10 +25,12 @@ interface ChildObjectsOrderModule {
   hasOrderRule(ownerKind: string | undefined): boolean;
 }
 
-const REAL_CHILD_TAGS = new Set<string>([
-  'StandardAttribute', 'Attribute', 'AddressingAttribute', 'TabularSection', 'Form', 'Command',
-  'Template', 'Dimension', 'Resource', 'EnumValue', 'URLTemplate', 'Method',
-]);
+/**
+ * Выводится из ключей `CHILD_TAG_CONFIG`, а не переписывается руками: новый
+ * `ChildTag`, попавший в канон порядка, но забытый в рукописной копии, обратную
+ * проверку обошёл бы ТИХО — а это ровно то, что она обязана ловить.
+ */
+const REAL_CHILD_TAGS = new Set<string>(Object.keys(CHILD_TAG_CONFIG));
 
 /**
  * Известный точечный разрыв «строка канона знает тег, а `childTags` — нет».
