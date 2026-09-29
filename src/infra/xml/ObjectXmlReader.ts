@@ -8,6 +8,7 @@ import {
 import {
   detectRootObjectKind,
   escapeXmlText,
+  isEmptyPropertyValue,
   extractStandardAttributeXml,
   extractSimpleTag,
   extractSynonym,
@@ -646,9 +647,14 @@ function updatePropertyInElement(
   const propertyRe = new RegExp(`<${propertyKey}>[\\s\\S]*?<\\/${propertyKey}>`);
   const selfClosingRe = new RegExp(`<${propertyKey}(?:\\s[^>]*)?\\/>`);
   const propertyMatch = propertyRe.exec(propsInner);
-  const nextValueBlock = propertyMatch && valueKind === 'localizedString'
-    ? updateLocalizedPropertyContent(propertyMatch[0], Array.isArray(value) ? '' : value)
-    : buildPropertyValueBlock(propertyKey, valueKind, value);
+  // Очистка локализованного свойства идёт НЕ через правку содержимого: платформа
+  // пустое значение пишет самозакрытым тегом, а правка по месту оставила бы
+  // осиротевший `<v8:item>` с пустым `<v8:content>` — такой формы в эталоне нет
+  // ни разу (105 278 заполненных `<v8:content>`, пустых 0). Массив на этом входе
+  // означает то же самое: коэрсия ниже превращает его в пустую строку.
+  const nextValueBlock = propertyMatch && valueKind === 'localizedString' && !isEmptyPropertyValue(value)
+    ? updateLocalizedPropertyContent(propertyMatch[0], value)
+    : buildPropertyValueBlock(propertyKey, valueKind, value, detectPropertyBlockIndent(elementXml, propertyKey));
 
   // Если свойство ещё не объявлено в Properties, вставляем его в конец блока
   // перед закрывающим </Properties>. Раньше вставка шла сразу после <Name> или
@@ -669,7 +675,8 @@ function updatePropertyInElement(
 function buildPropertyValueBlock(
   propertyKey: string,
   valueKind: 'string' | 'boolean' | 'localizedString' | 'metadataReferenceList' | 'metadataFieldList',
-  value: string | boolean | string[]
+  value: string | boolean | string[],
+  blockIndent: string
 ): string {
   if (valueKind === 'boolean') {
     return `<${propertyKey}>${value === true ? 'true' : 'false'}</${propertyKey}>`;
@@ -696,23 +703,39 @@ function buildPropertyValueBlock(
       `\t\t\t</${propertyKey}>`,
     ].join('\n');
   }
+  // Сюда управление доходит только для 'string' и 'localizedString': boolean и
+  // оба списочных вида обработаны выше и уже вернули свой блок (у них своя
+  // пустота — пустой список).
+  if (isEmptyPropertyValue(value)) {
+    return `<${propertyKey}/>`;
+  }
   if (valueKind === 'localizedString') {
     const content = escapeXmlText(typeof value === 'string' ? value : String(value));
+    // Отступы — от места САМОГО свойства, а не фиксированные: блок пишется и на
+    // корне объекта, и у дочернего элемента, где глубина другая. С хардкодом
+    // цикл «очистить → заполнить заново» уводил `<v8:item>` на лишний уровень,
+    // а закрывающий тег — в нулевую колонку.
     return [
       `<${propertyKey}>`,
-      '\t\t\t\t\t<v8:item>',
-      '\t\t\t\t\t\t<v8:lang>ru</v8:lang>',
-      `\t\t\t\t\t\t<v8:content>${content}</v8:content>`,
-      '\t\t\t\t\t</v8:item>',
-      `</${propertyKey}>`,
+      `${blockIndent}\t<v8:item>`,
+      `${blockIndent}\t\t<v8:lang>ru</v8:lang>`,
+      `${blockIndent}\t\t<v8:content>${content}</v8:content>`,
+      `${blockIndent}\t</v8:item>`,
+      `${blockIndent}</${propertyKey}>`,
     ].join('\n');
   }
   return `<${propertyKey}>${escapeXmlText(String(value))}</${propertyKey}>`;
 }
 
-function updateLocalizedPropertyContent(propertyBlock: string, value: string | boolean): string {
+function updateLocalizedPropertyContent(propertyBlock: string, value: string | boolean | string[]): string {
   const content = escapeXmlText(typeof value === 'string' ? value : String(value));
   const contentRe = /(<v8:content>)[\s\S]*?(<\/v8:content>)/;
+  // Парный блок свойства с САМОЗАКРЫТЫМ `<v8:content/>` внутри: в эталоне такой
+  // формы нет ни разу (0 при 105 278 заполненных), и наш писатель её не создаёт —
+  // пустое локализованное значение схлопывается в `<Synonym/>` целиком. Ветка
+  // оставлена как защита от файла, отредактированного человеком вручную, и из
+  // production недостижима.
+  /* c8 ignore next 3 */
   if (!contentRe.test(propertyBlock)) {
     return propertyBlock.replace(/<v8:content\s*\/>/, () => `<v8:content>${content}</v8:content>`);
   }

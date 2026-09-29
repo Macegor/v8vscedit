@@ -3,7 +3,7 @@ import * as path from 'path';
 import { getMetaFolder, type MetaKind } from '../../domain/MetaTypes';
 import { getObjectLocationFromXml } from '../fs/ObjectLocation';
 import { ObjectXmlReader } from './ObjectXmlReader';
-import { escapeRegExp, escapeXmlText, writeTextFilePreservingBomAndEol } from './XmlUtils';
+import { escapeRegExp, escapeXmlText, isEmptyPropertyValue, writeTextFilePreservingBomAndEol } from './XmlUtils';
 import { CONFIGURATION_CHILD_ORDER } from './childObjects/ChildObjectsOrder';
 
 type PropertyValueKind = 'string' | 'boolean' | 'localizedString' | 'metadataReferenceList' | 'metadataFieldList';
@@ -341,11 +341,16 @@ export class ConfigurationXmlEditor {
         '</UsePurposes>',
       ].join('\n');
     }
+    // Пустое значение — самозакрытый тег, как у списочных веток выше и как у
+    // писателя свойств объекта (`ObjectXmlReader`). Проверка идёт ДО разбора по
+    // видам: правило от вида значения не зависит, а разложенное по веткам знание
+    // уже разошлось — списки его соблюдали, строка и локализованная строка нет,
+    // и сброс уже пустого `<Vendor/>` на корне давал git-дифф на ровном месте.
+    if (isEmptyPropertyValue(value)) {
+      return `<${propertyName}/>`;
+    }
     if (kind === 'localized') {
       const localizedValue = String(value);
-      if (!localizedValue) {
-        return `<${propertyName}></${propertyName}>`;
-      }
       return [
         `<${propertyName}>`,
         '\t\t\t\t<v8:item>',
