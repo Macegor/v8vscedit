@@ -18,8 +18,8 @@ import * as assert from 'assert';
 import { tryRequireProductionModule } from './support/tryRequireProductionModule';
 
 interface SensitiveArgsModule {
-  maskSensitiveCliArgs(args: readonly string[]): string[];
-  formatCommandLineForLog(executable: string, args: readonly string[]): string;
+  maskSensitiveCliArgs(args: readonly string[], secrets?: readonly string[]): string[];
+  formatCommandLineForLog(executable: string, args: readonly string[], secrets?: readonly string[]): string;
 }
 
 const MASK_PATTERN = /^\*+$/;
@@ -151,6 +151,55 @@ suite('SensitiveArgs.maskSensitiveCliArgs — маскирование паро�
     const original = [...input];
     mod.formatCommandLineForLog('node', input);
     assert.deepStrictEqual(input, original);
+  });
+
+  /**
+   * Регрессия, найденная автором тестов пакетного CFE: правило слитного `/P`
+   * сравнивалось без учёта регистра, и на macOS каждый временный каталог
+   * (`/private/var/...`) превращался в журнале в `/P********`. Испорченный
+   * журнал — тоже дефект, просто не такой громкий, как утечка.
+   */
+  test('обычные пути не принимаются за ключ пароля', () => {
+    for (const p of ['/private/var/folders/x/T/v8-1', '/Path/To/File', '/proc/self', '/p', '/P']) {
+      assert.deepStrictEqual(mask([p]), [p], `путь ${p} не должен маскироваться`);
+    }
+  });
+
+  /**
+   * Точное редактирование по ЗНАЧЕНИЮ — главный механизм, правила по ключам лишь
+   * страховка. Текстовая эвристика точной быть не может: любое правило «аргумент
+   * похож на ключ пароля» либо съедает путь, либо пропускает пароль со слешем.
+   */
+  test('значение секрета вычищается из любой формы записи, включая пароль со слешем', () => {
+    if (!mod) {
+      assert.fail('SensitiveArgs.ts не реализован — см. первый тест сьюта');
+    }
+    const secret = 'сек/рет';
+    const line = mod.formatCommandLineForLog(
+      '1cv8',
+      ['DESIGNER', '/F', '/private/var/base', '/NАдмин', `/P${secret}`, '/ConfigurationRepositoryP', secret],
+      [secret]
+    );
+    assert.ok(!line.includes(secret), line);
+    assert.ok(line.includes('/private/var/base'), `путь не должен пострадать: ${line}`);
+    assert.ok(line.includes('/NАдмин'), `имя пользователя не секрет: ${line}`);
+  });
+
+  test('значение секрета ловится и там, где эвристика по ключу молчит', () => {
+    // Строчный `/p` эвристикой намеренно не ловится (иначе снова пострадают пути),
+    // но переданное значение закрывает и этот случай.
+    assert.match(mask(['/pтайна'], ['тайна'])[0], /^\/p\*+$/);
+  });
+
+  test('пустая строка в списке секретов ничего не вычищает', () => {
+    assert.deepStrictEqual(mask(['/F', '/data/base'], ['']), ['/F', '/data/base']);
+  });
+
+  test('секрет со спецсимволами регулярного выражения вычищается буквально', () => {
+    const secret = 'a.*b(c)';
+    const result = mask(['-Something', `x${secret}y`], [secret]);
+    assert.ok(!result[1].includes(secret), result[1]);
+    assert.strictEqual(result[1], 'x********y');
   });
 
   test('исходный массив аргументов не мутируется', () => {

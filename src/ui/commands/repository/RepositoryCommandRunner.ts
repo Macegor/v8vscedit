@@ -81,9 +81,13 @@ export async function runRepositoryCliCommand(
     }
     designerArgs.push('/Out', outFile, '/DisableStartupDialogs');
 
-    // В векторе есть пароль базы (слитно, `/P<пароль>`) и пароль хранилища
-    // (`/ConfigurationRepositoryP <пароль>`) — в журнал уходит маскированная копия.
-    const commandAsText = formatCommandLineForLog(v8Path, designerArgs);
+    // В векторе два секрета: пароль базы (слитно, `/P<пароль>`) и пароль
+    // хранилища (`/ConfigurationRepositoryP <пароль>`). Оба передаются маскеру
+    // ЗНАЧЕНИЯМИ — это точнее правил по ключам и не зависит от формы записи.
+    const commandAsText = formatCommandLineForLog(v8Path, designerArgs, [
+      connection.password,
+      binding.repoPassword,
+    ]);
     services.outputChannel.appendLine(`[repository] Старт: ${commandAsText}`);
 
     const stdoutChunks: string[] = [];

@@ -41,8 +41,9 @@ export async function runDbClientFromWorkspace(
       ? await getAgentOperationServiceForInteractiveDesigner(workspaceFolder, outputChannel)
       : undefined;
 
-    // Пароль базы передаётся слитно с ключом (`/P<пароль>`) — маскируем перед журналом.
-    outputChannel.appendLine(`[db-run] Запуск: ${formatCommandLineForLog(v8Path, args)}`);
+    // Пароль базы передаётся слитно с ключом (`/P<пароль>`) и уходит в маскер
+    // ЗНАЧЕНИЕМ: правило по префиксу намеренно узкое, чтобы не съедать пути.
+    outputChannel.appendLine(`[db-run] Запуск: ${formatCommandLineForLog(v8Path, args, [connection.password ?? ''])}`);
     await launchInteractiveDesignerWithAgentPause({
       agentSession: agentService?.service,
       forceAgentDisconnect: agentService?.forceDisconnect,
