@@ -58,6 +58,8 @@ import {
   toMetadataReferenceListItem,
   toNumberOrUndefined,
 } from './PropertiesViewUtils';
+import { buildFormPickerOptions, getEmptyFormPickerMessage } from './formPickerOptions';
+import { FORM_PROPERTY_SECTION } from './propertyKeyOrder';
 import {
   isRootObjectNode,
   isValidMetadataName,
@@ -507,25 +509,29 @@ export class PropertiesViewController {
       this.showReadonlyPropertyWarning(currentProperty);
       return;
     }
-    const forms = this.getCurrentObjectForms();
-    if (forms.length === 0) {
-      void vscode.window.showInformationMessage('У текущего объекта нет форм для выбора.');
+    // Варианты — собственные формы объекта ПЛЮС общие формы конфигурации:
+    // у отчёта и константы собственных форм в этих свойствах почти не бывает
+    // (см. канон в formPickerOptions), и пикер без общих форм для них всегда пуст.
+    const options = buildFormPickerOptions({
+      ownerKind: this.activeNode.nodeKind,
+      ownerName: this.activeNode.textLabel,
+      ownForms: this.getCurrentObjectForms(),
+      commonForms: this.getConfigurationChildNames('CommonForm'),
+    });
+    if (options.length === 0) {
+      void vscode.window.showInformationMessage(getEmptyFormPickerMessage());
       return;
     }
-    const currentFormName = typeof currentProperty?.value === 'string'
-      ? extractFormNameFromReference(currentProperty.value)
-      : '';
+    // `picked` учитывается только при canPickMany, здесь предвыбор не нужен:
+    // текущее значение видно в самом поле свойства.
     const picked = await vscode.window.showQuickPick(
-      forms.map((formName) => ({
-        label: formName,
-        picked: formName === currentFormName,
-      })),
+      options.map((option) => ({ label: option.label, description: option.reference, option })),
       { title: 'Выбор формы', matchOnDescription: true }
     );
-    if (!picked?.label) {
+    if (!picked) {
       return;
     }
-    this.setFormProperty(key, picked.label);
+    this.setFormProperty(key, picked.option.reference);
   }
 
   private getCurrentObjectForms(): string[] {
@@ -544,7 +550,7 @@ export class PropertiesViewController {
     }
   }
 
-  private setFormProperty(key: string | undefined, formName: string | null): void {
+  private setFormProperty(key: string | undefined, formReference: string | null): void {
     if (!this.activeNode || !key) {
       return;
     }
@@ -553,12 +559,19 @@ export class PropertiesViewController {
       this.showReadonlyPropertyWarning(currentProperty);
       return;
     }
+    // У корня конфигурации/расширения свойства пишутся отдельным редактором:
+    // resolvePropertyTarget для него объекта не находит (это не объект внутри
+    // папки вида), и без этой ветки формы уровня приложения выбрать нельзя.
+    if (this.isConfigurationRootNode(this.activeNode) && this.activeNode.xmlPath) {
+      this.saveConfigurationScalar(this.activeNode.xmlPath, key, formReference ?? '');
+      return;
+    }
     const propertyTarget = resolvePropertyTarget(this.activeNode);
     if (!propertyTarget || !isRootObjectNode(this.activeNode, propertyTarget)) {
       void vscode.window.showWarningMessage('Выбор формы доступен только для корневого объекта метаданных.');
       return;
     }
-    const nextValue = formName ? `${this.activeNode.nodeKind}.${this.activeNode.textLabel}.Form.${formName}` : '';
+    const nextValue = formReference ?? '';
     const saved = this.xmlEditor.modifyObjectProperty(propertyTarget.xmlPath, {
       targetKind: propertyTarget.targetKind,
       targetName: propertyTarget.targetName,
@@ -568,6 +581,18 @@ export class PropertiesViewController {
       valueKind: 'string',
       value: nextValue,
     });
+    if (!saved.success) {
+      void vscode.window.showErrorMessage(saved.errors[0] ?? `Не удалось изменить свойство "${key}".`);
+      return;
+    }
+    if (saved.changed) {
+      this.host.refreshActiveView();
+    }
+  }
+
+  /** Записывает скалярное свойство корня конфигурации/расширения уже в каноничном виде. */
+  private saveConfigurationScalar(configXmlPath: string, key: string, value: string): void {
+    const saved = this.xmlEditor.modifyConfigurationProperty(configXmlPath, key, value, 'scalar');
     if (!saved.success) {
       void vscode.window.showErrorMessage(saved.errors[0] ?? `Не удалось изменить свойство "${key}".`);
       return;
@@ -594,18 +619,27 @@ export class PropertiesViewController {
   }
 
   private getCatalogReferenceOptions(): { canonical: string; display: string }[] {
+    return this.getConfigurationChildNames('Catalog')
+      .sort((left, right) => left.localeCompare(right, 'ru'))
+      .map((name) => ({
+        canonical: `Catalog.${name}`,
+        display: `Справочники.${name}`,
+      }));
+  }
+
+  /** Имена дочерних объектов конфигурации заданного вида из `Configuration.xml`. */
+  private getConfigurationChildNames(childKind: string): string[] {
     if (!this.activeNode?.xmlPath) {
       return [];
     }
+    // У корня выгрузки xmlPath — это сам Configuration.xml; у объекта метаданных
+    // путь ведёт внутрь папки вида, и корень приходится вычислять обходом вверх
+    // (getObjectLocationFromXml на самом Configuration.xml дал бы каталог выше).
+    const configXmlPath = this.isConfigurationRootNode(this.activeNode)
+      ? this.activeNode.xmlPath
+      : path.join(getObjectLocationFromXml(this.activeNode.xmlPath).configRoot, 'Configuration.xml');
     try {
-      const location = getObjectLocationFromXml(this.activeNode.xmlPath);
-      const config = parseConfigXml(path.join(location.configRoot, 'Configuration.xml'));
-      return [...(config.childObjects.get('Catalog') ?? [])]
-        .sort((left, right) => left.localeCompare(right, 'ru'))
-        .map((name) => ({
-          canonical: `Catalog.${name}`,
-          display: `Справочники.${name}`,
-        }));
+      return [...(parseConfigXml(configXmlPath).childObjects.get(childKind) ?? [])];
     } catch {
       return [];
     }
@@ -1171,7 +1205,7 @@ export class PropertiesViewController {
     if (typeof value !== 'string') {
       return '';
     }
-    if (property.section === 'Формы' && property.key.includes('Form')) {
+    if (property.section === FORM_PROPERTY_SECTION.title && property.key.includes('Form')) {
       return extractFormNameFromReference(value);
     }
     return value;

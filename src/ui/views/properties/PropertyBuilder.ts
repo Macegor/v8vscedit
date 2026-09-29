@@ -57,6 +57,7 @@ import {
   URL_TEMPLATE_PROPERTY_KEYS,
   applyCatalogPropertySections,
   applyDocumentPropertySections,
+  applyFormPropertySection,
   getRootPropertyKeyOrder,
   getTypeAwarePropertyKeyOrder,
   getTypedFieldPropertyKeyOrder,
@@ -369,11 +370,11 @@ export function buildRootMetaObjectProperties(
   inheritedFullObjectXml?: string | null
 ): ObjectPropertiesCollection {
   if (isTypeAwareRootKind(rootMetaKind)) {
-    return buildTypeAwareRootProperties(
+    return applyFormPropertySection(buildTypeAwareRootProperties(
       extractRootObjectElementXml(fullObjectXml) ?? fullObjectXml,
       inheritedFullObjectXml ? extractRootObjectElementXml(inheritedFullObjectXml) ?? inheritedFullObjectXml : null,
       rootMetaKind
-    );
+    ));
   }
 
   const inner = extractRootObjectPropertiesInnerXml(fullObjectXml);
@@ -388,12 +389,12 @@ export function buildRootMetaObjectProperties(
     showMissingKeys: hasExplicitRootPropertyContract(rootMetaKind),
   });
   if (rootMetaKind === 'Catalog') {
-    return applyCatalogPropertySections(properties);
+    return applyFormPropertySection(applyCatalogPropertySections(properties));
   }
   if (rootMetaKind === 'Document') {
-    return applyDocumentPropertySections(properties);
+    return applyFormPropertySection(applyDocumentPropertySections(properties));
   }
-  return properties;
+  return applyFormPropertySection(properties);
 }
 
 /** Свойства корневого объекта, где состав полей зависит от блока `<Type>`. */
@@ -512,7 +513,9 @@ export function buildConfigurationProperties(fullConfigXml: string): ObjectPrope
     result.push(configString);
   }
 
-  return result;
+  // Формы уровня приложения тоже попадают в секцию «Формы»: панель включает
+  // контрол выбора формы по заголовку секции, а не по виду объекта.
+  return applyFormPropertySection(result);
 }
 
 /** Свойства типового реквизита / измерения / ресурса / колонки */
