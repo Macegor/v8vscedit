@@ -72,7 +72,16 @@ function readDeclaredCommands(): { command?: string; title?: string; enablement?
   return manifest.contributes?.commands ?? [];
 }
 
-suite('CfFileCommands — регистрация dumpConfigurationToCf/loadConfigurationFromCf', () => {
+suite('CfFileCommands — регистрация dumpConfigurationToCf/loadConfigurationFromCf', function () {
+  // Тесты сьюта ходят в реестр команд Extension Host (`getCommands(true)`,
+  // `executeCommand`) — это межпроцессный round-trip, чья задержка зависит от
+  // нагрузки на хост, а не от нашей логики. Гейт покрытия гоняет прогон восемью
+  // порциями параллельно, и дефолтных 2000 мс там не хватало: сьют дважды падал
+  // по таймауту и не воспроизводился при одиночном запуске. Это не маскировка
+  // недетерминизма — сама проверка детерминирована, расширяется только бюджет
+  // ожидания внешнего вызова. Роняя ПОРЦИЮ, такой флейк обесценивал весь прогон.
+  this.timeout(30_000);
+
   let commandsMod: CfFileCommandsModule | undefined;
   let lockMod: ConfigurationOperationLockModule | undefined;
 
