@@ -1,5 +1,6 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { RepositoryService, type RepositoryTarget } from '../../infra/repository/RepositoryService';
 import { ProjectSecretStorage } from '../../infra/environment/ProjectSecretStorage';
@@ -156,24 +157,42 @@ suite('RepositoryService', () => {
     displayName: 'Тест',
   };
 
+  /**
+   * Подменённый `env.json` пишется во ВРЕМЕННЫЙ корень, а не в корпус.
+   *
+   * Восстановление из `setup`/`teardown` защищает только от нормального
+   * завершения: обрыв прогона между ними оставляет испорченный файл в
+   * `example/`, который git не отслеживает, — содержимое пользователя теряется
+   * безвозвратно. Это уже происходило: `env.json` пролежал с `[1,2,3]` и ронял
+   * три теста этого же сьюта на каждом последующем прогоне.
+   *
+   * Реального корпуса этим трём тестам не нужно вовсе — проверяется разбор
+   * одного файла, а не работа с выгрузкой.
+   */
+  function withEnvFile(content: string): { root: string; target: RepositoryTarget } {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-env-'));
+    fs.writeFileSync(path.join(root, 'env.json'), content, 'utf-8');
+    return { root, target: { ...sampleTarget, configRoot: path.join(root, 'src', 'cf') } };
+  }
+
   test('Пустой env.json не роняет чтение привязки', async () => {
-    fs.writeFileSync(envPath, '   \n', 'utf-8');
+    const { root, target } = withEnvFile('   \n');
     // Свежий сервис, чтобы исключить попадание в кэш предыдущего чтения.
-    const fresh = new RepositoryService(EXAMPLE_ROOT, new ProjectSecretStorage(createFakeSecretStore(), EXAMPLE_ROOT));
-    assert.doesNotThrow(() => fresh.hasBinding(sampleTarget));
-    assert.strictEqual(await fresh.loadBinding(sampleTarget), null);
+    const fresh = new RepositoryService(root, new ProjectSecretStorage(createFakeSecretStore(), root));
+    assert.doesNotThrow(() => fresh.hasBinding(target));
+    assert.strictEqual(await fresh.loadBinding(target), null);
   });
 
   test('Битый env.json даёт внятную ошибку', async () => {
-    fs.writeFileSync(envPath, '{ не json', 'utf-8');
-    const fresh = new RepositoryService(EXAMPLE_ROOT, new ProjectSecretStorage(createFakeSecretStore(), EXAMPLE_ROOT));
-    await assert.rejects(() => fresh.loadBinding(sampleTarget), /env\.json повреждён/);
+    const { root, target } = withEnvFile('{ не json');
+    const fresh = new RepositoryService(root, new ProjectSecretStorage(createFakeSecretStore(), root));
+    await assert.rejects(() => fresh.loadBinding(target), /env\.json повреждён/);
   });
 
   test('env.json не-объект трактуется как повреждённый', async () => {
-    fs.writeFileSync(envPath, '[1,2,3]', 'utf-8');
-    const fresh = new RepositoryService(EXAMPLE_ROOT, new ProjectSecretStorage(createFakeSecretStore(), EXAMPLE_ROOT));
-    await assert.rejects(() => fresh.loadBinding(sampleTarget), /ожидался объект/);
+    const { root, target } = withEnvFile('[1,2,3]');
+    const fresh = new RepositoryService(root, new ProjectSecretStorage(createFakeSecretStore(), root));
+    await assert.rejects(() => fresh.loadBinding(target), /ожидался объект/);
   });
 
   test('findConfigRoot — invalidateConfigRootCache сбрасывает кэш', () => {
