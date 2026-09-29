@@ -221,7 +221,13 @@ export function buildMetadataTypeInnerXml(typeValue: MetadataTypeValue): string 
       continue;
     }
     if (item.canonical.includes('Ref.') || isCompositeRefCanonical(item.canonical)) {
-      lines.push(`<v8:Type xmlns:d5p1="http://v8.1c.ru/8.1/data/enterprise/current-config">d5p1:${item.canonical}</v8:Type>`);
+      // Префикс `cfg:`, а не инлайн-объявление `xmlns:d5p1` с тем же URI. XML-эквивалентно,
+      // но платформа в корневом XML объекта метаданных пишет ТОЛЬКО `cfg:` — расхождение
+      // давало вечный дифф при каждой выгрузке из базы. Проверено сканом эталона:
+      // 27 847 корней `MetaDataObject` (2.20 и 2.21, cf и cfe) — у 100% объявлен
+      // `xmlns:cfg`, поэтому инлайн-объявление не требуется; форма `dNpM:` встречается
+      // только в макетах СКД и XDTO, где корневого `cfg` нет (см. infra/xml/dcs).
+      lines.push(`<v8:Type>cfg:${item.canonical}</v8:Type>`);
       continue;
     }
     lines.push(`<v8:Type>${toXmlPrimitive(item.canonical)}</v8:Type>`);

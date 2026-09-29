@@ -621,7 +621,19 @@ function unique(values: readonly string[]): string[] {
 }
 
 function normalizeForCompare(value: string): string {
-  return value.trim().toLocaleLowerCase('ru-RU').replace(/ё/g, 'е').replace(/\s+/g, '');
+  return stripXmlNamespacePrefix(value.trim().toLocaleLowerCase('ru-RU').replace(/ё/g, 'е').replace(/\s+/g, ''));
+}
+
+/**
+ * Снимает неймспейс-префикс XML (`cfg:`, `d5p1:`, `xs:`, `v8:`), чтобы `set_type`
+ * принимал тип в той же форме, в какой он записан в выгрузке. Агент, прочитавший
+ * `<v8:Type>cfg:CatalogRef.Номенклатура</v8:Type>`, естественно передавал эту строку
+ * обратно и получал «недопустимый тип» — при том, что сам тип допустим.
+ * Префикс ищется узко (латиница и цифры до двоеточия): в именах типов 1С двоеточий
+ * не бывает ни в английской, ни в русской форме, поэтому ложных срезаний нет.
+ */
+function stripXmlNamespacePrefix(value: string): string {
+  return value.replace(/^[a-z][a-z0-9]*:/, '');
 }
 
 function readStringQualifiers(value: unknown): McpSetTypeInput['stringQualifiers'] {

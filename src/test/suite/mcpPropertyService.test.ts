@@ -371,6 +371,64 @@ suite('McpPropertyService', () => {
     }
   });
 
+  /**
+   * `set_type` обязан принимать тип в той же форме, в какой он записан в выгрузке.
+   * Агент, прочитавший `<v8:Type>cfg:CatalogRef.Товары</v8:Type>`, естественно передавал
+   * эту строку обратно и получал «Недопустимые типы» — при том, что сам тип допустим:
+   * сравнение шло по алиасам без снятия неймспейс-префикса. Проверяем обе встречающиеся
+   * в выгрузках формы (`cfg:` платформы и `d5p1:` прежних версий расширения) и то, что
+   * записывается всё равно канон `cfg:`.
+   */
+  test('принимает тип с неймспейс-префиксом, как он записан в XML, и пишет канон cfg:', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-mcp-type-prefix-'));
+    try {
+      fs.mkdirSync(path.join(root, 'SessionParameters'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'Configuration.xml'), [
+        '<?xml version="1.0" encoding="utf-8"?>',
+        '<MetaDataObject>',
+        '  <Configuration>',
+        '    <Properties><Name>Тест</Name></Properties>',
+        '    <ChildObjects>',
+        '      <Catalog>Товары</Catalog>',
+        '      <SessionParameter>Параметр</SessionParameter>',
+        '    </ChildObjects>',
+        '  </Configuration>',
+        '</MetaDataObject>',
+      ].join('\n'), 'utf-8');
+      const xmlPath = path.join(root, 'SessionParameters', 'Параметр.xml');
+      const service = new McpPropertyService(new ConfigurationXmlEditor());
+
+      for (const input of ['cfg:CatalogRef.Товары', 'd5p1:CatalogRef.Товары', 'CatalogRef.Товары', 'СправочникСсылка.Товары']) {
+        fs.writeFileSync(xmlPath, [
+          '<?xml version="1.0" encoding="utf-8"?>',
+          '<MetaDataObject>',
+          '  <SessionParameter>',
+          '    <Properties>',
+          '      <Name>Параметр</Name>',
+          '      <Type>',
+          '        <v8:Type>xs:string</v8:Type>',
+          '      </Type>',
+          '    </Properties>',
+          '  </SessionParameter>',
+          '</MetaDataObject>',
+        ].join('\n'), 'utf-8');
+        const node = new MetadataNode({
+          label: 'Параметр',
+          nodeKind: 'SessionParameter',
+          xmlPath,
+        }, vscode.TreeItemCollapsibleState.None);
+
+        const result = service.setType(node, 'Тип', input);
+        assert.strictEqual(result.success, true, `${input}: ${result.message}`);
+        const saved = fs.readFileSync(xmlPath, 'utf-8');
+        assert.ok(saved.includes('<v8:Type>cfg:CatalogRef.Товары</v8:Type>'), `${input}: записан не канон cfg:`);
+        assert.ok(!saved.includes('xmlns:d5p1'), `${input}: вернулось инлайн-объявление неймспейса`);
+      }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('запрещает ссылочный тип CFE, если объект не заимствован в расширение', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-mcp-cfe-type-'));
     try {
