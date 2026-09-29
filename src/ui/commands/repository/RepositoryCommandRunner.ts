@@ -85,7 +85,9 @@ export async function runRepositoryCliCommand(
     // хранилища (`/ConfigurationRepositoryP <пароль>`). Оба передаются маскеру
     // ЗНАЧЕНИЯМИ — это точнее правил по ключам и не зависит от формы записи.
     const commandAsText = formatCommandLineForLog(v8Path, designerArgs, [
-      connection.password,
+      // Пароль базы необязателен в env.json (тип допускает undefined), пароль
+      // хранилища — нет. Пустая строка маскером игнорируется.
+      connection.password ?? '',
       binding.repoPassword,
     ]);
     services.outputChannel.appendLine(`[repository] Старт: ${commandAsText}`);

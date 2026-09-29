@@ -35,11 +35,11 @@ suite('SensitiveArgs.maskSensitiveCliArgs — маскирование паро�
     assert.ok(mod, 'infra/process/SensitiveArgs.ts ещё не реализован (ожидаемо на фазе «красный» TDD)');
   });
 
-  function mask(args: string[]): string[] {
+  function mask(args: string[], secrets?: readonly string[]): string[] {
     if (!mod) {
       assert.fail('SensitiveArgs.ts не реализован — см. первый тест сьюта');
     }
-    return mod.maskSensitiveCliArgs(args);
+    return mod.maskSensitiveCliArgs(args, secrets);
   }
 
   test('значение после -Password заменяется маской, сам ключ -Password сохраняется', () => {
