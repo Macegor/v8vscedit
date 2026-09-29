@@ -1,6 +1,7 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import { writeFileAtomic } from '../fs/AtomicFileWriter';
 
 export interface HashCacheSnapshot {
   schemaVersion: 1;
@@ -79,16 +80,10 @@ export function buildHashSnapshot(scopeKey: string, configDir: string): HashCach
 export function saveHashCache(projectRoot: string, snapshot: HashCacheSnapshot): void {
   const filePath = getCacheFilePath(projectRoot, snapshot.scopeKey);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  // Пишем во временный файл рядом и атомарно подменяем целевой через rename,
-  // чтобы прерывание записи не оставило битый JSON в кэше.
-  const tempPath = `${filePath}.${String(process.pid)}.${String(Date.now())}.tmp`;
-  try {
-    fs.writeFileSync(tempPath, JSON.stringify(snapshot), 'utf-8');
-    fs.renameSync(tempPath, filePath);
-  } catch (error) {
-    fs.rmSync(tempPath, { force: true });
-    throw error;
-  }
+  // Общий примитив temp+rename (infra/fs/AtomicFileWriter): прерывание записи
+  // не должно оставить битый JSON в кэше. Собственной копии здесь нет
+  // сознательно — их уже было две, и каждая следующая расходилась бы с общей.
+  writeFileAtomic(filePath, JSON.stringify(snapshot));
 }
 
 /**

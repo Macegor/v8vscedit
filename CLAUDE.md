@@ -148,6 +148,9 @@ src/
 │   ├── fs/
 │   │   ├── ConfigLocator.ts          # рекурсивный поиск Configuration.xml
 │   │   ├── MetaPathResolver.ts       # единый resolver: XML + все модули по ModuleSlot
+│   │   ├── AtomicFileWriter.ts       # writeFileAtomic/resolveAtomicTempPath: ЕДИНСТВЕННАЯ
+│   │   │                              # реализация temp+rename; через неё идёт любая запись файла
+│   │   │                              # выгрузки (docs/architecture.md, «Атомарная запись»)
 │   │   ├── ProjectLayout.ts          # resolveConfigDir: src/cf, src/cfe/<имя> — общее
 │   │   │                              # для расширения и CLI (cli/core/projectLayout.ts —
 │   │   │                              # тонкий re-export)
@@ -377,6 +380,29 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
   Существующие узлы `<ChildObjects>` НЕ переупорядочиваются никогда — правило применяется исключительно
   к вставке нового элемента, нормализация существующих файлов не делается сознательно (полная
   перезапись объекта в git-диффе на каждую мелкую правку и потеря идемпотентности операции).
+  **Не путать с осью допустимости:** `META_TYPES.childTags` — какие теги вид МОЖЕТ содержать (читает
+  `validate_metadata`/`disallowed-child`, дерево, `allowedOwnerKinds` MCP add-инструментов),
+  `CHILD_OBJECTS_ORDER` — порядок сериализации. Валидатор допустимости на ось порядка переводить нельзя:
+  пробовалось и откачено (стандартные реквизиты не лежат в `<ChildObjects>` → 16 945 ложных
+  предупреждений на эталоне), см.
+  [xml-format-rulesets.md](./docs/xml-format-rulesets.md#две-оси-допустимость-дочернего-тега-и-порядок-сериализации).
+  Новый дочерний тег вида метаданных → в `childTags` (допустимость) и, если расширение его вставляет, в
+  `CHILD_OBJECTS_ORDER` (порядок); `allowedOwnerKinds` add-инструмента выводится из `childTags` сам.
+- **Новый вспомогательный XML-файл объекта** (`Ext/Flowchart.xml`, дескриптор формы, макет и т.п.):
+  корневой элемент и пространство имён берутся с эталона `example/`, а НЕ выводятся по аналогии с соседним
+  файлом (`Flowchart.xml` писался как `<Flowchart xmlns=MDClasses/>`, эталон — `<GraphicalSchema
+  xmlns=…/xcf/scheme>`) → пространства имён — ПОЛЕМ `FormatRuleset` (образец — `graphicalSchemaXmlns`;
+  ось версии: у 2.20 нет `xmlns:pal`), а не литералом в builder'е → общий скелет + профиль различий (образец
+  — `buildGraphicalSchemaXml(version, ruleset, grid)`) → golden-фикстура выводится из эталонного файла
+  корпуса, а не снимается с вывода генератора (иначе фикстура закрепит ошибку). Не заявлять «снятым
+  правилом» то, что в корпусе неоднородно. См.
+  [xml-format-rulesets.md](./docs/xml-format-rulesets.md#графическая-схема-flowchartxml-и-макет-графическая-схема).
+- **Любой писатель файла выгрузки (и служебного кэша):** только через `infra/fs/AtomicFileWriter`
+  (`writeFileAtomic`) либо `writeTextFilePreservingBomAndEol`, который делегирует туда. Собственный
+  `fs.writeFileSync`/`rename` для файла выгрузки заводить нельзя — третьей копии temp+rename быть не
+  должно. Граница гарантии — обрыв процесса, не потеря питания (`fsync` нет); временный путь не оканчивается
+  на `.xml` (watcher `src/**/*.xml`). Почему это не та же механика, что staging-выгрузка CF — в
+  [architecture.md](./docs/architecture.md#атомарная-запись-файлов-выгрузки-infrafsatomicfilewriterts).
 - **Новая команда:** класс в `ui/commands/...` с `readonly id` → регистрация в `CommandRegistry.registerAll` → `package.json → contributes.commands` → при меню узла `contributes.menus` c `when: viewItem =~ /…/` → при хоткее `contributes.keybindings`.
 - **Новый builder узла:** `ui/tree/nodeBuilders/<имя>.ts` → регистрация в диспетчере `metaObjectTreeBuilder.ts`. XML — только через `parseObjectXml`/`ObjectXmlReader`.
 - **Новая декорация узла:** класс в `ui/tree/decorations/` (реализует `vscode.FileDecorationProvider`) → регистрация в `Container.wireTreeView` → суффикс `contextValue` — только в `TreeNode`.
@@ -488,7 +514,7 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
 9. **Не сохранять пароли/токены в файлы проекта.** Секреты — через VS Code SecretStorage.
 10. **Не создавать файлы при команде «Открыть».** Создание — только явным командам добавления/генерации.
 11. **Не вешать синхронный I/O на getters, tooltip, decoration и hot path дерева.**
-12. **Не терять формат XML.** Любой редактор существующего XML сохраняет BOM и стиль переводов строк исходного файла (`writeTextFilePreservingBomAndEol`).
+12. **Не терять формат XML.** Любой редактор существующего XML сохраняет BOM и стиль переводов строк исходного файла (`writeTextFilePreservingBomAndEol`). **Ловушка:** в `originalContent` передаётся текст, прочитанный ДО замены (отдельная константа перед `replace`), а не уже изменённый — иначе эталон стиля берётся с результата, и сохранение BOM/EOL становится пустой операцией (прецедент — `CfeBorrowService`).
 13. **Справочники свойств не живут в UI** — только в `infra/xml/PropertySchema.ts` (или спец-реестре infra); UI рендерит готовое.
 14. **Команды контекстного меню не хардкодятся в `UniversalPanelViewProvider`** — `addModuleActions` читает `META_TYPES[kind].modules` через `MODULE_SLOT_ACTIONS`.
 15. **Нативный TreeView — не основной UI**; не дублировать логику меню в `package.json`, если она есть в `addModuleActions`.

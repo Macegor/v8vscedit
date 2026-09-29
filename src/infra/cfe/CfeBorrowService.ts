@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { META_TYPES, type MetaKind, getMetaFolder } from '../../domain/MetaTypes';
 import { ConfigurationXmlEditor } from '../xml/ConfigurationXmlEditor';
+import { writeFileAtomic } from '../fs/AtomicFileWriter';
 import {
   detectRootObjectKind,
   escapeRegExp,
@@ -11,6 +12,7 @@ import {
   extractNestingAwareBlock,
   findChildElementsFullXmlInBlock,
   findNestingAwareElementRange,
+  writeTextFilePreservingBomAndEol,
 } from '../xml/XmlUtils';
 import { resolveInsertOffset } from '../xml/childObjects/ChildObjectsEditor';
 
@@ -243,7 +245,7 @@ export class CfeBorrowService {
     const targetDir = path.join(extDir, folder);
     fs.mkdirSync(targetDir, { recursive: true });
     const targetFile = path.join(targetDir, `${objectName}.xml`);
-    fs.writeFileSync(targetFile, borrowedXml, 'utf-8');
+    writeFileAtomic(targetFile, borrowedXml);
 
     const extConfigXmlPath = path.join(extDir, 'Configuration.xml');
     this.configEditor.addChildObject(extConfigXmlPath, `${typeName}.${objectName}`);
@@ -297,7 +299,7 @@ export class CfeBorrowService {
     fs.mkdirSync(formMetaDir, { recursive: true });
 
     const formMetaXml = this.buildBorrowedFormMetaXml(formName, sourceFormUuid, formatVersion);
-    fs.writeFileSync(formMetaFile, formMetaXml, 'utf-8');
+    writeFileAtomic(formMetaFile, formMetaXml);
     files.push(formMetaFile);
 
     const sourceFormExtXmlPath = path.join(
@@ -309,14 +311,14 @@ export class CfeBorrowService {
       const formExtDir = path.join(formMetaDir, formName, 'Ext');
       fs.mkdirSync(formExtDir, { recursive: true });
       const formExtFile = path.join(formExtDir, 'Form.xml');
-      fs.writeFileSync(formExtFile, borrowedFormExtXml, 'utf-8');
+      writeFileAtomic(formExtFile, borrowedFormExtXml);
       files.push(formExtFile);
 
       const moduleDir = path.join(formExtDir, 'Form');
       fs.mkdirSync(moduleDir, { recursive: true });
       const moduleFile = path.join(moduleDir, 'Module.bsl');
       if (!fs.existsSync(moduleFile)) {
-        fs.writeFileSync(moduleFile, '', 'utf-8');
+        writeFileAtomic(moduleFile, '');
         files.push(moduleFile);
       }
     }
@@ -391,31 +393,33 @@ export class CfeBorrowService {
       return false;
     }
 
-    let xml = fs.readFileSync(objFile, 'utf-8');
+    // Исходное содержимое запоминается ОТДЕЛЬНОЙ константой и дальше не
+    // переприсваивается: для писателя это эталон стиля (BOM + переводы строк),
+    // и подмена его уже изменённым текстом сделала бы сохранение стиля пустым.
+    const originalXml = fs.readFileSync(objFile, 'utf-8');
 
-    if (extractChildMetaElementXml(xml, childTag, childName)) {
+    if (extractChildMetaElementXml(originalXml, childTag, childName)) {
       return false;
     }
 
     const textChildRe = new RegExp(`\\s*<${childTag}>${escapeRegExp(childName)}</${childTag}>`);
-    if (childXml && textChildRe.test(xml)) {
-      xml = xml.replace(textChildRe, `\n${childXml}`);
-      fs.writeFileSync(objFile, xml, 'utf-8');
+    if (childXml && textChildRe.test(originalXml)) {
+      writeTextFilePreservingBomAndEol(objFile, originalXml, originalXml.replace(textChildRe, `\n${childXml}`));
       return true;
     }
 
-    if (textChildRe.test(xml)) {
+    if (textChildRe.test(originalXml)) {
       return false;
     }
 
     const entry = childXml ?? `\t\t\t<${childTag}>${escapeXmlText(childName)}</${childTag}>`;
 
-    const nextXml = this.insertIntoOwnerChildObjects(xml, childTag, entry);
+    const nextXml = this.insertIntoOwnerChildObjects(originalXml, childTag, entry);
     if (nextXml === null) {
       return false;
     }
 
-    fs.writeFileSync(objFile, nextXml, 'utf-8');
+    writeTextFilePreservingBomAndEol(objFile, originalXml, nextXml);
     return true;
   }
 
@@ -803,7 +807,9 @@ export class CfeBorrowService {
       return;
     }
 
-    fs.writeFileSync(objFile, nextXml, 'utf-8');
+    // Вставляемый блок собран с `\n`: в CRLF-файле без нормализации по эталону
+    // остались бы смешанные окончания строк (запрет №12).
+    writeTextFilePreservingBomAndEol(objFile, xml, nextXml);
   }
 
   private newGuid(): string {

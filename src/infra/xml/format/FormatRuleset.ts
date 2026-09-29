@@ -39,6 +39,16 @@ export interface FormatRuleset {
    */
   readonly metaDataObjectXmlns: string;
 
+  /**
+   * Строка xmlns-объявлений корня графической схемы `<GraphicalSchema …>` (без
+   * `version` — его дописывает builder, как и у `metaDataObjectXmlns`).
+   *
+   * Отдельное от `metaDataObjectXmlns` поле: у схемы своё пространство
+   * (`…/xcf/scheme`) и свой, более узкий набор префиксов. Ось версии здесь та
+   * же, что у объектов: в эталоне 2.20 префикса `pal` нет, в 2.21 есть.
+   */
+  readonly graphicalSchemaXmlns: string;
+
   /** Таблица сгенерированных типов (`xr:GeneratedType`) по виду метаданных. */
   readonly generatedTypes: Partial<Record<MetaKind, readonly GeneratedTypeDef[]>>;
 

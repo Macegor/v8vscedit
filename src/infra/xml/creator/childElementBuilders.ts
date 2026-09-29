@@ -422,7 +422,7 @@ export function ensureAuxiliaryChildFiles(options: AddChildMetadataOptions, form
       fs.writeFileSync(templateXml, buildTemplateXml(options.name, formatVersion, templateType, ruleset), 'utf-8');
       changedFiles.push(templateXml);
     }
-    changedFiles.push(...ensureTemplateContentFiles(templateDir, templateType, formatVersion));
+    changedFiles.push(...ensureTemplateContentFiles(templateDir, templateType, formatVersion, ruleset));
     return changedFiles;
   }
   return [];

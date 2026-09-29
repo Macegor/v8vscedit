@@ -132,14 +132,32 @@ export class MetadataValidationService {
   }
 }
 
+/**
+ * Допустимость дочернего элемента проверяется по `META_TYPES.childTags`.
+ *
+ * Переход на ось сериализации (`CHILD_OBJECTS_ORDER`) пробовался и ОТКАЧЕН по
+ * замеру: `StandardAttribute` в каноне порядка отсутствует по построению —
+ * стандартные реквизиты лежат в `<Properties>/<StandardAttributes>`, а не в
+ * `<ChildObjects>`, — но `ObjectXmlReader` подмешивает их в тот же список
+ * детей. В результате на эталонном корпусе получалось 16 945 предупреждений на
+ * 3 660 файлах вместо нуля, причём тесты этого не ловили: корпусный гейт
+ * отбрасывал всё, что не `error`.
+ *
+ * Посылка, ради которой ось заводилась, тоже оказалась ложной: `Column`
+ * журнала документов и признаки учёта плана счетов до этой функции НЕ
+ * доходят — `ObjectXmlReader` не отдаёт их как `MetaChild`, так что дать
+ * `disallowed-child` они не могли ни при какой оси.
+ *
+ * Исходный дефект (1996 ошибок на эталоне) закрыт целиком пополнением
+ * `childTags` у десяти видов, без смены оси.
+ */
 function validateChildTags(
   kind: string,
   children: readonly MetaChild[],
   add: (issue: MetadataValidationIssue) => void,
   xmlPath: string
 ): void {
-  const def = isKnownMetaKind(kind) ? META_TYPES[kind] : undefined;
-  const allowed = new Set<string>(def?.childTags ?? []);
+  const allowed = new Set<string>(META_TYPES[kind as MetaKind].childTags ?? []);
   if (allowed.size === 0) {
     const nonStandard = children.filter((child) => child.tag !== 'StandardAttribute');
     for (const child of nonStandard) {

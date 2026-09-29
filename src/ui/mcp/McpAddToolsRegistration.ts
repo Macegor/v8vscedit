@@ -157,22 +157,21 @@ export interface ChildAddToolDescriptor {
   readonly inUrlTemplate?: true;
 }
 
-const TYPED_OWNERS: readonly MetaKind[] = [
-  'Catalog', 'Document', 'ChartOfCharacteristicTypes', 'ChartOfAccounts',
-  'ChartOfCalculationTypes', 'BusinessProcess', 'Task', 'Report', 'DataProcessor',
-  'ExchangePlan',
-];
-
-const REGISTER_OWNERS: readonly MetaKind[] = [
-  'InformationRegister', 'AccumulationRegister', 'AccountingRegister', 'CalculationRegister',
-];
-
 // Форма добавляется через отдельный v8vscedit_add_form (см. V8McpServer) —
 // в этом списке tools для добавления формы как тонкой обёртки нет.
 
-const COMMAND_OWNERS: readonly MetaKind[] = [
-  ...TYPED_OWNERS, ...REGISTER_OWNERS, 'DocumentJournal', 'Enum',
-];
+/**
+ * Владельцы, у которых `META_TYPES[kind].childTags` содержит тег дочернего
+ * элемента. Рукописных списков владельцев здесь больше нет: они были вторым,
+ * расходящимся с реестром источником правды (запрет №2 CLAUDE.md) — регистры
+ * приходилось дописывать к `add_attribute` руками, а `add_template` не знал
+ * журнал документов, планы, бизнес-процесс и задачу.
+ */
+function ownersWithChildTag(tag: ChildTag): readonly MetaKind[] {
+  return Object.values(META_TYPES)
+    .filter((def) => def.childTags?.includes(tag) === true)
+    .map((def) => def.kind);
+}
 
 /**
  * Дескрипторы tools для добавления дочерних элементов.
@@ -186,57 +185,59 @@ export const CHILD_ADD_TOOLS: readonly ChildAddToolDescriptor[] = [
     toolName: 'v8vscedit_add_attribute',
     childTag: 'Attribute',
     russianLabel: 'реквизит',
-    allowedOwnerKinds: [...TYPED_OWNERS, ...REGISTER_OWNERS, 'CommonAttribute'],
+    // Исключение из вывода: общий реквизит сам по себе объект-реквизит, у него
+    // нет владельца с тегом `Attribute` в childTags.
+    allowedOwnerKinds: [...ownersWithChildTag('Attribute'), 'CommonAttribute'],
   },
   {
     toolName: 'v8vscedit_add_addressing_attribute',
     childTag: 'AddressingAttribute',
     russianLabel: 'реквизит адресации',
-    allowedOwnerKinds: ['Task'],
+    allowedOwnerKinds: ownersWithChildTag('AddressingAttribute'),
   },
   {
     toolName: 'v8vscedit_add_tabular_section',
     childTag: 'TabularSection',
     russianLabel: 'табличную часть',
-    allowedOwnerKinds: TYPED_OWNERS,
+    allowedOwnerKinds: ownersWithChildTag('TabularSection'),
   },
   {
     toolName: 'v8vscedit_add_command',
     childTag: 'Command',
     russianLabel: 'команду',
-    allowedOwnerKinds: COMMAND_OWNERS,
+    allowedOwnerKinds: ownersWithChildTag('Command'),
   },
   {
     toolName: 'v8vscedit_add_template',
     childTag: 'Template',
     russianLabel: 'макет',
-    allowedOwnerKinds: [
-      ...TYPED_OWNERS, 'Enum',
-      // Регистры собственных макетов не имеют — Template не входит в childTags.
-    ],
+    allowedOwnerKinds: ownersWithChildTag('Template'),
   },
   {
     toolName: 'v8vscedit_add_dimension',
     childTag: 'Dimension',
     russianLabel: 'измерение',
-    allowedOwnerKinds: REGISTER_OWNERS,
+    allowedOwnerKinds: ownersWithChildTag('Dimension'),
   },
   {
     toolName: 'v8vscedit_add_resource',
     childTag: 'Resource',
     russianLabel: 'ресурс',
-    allowedOwnerKinds: REGISTER_OWNERS,
+    allowedOwnerKinds: ownersWithChildTag('Resource'),
   },
   {
     toolName: 'v8vscedit_add_enum_value',
     childTag: 'EnumValue',
     russianLabel: 'значение перечисления',
-    allowedOwnerKinds: ['Enum'],
+    allowedOwnerKinds: ownersWithChildTag('EnumValue'),
   },
   {
     toolName: 'v8vscedit_add_column',
     childTag: 'Column',
     russianLabel: 'колонку табличной части',
+    // Исключение из вывода: `Column` не входит в `ChildTag` (колонка ТЧ
+    // сериализуется тегом `Attribute` внутри контейнера), владелец колонки —
+    // сама табличная часть.
     allowedOwnerKinds: ['TabularSection'],
     inTabularSection: true,
   },
@@ -244,13 +245,13 @@ export const CHILD_ADD_TOOLS: readonly ChildAddToolDescriptor[] = [
     toolName: 'v8vscedit_add_url_template',
     childTag: 'URLTemplate',
     russianLabel: 'URL-шаблон',
-    allowedOwnerKinds: ['HTTPService'],
+    allowedOwnerKinds: ownersWithChildTag('URLTemplate'),
   },
   {
     toolName: 'v8vscedit_add_method',
     childTag: 'Method',
     russianLabel: 'метод',
-    allowedOwnerKinds: ['URLTemplate'],
+    allowedOwnerKinds: ownersWithChildTag('Method'),
     inUrlTemplate: true,
   },
 ];

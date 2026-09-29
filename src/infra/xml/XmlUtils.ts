@@ -1,6 +1,7 @@
 import { XMLParser } from 'fast-xml-parser';
 import * as fs from 'fs';
 import { getDefaultStandardAttributeIndexing } from '../../domain/StandardAttribute';
+import { writeFileAtomic } from '../fs/AtomicFileWriter';
 
 export interface XmlTextNode { '#text': string }
 export type XmlElementNode = Record<string, XmlNodeList>;
@@ -776,5 +777,8 @@ export function writeTextFilePreservingBomAndEol(
   const hasBom = originalContent.charCodeAt(0) === 0xfeff;
   const eol = originalContent.includes('\r\n') ? '\r\n' : '\n';
   const normalized = nextContent.replace(/\r\n|\n/g, eol);
-  fs.writeFileSync(filePath, `${hasBom && normalized.charCodeAt(0) !== 0xfeff ? '\ufeff' : ''}${normalized}`, 'utf-8');
+  // Запись — только атомарной подменой файла: обрыв прямой записи на середине
+  // оставил бы обрезанный XML, а битый XML одного объекта делает нечитаемой всю
+  // конфигурацию.
+  writeFileAtomic(filePath, `${hasBom && normalized.charCodeAt(0) !== 0xfeff ? '\ufeff' : ''}${normalized}`);
 }

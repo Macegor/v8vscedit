@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { FormatRuleset } from '../format/FormatRuleset';
+import { resolveFormatRuleset } from '../format/formatRegistry';
 import {
   buildLocalizedTag,
   escapeXml,
@@ -10,7 +11,15 @@ import {
   type TemplateType,
 } from './creatorShared';
 
-export function ensureTemplateContentFiles(templateDir: string, templateType: TemplateType, formatVersion: string): string[] {
+export function ensureTemplateContentFiles(
+  templateDir: string,
+  templateType: TemplateType,
+  formatVersion: string,
+  // Дефолт оставлен: его используют тестовые вызовы, и он ими же покрыт.
+  // Делать параметр обязательным ради «чистоты» значит править четыре теста,
+  // которые сейчас нечем прогнать.
+  ruleset: FormatRuleset = resolveFormatRuleset(formatVersion)
+): string[] {
   const extDir = path.join(templateDir, 'Ext');
   fs.mkdirSync(extDir, { recursive: true });
   switch (templateType) {
@@ -45,7 +54,7 @@ export function ensureTemplateContentFiles(templateDir: string, templateType: Te
     }
     case 'GraphicalSchema': {
       const filePath = path.join(extDir, 'Template.xml');
-      return writeTextFile(filePath, buildGraphicalSchemaTemplateXml(formatVersion)) ? [filePath] : [];
+      return writeTextFile(filePath, buildGraphicalSchemaTemplateXml(formatVersion, ruleset)) ? [filePath] : [];
     }
     case 'SpreadsheetDocument':
     default: {
@@ -72,12 +81,42 @@ export function buildEmptyRightsXml(formatVersion: string): string {
   ].join('\n');
 }
 
-export function buildBusinessProcessFlowchartXml(formatVersion: string): string {
-  return [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    `<Flowchart xmlns="http://v8.1c.ru/8.3/MDClasses" version="${formatVersion}"/>`,
-    '',
-  ].join('\n');
+/**
+ * Профиль сетки графической схемы — ЕДИНСТВЕННОЕ, чем схема бизнес-процесса
+ * отличается от макета «Графическая схема»: скелет, пространства имён и состав
+ * верхних свойств у них общие (снято с эталона `example/`).
+ */
+interface GraphicalSchemaGridProfile {
+  readonly gridEnabled: 'true' | 'false';
+  readonly drawGridMode: 'Lines' | 'None';
+}
+
+/** Схема бизнес-процесса: сетка включена и рисуется линиями — 10 из 10 файлов эталона обеих генераций. */
+const FLOWCHART_GRID: GraphicalSchemaGridProfile = { gridEnabled: 'true', drawGridMode: 'Lines' };
+
+/**
+ * Макет «Графическая схема»: сетка не рисуется. `DrawGridMode=None` — общий для
+ * всех макетов корпуса; `GridEnabled` у макетов неоднороден, поэтому оставлено
+ * прежнее значение генератора `false` (анти-регресс, а не новое правило).
+ */
+const TEMPLATE_GRID: GraphicalSchemaGridProfile = { gridEnabled: 'false', drawGridMode: 'None' };
+
+/**
+ * Схема бизнес-процесса `BusinessProcesses/<Имя>/Ext/Flowchart.xml`.
+ *
+ * Корень — `<GraphicalSchema>` в пространстве `…/xcf/scheme` с содержимым, а не
+ * самозакрытый `<Flowchart>` в `MDClasses`, как писал прежний генератор:
+ * платформа выгружает именно графическую схему (эталон
+ * `example/2.2x/src/cf/BusinessProcesses/*\/Ext/Flowchart.xml`).
+ */
+export function buildBusinessProcessFlowchartXml(
+  formatVersion: string,
+  // Дефолт оставлен: его используют тестовые вызовы, и он ими же покрыт.
+  // Делать параметр обязательным ради «чистоты» значит править четыре теста,
+  // которые сейчас нечем прогнать.
+  ruleset: FormatRuleset = resolveFormatRuleset(formatVersion)
+): string {
+  return buildGraphicalSchemaXml(formatVersion, ruleset, FLOWCHART_GRID);
 }
 
 /**
@@ -216,13 +255,27 @@ function buildDataCompositionAppearanceTemplateXml(): string {
   ].join('\n');
 }
 
-function buildGraphicalSchemaTemplateXml(formatVersion: string): string {
+function buildGraphicalSchemaTemplateXml(formatVersion: string, ruleset: FormatRuleset): string {
+  return buildGraphicalSchemaXml(formatVersion, ruleset, TEMPLATE_GRID);
+}
+
+/**
+ * Общий скелет пустой графической схемы. Пространства имён берутся из ruleset
+ * (ось версии формата: префикса `pal` в 2.20 нет), профиль задаёт только пару
+ * настроек сетки. Пустая схема — самозакрытый `<Items/>` последним элементом,
+ * как в эталоне 2.20.
+ */
+function buildGraphicalSchemaXml(
+  formatVersion: string,
+  ruleset: FormatRuleset,
+  grid: GraphicalSchemaGridProfile
+): string {
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    `<GraphicalSchema xmlns="http://v8.1c.ru/8.3/xcf/scheme" xmlns:pal="http://v8.1c.ru/8.1/data/ui/colors/palette" xmlns:sch="http://v8.1c.ru/8.2/data/graphscheme" xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:web="http://v8.1c.ru/8.1/data/ui/colors/web" xmlns:win="http://v8.1c.ru/8.1/data/ui/colors/windows" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="${formatVersion}">`,
+    `<GraphicalSchema ${ruleset.graphicalSchemaXmlns} version="${formatVersion}">`,
     '\t<BackColor>style:FieldBackColor</BackColor>',
-    '\t<GridEnabled>false</GridEnabled>',
-    '\t<DrawGridMode>None</DrawGridMode>',
+    `\t<GridEnabled>${grid.gridEnabled}</GridEnabled>`,
+    `\t<DrawGridMode>${grid.drawGridMode}</DrawGridMode>`,
     '\t<GridHorizontalStep>20</GridHorizontalStep>',
     '\t<GridVerticalStep>20</GridVerticalStep>',
     '\t<PrintParameters>',

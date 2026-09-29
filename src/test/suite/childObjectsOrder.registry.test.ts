@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import { META_TYPES, type MetaKind } from '../../domain/MetaTypes';
 import type { ChildTag } from '../../domain/ChildTag';
+import { hasExampleCorpus, scanOwnerFiles } from './support/childObjectsCorpus';
 import { tryRequireProductionModule } from './support/tryRequireProductionModule';
 
 /**
@@ -30,36 +31,19 @@ const REAL_CHILD_TAGS = new Set<string>([
 ]);
 
 /**
- * Известный ОТДЕЛЬНЫЙ дефект реестра (см. очередь недочётов в CLAUDE.md/audit):
- * `META_TYPES[kind].childTags` у ряда видов НЕ содержит некоторые теги, хотя
- * они реально добавляемы через API (см. `ADDABLE_CANON` в
- * `childObjectsOrder.creator.test.ts`) и присутствуют в каноне порядка:
- *  - регистры (`InformationRegister`/`AccumulationRegister`/`AccountingRegister`/
- *    `CalculationRegister`) не содержат `Attribute` И `Template`;
- *  - `DocumentJournal`/`ChartOfCharacteristicTypes`/`ChartOfAccounts`/
- *    `ChartOfCalculationTypes`/`BusinessProcess`/`Task` не содержат ТОЛЬКО
- *    `Template` (макеты этим видам реально добавляемы).
+ * Известный точечный разрыв «строка канона знает тег, а `childTags` — нет».
+ * Раньше здесь были 14 пар (регистры без `Attribute`/`Template`, журнал,
+ * планы, бизнес-процесс и задача без `Template`) — это НЕ «отдельный дефект
+ * реестра», а ошибка оси: `validateChildTags` использует `childTags` как белый
+ * список с severity error, и `validate_metadata` объявляла невалидной
+ * эталонную выгрузку (см. `childTagsValidation.test.ts`). Разрыв закрыт
+ * добавлением тегов в `META_TYPES.childTags`.
  *
- * Эта задача НЕ обязана чинить `META_TYPES` (центральный контракт, другая ось —
- * состав групп дерева) — разрыв уже занесён в очередь недочётов ОТДЕЛЬНЫМ
- * пунктом. Здесь фиксируется ТОЧЕЧНОЕ исключение по паре «вид + тег», а НЕ по
- * виду целиком: направление проверки «каждый ChildTag из строки входит в
- * childTags» по-прежнему выполняется для этого же вида и ловит анти-паттерн
- * «добавили тег в реестр — забыли таблицу» для ЛЮБОГО тега, кроме перечисленных
- * здесь явно known-gap пар.
+ * Карта оставлена как контракт на будущее: механически опустошать её запрещено —
+ * пара может остаться ТОЛЬКО если она реально НЕ наблюдается в корпусе `example/`
+ * (иначе это скрытый дефект, а не осознанный пробел). Сейчас корректно пуста.
  */
-const KNOWN_CHILD_TAGS_GAP: ReadonlyMap<MetaKind, ReadonlySet<ChildTag>> = new Map([
-  ['InformationRegister', new Set<ChildTag>(['Attribute', 'Template'])],
-  ['AccumulationRegister', new Set<ChildTag>(['Attribute', 'Template'])],
-  ['AccountingRegister', new Set<ChildTag>(['Attribute', 'Template'])],
-  ['CalculationRegister', new Set<ChildTag>(['Attribute', 'Template'])],
-  ['DocumentJournal', new Set<ChildTag>(['Template'])],
-  ['ChartOfCharacteristicTypes', new Set<ChildTag>(['Template'])],
-  ['ChartOfAccounts', new Set<ChildTag>(['Template'])],
-  ['ChartOfCalculationTypes', new Set<ChildTag>(['Template'])],
-  ['BusinessProcess', new Set<ChildTag>(['Template'])],
-  ['Task', new Set<ChildTag>(['Template'])],
-]);
+const KNOWN_CHILD_TAGS_GAP: ReadonlyMap<MetaKind, ReadonlySet<ChildTag>> = new Map<MetaKind, ReadonlySet<ChildTag>>();
 
 suite('ChildObjectsOrder — T-12: анти-параллельный-реестр (сшивка с META_TYPES)', () => {
   let orderModule: ChildObjectsOrderModule | undefined;
@@ -109,19 +93,21 @@ suite('ChildObjectsOrder — T-12: анти-параллельный-реест�
     });
   }
 
-  test('известный точечный разрыв (KNOWN_CHILD_TAGS_GAP): каждый указанный тег есть в строке канона, но осознанно НЕ требуется в childTags этой задачей', () => {
+  test('KNOWN_CHILD_TAGS_GAP пуст либо содержит только пары, которые реально НЕ наблюдаются в эталоне example/', function () {
     if (!orderModule) {
       assert.fail('ChildObjectsOrder.ts не реализован — см. первый тест');
       return;
+    }
+    if (KNOWN_CHILD_TAGS_GAP.size > 0 && !hasExampleCorpus()) {
+      this.skip();
     }
     for (const [kind, gapTags] of KNOWN_CHILD_TAGS_GAP) {
       const row = orderModule.CHILD_OBJECTS_ORDER[kind] ?? [];
       for (const tag of gapTags) {
         assert.ok(row.includes(tag), `${kind}: строка канона обязана включать ${tag}`);
-        assert.ok(
-          !META_TYPES[kind].childTags?.includes(tag),
-          `${kind}: если childTags уже содержит ${tag} — известный разрыв починен, убери пару из KNOWN_CHILD_TAGS_GAP`
-        );
+        assert.ok(!META_TYPES[kind].childTags?.includes(tag), `${kind}: разрыв уже починен — уберите пару ${tag} из KNOWN_CHILD_TAGS_GAP`);
+        const observed = scanOwnerFiles(kind).some((f) => f.tags?.includes(tag));
+        assert.ok(!observed, `${kind}.${tag} встречается в эталоне — это дефект реестра, а не осознанный пробел`);
       }
     }
   });
