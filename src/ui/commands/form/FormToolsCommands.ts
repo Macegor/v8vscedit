@@ -24,15 +24,26 @@ export function registerFormToolsCommands(
   );
 }
 
+/**
+ * Отказ команды — в уведомление И в журнал «1С Редактор». Только тост теряется:
+ * пользователь закрывает его, и разбираться потом не по чему, а сообщения
+ * сервисов форм несут путь файла и причину.
+ */
+async function failCommand(services: CommandServices, what: string, error: unknown): Promise<void> {
+  const text = `${what}: ${String(error)}`;
+  services.outputChannel.appendLine(`[form][error] ${text}`);
+  await vscode.window.showErrorMessage(text);
+}
+
 async function showFormInfo(node: MetadataNode | undefined, services: CommandServices): Promise<void> {
-  await runFormReport(node, (formPath) => {
+  await runFormReport(node, services, (formPath) => {
     const result = services.formToolsService.info({ formPath, limit: 1000 });
     return { title: `Форма: ${result.title}`, lines: result.lines };
   });
 }
 
 async function validateForm(node: MetadataNode | undefined, services: CommandServices): Promise<void> {
-  await runFormReport(node, (formPath) => {
+  await runFormReport(node, services, (formPath) => {
     const result = services.formToolsService.validate({ formPath, detailed: true, maxErrors: 100 });
     // Предупреждения в заголовке обязательны: после смягчения части правил
     // содержательный вывод бывает целиком в них, и «0 ошибок» их прятало.
@@ -46,18 +57,24 @@ async function validateForm(node: MetadataNode | undefined, services: CommandSer
 /** Общий сценарий читающих формо-команд: путь тела формы → отчёт, отказ сервиса → уведомление. */
 async function runFormReport(
   node: MetadataNode | undefined,
+  services: CommandServices,
   build: (formPath: string) => { readonly title: string; readonly lines: readonly string[] },
 ): Promise<void> {
-  const formPath = await resolveFormBodyForCommand(node);
+  const formPath = await resolveFormBodyForCommand(node, services);
   if (!formPath) {
     return;
   }
+  // `openReport` намеренно ВНЕ try: он открывает документ и к чтению формы
+  // отношения не имеет, а внутри try его сбой был бы показан как «не удалось
+  // прочитать форму» — текст соврал бы про стадию.
+  let report: { readonly title: string; readonly lines: readonly string[] };
   try {
-    const report = build(formPath);
-    await openReport(report.title, report.lines.join('\n'));
+    report = build(formPath);
   } catch (error) {
-    await vscode.window.showErrorMessage(`Не удалось прочитать форму: ${String(error)}`);
+    await failCommand(services, 'Не удалось прочитать форму', error);
+    return;
   }
+  await openReport(report.title, report.lines.join('\n'));
 }
 
 /**
@@ -65,14 +82,17 @@ async function runFormReport(
  * объекта это XML объекта-владельца, и команда разбирала XML справочника как форму
  * (лавина ложных ошибок валидации). Деривация — общая с MCP-инструментами.
  */
-async function resolveFormBodyForCommand(node: MetadataNode | undefined): Promise<string | undefined> {
+async function resolveFormBodyForCommand(
+  node: MetadataNode | undefined,
+  services: CommandServices,
+): Promise<string | undefined> {
   if (!node) {
     return await pickPath('Выберите Form.xml, XML формы или каталог формы');
   }
   try {
     return resolveFormBodyFromNode(node, node.textLabel);
   } catch (error) {
-    await vscode.window.showErrorMessage(`Не удалось определить файл формы: ${String(error)}`);
+    await failCommand(services, 'Не удалось определить файл формы', error);
     return undefined;
   }
 }
@@ -102,12 +122,12 @@ async function addForm(node: MetadataNode | undefined, services: CommandServices
     afterMutation(result.changedFiles, services);
     await vscode.window.showInformationMessage(`Форма ${formName} добавлена.`);
   } catch (error) {
-    await vscode.window.showErrorMessage(`Не удалось добавить форму: ${String(error)}`);
+    await failCommand(services, 'Не удалось добавить форму', error);
   }
 }
 
 async function removeForm(node: MetadataNode | undefined, services: CommandServices): Promise<void> {
-  const target = await resolveRemoveTarget(node);
+  const target = await resolveRemoveTarget(node, services);
   if (!target) {
     return;
   }
@@ -139,7 +159,7 @@ async function removeForm(node: MetadataNode | undefined, services: CommandServi
     afterMutation(result.changedFiles, services);
     await vscode.window.showInformationMessage(`Форма ${formName} удалена.`);
   } catch (error) {
-    await vscode.window.showErrorMessage(`Не удалось удалить форму: ${String(error)}`);
+    await failCommand(services, 'Не удалось удалить форму', error);
   }
 }
 
@@ -152,13 +172,14 @@ async function removeForm(node: MetadataNode | undefined, services: CommandServi
  */
 async function resolveRemoveTarget(
   node: MetadataNode | undefined,
+  services: CommandServices,
 ): Promise<{ objectPath: string; formName: string } | undefined> {
   if (node?.nodeKind === 'Form') {
     try {
       const { ownerObjectXmlPath, formName } = resolveObjectFormNodeParts(node, node.textLabel);
       return { objectPath: ownerObjectXmlPath, formName };
     } catch (error) {
-      await vscode.window.showErrorMessage(`Не удалось определить объект-владелец формы: ${String(error)}`);
+      await failCommand(services, 'Не удалось определить объект-владелец формы', error);
       return undefined;
     }
   }

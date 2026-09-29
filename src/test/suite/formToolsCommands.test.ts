@@ -267,6 +267,12 @@ suite('Команды навигатора: формы — чтение (info/va
       assert.strictEqual(errorMessages.length, 1, errorMessages.join('\n'));
       assert.match(errorMessages[0], /Не удалось определить файл формы/);
       assert.match(errorMessages[0], /форм/i);
+      // Отказ обязан попасть и в журнал «1С Редактор»: тост пользователь
+      // закрывает, и разбираться потом не по чему.
+      assert.ok(
+        fx.harness.logLines.some((line) => line.includes('[form][error]') && line.includes('Не удалось определить файл формы')),
+        fx.harness.logLines.join('\n')
+      );
     });
   }
 
@@ -285,6 +291,10 @@ suite('Команды навигатора: формы — чтение (info/va
     assert.strictEqual(errorMessages.length, 1, errorMessages.join('\n'));
     assert.match(errorMessages[0], /Не удалось прочитать форму/);
     assert.match(errorMessages[0], /Form\.xml/);
+    assert.ok(
+      fx.harness.logLines.some((line) => line.includes('[form][error]') && line.includes('Не удалось прочитать форму')),
+      fx.harness.logLines.join('\n')
+    );
   });
 });
 

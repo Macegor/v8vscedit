@@ -64,6 +64,12 @@ export interface FormMcpHarness {
   readonly supportQueries: string[];
   /** Пути, по которым гейт спрашивал `repositoryService.isEditRestricted`. */
   readonly repositoryQueries: string[];
+  /**
+   * Строки, ушедшие в канал «1С Редактор». Нужны, чтобы проверять не только тост,
+   * но и запись отказа в журнал: тост пользователь закрывает, и разбираться потом
+   * не по чему.
+   */
+  readonly logLines: string[];
   call(tool: string, args: Record<string, unknown>): Promise<CallToolResult>;
   dispose(): void;
 }
@@ -76,6 +82,7 @@ export function createFormMcpHarnessOverEntry(entry: ConfigEntry, options: FormM
   const postMutation: PostMutationLog = { suppress: [], markChanged: [], refreshActionsView: 0 };
   const supportQueries: string[] = [];
   const repositoryQueries: string[] = [];
+  const logLines: string[] = [];
   const supportMode = options.supportMode;
   const services = {
     treeProvider,
@@ -104,6 +111,7 @@ export function createFormMcpHarnessOverEntry(entry: ConfigEntry, options: FormM
     suppressConfigurationReloadForFiles: (files: string[]) => { postMutation.suppress.push([...files]); },
     markChangedConfigurationByFiles: (files: string[]) => { postMutation.markChanged.push([...files]); },
     refreshActionsView: () => { postMutation.refreshActionsView += 1; },
+    outputChannel: { appendLine: (line: string) => { logLines.push(line); } },
   } as unknown as McpCommandServices;
 
   const gate = new McpMutationGate(services);
@@ -124,6 +132,7 @@ export function createFormMcpHarnessOverEntry(entry: ConfigEntry, options: FormM
     postMutation,
     supportQueries,
     repositoryQueries,
+    logLines,
     call: async (tool, args) => {
       const handler = handlers.get(tool);
       if (!handler) {

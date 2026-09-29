@@ -14,6 +14,15 @@ import {
 import { resolveFormBodyFromNode } from '../../tree/formNodePaths';
 import type { McpRegistrationDeps } from './McpRegistrationDeps';
 
+/**
+ * Путь тела формы берётся двумя формами записи, и это не разнобой конвенций.
+ * Read-only инструменты (`form_info`, `validate_form`) зовут
+ * `resolveFormXmlByCanonical` — им узел не нужен ни для чего, кроме деривации.
+ * Мутирующим (`compile_form`, `edit_form`, `remove_form`) узел нужен отдельно,
+ * для `gate.assertNodeEditable`, поэтому они резолвят его ОДИН раз и дальше
+ * зовут `resolveFormBodyFromNode`; свести их к первой форме значило бы вернуть
+ * второй скан индекса дерева ради того же самого узла.
+ */
 export function registerFormTools(server: McpServer, deps: McpRegistrationDeps): void {
   const { paths, services, gate } = deps;
 
