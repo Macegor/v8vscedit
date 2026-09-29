@@ -82,6 +82,37 @@ class MetadataNode extends vscode.TreeItem {
 
 `contextValue` = `nodeKind` или `nodeKind-hasXml` (суффикс `-hasXml` добавляется при наличии `xmlPath`). Этот суффикс используется в `when`-условиях контекстного меню `package.json`.
 
+### Инвариант узла формы: `xmlPath` принадлежит владельцу
+
+У узла формы **объекта** (`nodeKind === 'Form'`, `Справочники.X.Форма.Y`) `xmlPath` — это XML
+**объекта-владельца** (`Catalogs/X.xml`), а не путь формы. Так задумано: `resolveLeafXmlPath`
+(`ui/tree/nodeBuilders/metaObjectTreeBuilder.ts`, симметрично `infra/cache/MetadataCache.ts`) задаёт адрес
+открытия по клику, и то же поле читают панель свойств (`PropertiesTargetResolver`), гейт блокировок
+(`McpMutationGate`), заимствование в CFE и декорации. Смена контракта затронула бы шесть потребителей поля (перечислены основные).
+У общей формы (`nodeKind === 'CommonForm'`) `xmlPath` — дескриптор `CommonForms/X.xml`, поэтому на ней
+ошибочная трактовка «работала», и дефект выглядел плавающим.
+
+Следствие: поле по названию «лжёт», поэтому **адрес самой формы обязан выводиться арифметикой, а не
+читаться из `xmlPath`**. Единая точка — `ui/tree/formNodePaths.ts`
+(`resolveObjectFormNodeParts` → XML владельца + имя формы, `resolveFormBodyFromNode` → тело
+`…/Ext/Form.xml`), внутри — `MetaPathResolver.resolveChildFormXml`/`resolveChildFormDescriptor`/
+`resolveFormXmlByDescriptor`. Модуль лежит в `ui/tree/`, а не в `ui/mcp/`: MCP-инструменты и команды
+навигатора (`v8vscedit.form.info`/`validate`/`remove`) — равноправные потребители дерева, адаптер в одном
+из них связал бы их между собой.
+
+**Новый потребитель, которому нужен путь формы** (тело, дескриптор, каталог формы), обязан идти через
+этот адаптер. Трактовка `node.xmlPath` узла формы как пути формы воспроизводит исходный дефект: до
+исправления `validate_form` давал ложное «AutoCommandBar element missing» (разбирал XML справочника как
+форму), `compile_form` строил `Catalogs/X.xml/Ext/Form.xml` и падал на ENOTDIR (и для общей формы тоже),
+а `edit_form` **писал правку формы поверх XML объекта метаданных**. Вторая линия защиты — guard по
+корневому элементу в `infra/xml/form/FormShared.ts` (см.
+[mcp-paths.md](./mcp-paths.md#формы-тело-и-дескриптор)).
+
+Тестовая ловушка: фикстура узла формы должна строиться так же, как продакшн-билдер — с `xmlPath`
+владельца. Прежняя фикстура в `mcpToolsCatalog.test.ts` вела `xmlPath` прямо на `Ext/Form.xml`, чего
+билдер не делает никогда, — `edit_form` был зелёным в тестах и разрушающим в жизни. Тест на контракт
+узла — `formNodeContract.test.ts`.
+
 ## Дескриптор-ориентированная архитектура (nodes/)
 
 Каждый тип узла описан отдельным файлом-дескриптором `NodeDescriptor`:
@@ -180,6 +211,9 @@ MCP-инструментов `v8vscedit_add_url_template`/`v8vscedit_add_method`
 | `getCommonCommandModulePath` | `{objectDir}/Ext/CommandModule.bsl` |
 | `getCommonModuleCodePath` | `{objectDir}/Ext/Module.bsl` |
 | `getFormModulePathForChild` | `{objectDir}/Forms/{name}/Ext/Form/Module.bsl` |
+| `resolveChildFormXml` (тело формы) | `{objectDir}/Forms/{name}/Ext/Form.xml` |
+| `resolveChildFormDescriptor` | `{objectDir}/Forms/{name}.xml` |
+| `resolveFormXmlByDescriptor` | `<dir>/<имя>/Ext/Form.xml` по `<dir>/<имя>.xml` |
 | `getCommandModulePathForChild` | `{objectDir}/Commands/{name}/Ext/CommandModule.bsl` |
 
 `resolveObjectXmlPath(configRoot, objectType, objectName)` находит XML объекта: сначала пробует глубокую структуру, затем плоскую.

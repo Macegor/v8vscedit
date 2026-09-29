@@ -105,6 +105,36 @@ export class MetaPathResolver {
     return target;
   }
 
+  /**
+   * Тело формы по её файлу-дескриптору: `<dir>/<имя>/Ext/Form.xml`.
+   *
+   * Считается ЯВНОЙ арифметикой, без обращений к ФС и без
+   * {@link getObjectLocationFromXml}: эвристика «глубокая/плоская раскладка» там
+   * опирается на совпадение имени файла с именем родительского каталога, и на
+   * форме с именем `Forms` (`Forms/Forms.xml`) она принимает дескриптор за
+   * объект глубокой раскладки и уводит путь на уровень выше.
+   */
+  resolveFormXmlByDescriptor(descriptorXmlPath: string): string {
+    const dir = path.dirname(descriptorXmlPath);
+    const formName = path.basename(descriptorXmlPath, '.xml');
+    return path.join(dir, formName, 'Ext', 'Form.xml');
+  }
+
+  /**
+   * Дескриптор формы объекта: `<каталог объекта>/Forms/<Имя>.xml`.
+   * Здесь {@link getObjectLocationFromXml} уместен — на входе именно XML
+   * объекта метаданных, для которого эвристика раскладки и написана.
+   */
+  resolveChildFormDescriptor(ownerObjectXmlPath: string, formName: string): string {
+    const loc = getObjectLocationFromXml(ownerObjectXmlPath);
+    return path.join(loc.objectDir, 'Forms', `${formName}.xml`);
+  }
+
+  /** Тело формы объекта по XML владельца и имени формы. */
+  resolveChildFormXml(ownerObjectXmlPath: string, formName: string): string {
+    return this.resolveFormXmlByDescriptor(this.resolveChildFormDescriptor(ownerObjectXmlPath, formName));
+  }
+
   private kindLabel(kind: string): string {
     try {
       return getMetaLabel(kind as MetaKind);
@@ -264,6 +294,21 @@ export function getCommonCommandModulePath(node: NodeLike): string | null {
 /** Путь к модулю общей команды; создаёт пустой файл, если его ещё нет */
 export function ensureCommonCommandModulePath(node: NodeLike): string | null {
   return ensure('CommonCommand', node);
+}
+
+/** Тело формы по её дескриптору — см. {@link MetaPathResolver.resolveFormXmlByDescriptor}. */
+export function resolveFormXmlByDescriptor(descriptorXmlPath: string): string {
+  return singleton.resolveFormXmlByDescriptor(descriptorXmlPath);
+}
+
+/** Дескриптор формы объекта — см. {@link MetaPathResolver.resolveChildFormDescriptor}. */
+export function resolveChildFormDescriptor(ownerObjectXmlPath: string, formName: string): string {
+  return singleton.resolveChildFormDescriptor(ownerObjectXmlPath, formName);
+}
+
+/** Тело формы объекта — см. {@link MetaPathResolver.resolveChildFormXml}. */
+export function resolveChildFormXml(ownerObjectXmlPath: string, formName: string): string {
+  return singleton.resolveChildFormXml(ownerObjectXmlPath, formName);
 }
 
 export function getFormModulePathForChild(node: NodeLike): string | null {

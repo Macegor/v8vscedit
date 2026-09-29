@@ -7,7 +7,15 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { attr, escapeRegExp, extractBlock, resolveFormXmlPath, VALID_CALL_TYPES } from './FormShared';
+import {
+  attr,
+  escapeRegExp,
+  extractBlock,
+  isFormRootXml,
+  isMetaDataObjectRootXml,
+  resolveFormXmlPath,
+  VALID_CALL_TYPES,
+} from './FormShared';
 import {
   collectAttributes,
   collectCommands,
@@ -107,8 +115,15 @@ export class FormValidateService {
     const isConfigContext = detectConfigContext(formPath);
 
     // 1. Root element
-    if (!/<Form\b/.test(xml)) {
-      reportError('Root element is not Form.');
+    // Критерий — ПЕРВЫЙ элемент документа (isFormRootXml), а не подстрока `<Form`:
+    // в XML справочника есть <Form>ФормаСписка</Form> внутри <ChildObjects>, и такой
+    // файл проходил проверку, после чего сыпалась пачка ложных ошибок про форму.
+    // validate read-only, поэтому это отчёт об ошибке, а не исключение.
+    if (!isFormRootXml(xml)) {
+      const hint = isMetaDataObjectRootXml(xml)
+        ? ' Это XML объекта метаданных; тело формы лежит в <Объект>/Forms/<Имя>/Ext/Form.xml.'
+        : '';
+      reportError(`Root element is not Form: ${formPath}.${hint}`);
       return finalize(formPath, report, lines);
     }
     const versionM = /<Form\b[^>]*\bversion="([^"]+)"/.exec(xml);

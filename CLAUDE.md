@@ -183,7 +183,10 @@ src/
 │   └── skills/                       # AiSkillsInstaller — установка ИИ-навыков
 │
 ├── ui/                               # Всё, что знает про vscode API
-│   ├── tree/                         # MetadataTreeProvider (тонкий), TreeNode, nodeBuilders/, decorations/
+│   ├── tree/                         # MetadataTreeProvider (тонкий), TreeNode, nodeBuilders/, decorations/,
+│   │                                  # formNodePaths.ts — ЕДИНЫЙ адаптер «узел формы → файлы формы» для
+│   │                                  # ui/mcp и ui/commands (xmlPath узла формы объекта — это XML
+│   │                                  # ВЛАДЕЛЬЦА, а не форма; docs/metadata-navigator.md)
 │   ├── views/                        # webview-провайдеры
 │   │   ├── universal/                # UniversalPanelViewProvider — ОСНОВНОЙ UI навигатора
 │   │   ├── properties/               # PropertyBuilder по PropertySchema
@@ -289,6 +292,7 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
 - Реквизиты/ТЧ — прямые сегменты без роли-префикса (`Справочники.Контрагенты.ИНН`; внутри ТЧ — `…ТабличнаяЧасть.Имя.Реквизит.Имя`).
 - Английских алиасов (`Catalog.X`) и legacy-форм нет; любая такая форма отбивается с подсказкой канона.
 - У инструментов, работающих с одним узлом, аргумент называется `path`; парные `compile_*` принимают `parentPath`. Никаких `objectPath`/`formPath`/`modulePath` и т.п.
+- Контракт `resolveFormXmlByCanonical` (`ui/mcp/McpPathResolvers.ts`) — путь к **ТЕЛУ** формы (`…/Ext/Form.xml`), не к дескриптору и не к XML объекта: `Справочники.X.Форма.Y` → `Catalogs/X/Forms/Y/Ext/Form.xml`, `ОбщиеФормы.X` → `CommonForms/X/Ext/Form.xml`. См. [mcp-paths.md](./docs/mcp-paths.md#формы-тело-и-дескриптор).
 
 ### Перенос новой функции из скилов в расширение
 
@@ -404,6 +408,17 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
   на `.xml` (watcher `src/**/*.xml`). Почему это не та же механика, что staging-выгрузка CF — в
   [architecture.md](./docs/architecture.md#атомарная-запись-файлов-выгрузки-infrafsatomicfilewriterts).
 - **Новая команда:** класс в `ui/commands/...` с `readonly id` → регистрация в `CommandRegistry.registerAll` → `package.json → contributes.commands` → при меню узла `contributes.menus` c `when: viewItem =~ /…/` → при хоткее `contributes.keybindings`.
+- **Новый потребитель пути формы** (MCP-инструмент или команда навигатора, которым нужно тело
+  `Ext/Form.xml`, дескриптор формы или XML владельца по узлу дерева): только через
+  `ui/tree/formNodePaths.ts` (`resolveObjectFormNodeParts`/`resolveFormBodyFromNode`) → арифметика путей —
+  в `MetaPathResolver` (`resolveFormXmlByDescriptor`/`resolveChildFormDescriptor`/`resolveChildFormXml`;
+  тело считается явно, не через `getObjectLocationFromXml` — его эвристика ломается на форме с именем
+  `Forms`) → тело читается через `readFormXml`/`assertFormRootXml` (`infra/xml/form/FormShared.ts`) —
+  guard по КОРНЕВОМУ элементу, а не по вхождению `<Form`. **`node.xmlPath` узла формы объекта — XML
+  объекта-владельца** (адрес открытия по клику, его же читают панель свойств, гейт блокировок,
+  заимствование CFE, декорации), трактовать его как путь формы нельзя: так `edit_form` писал правку поверх
+  XML справочника. Тестовые узлы формы строить как продакшн-билдер (с `xmlPath` владельца). См.
+  [metadata-navigator.md](./docs/metadata-navigator.md#инвариант-узла-формы-xmlpath-принадлежит-владельцу).
 - **Новый builder узла:** `ui/tree/nodeBuilders/<имя>.ts` → регистрация в диспетчере `metaObjectTreeBuilder.ts`. XML — только через `parseObjectXml`/`ObjectXmlReader`.
 - **Новая декорация узла:** класс в `ui/tree/decorations/` (реализует `vscode.FileDecorationProvider`) → регистрация в `Container.wireTreeView` → суффикс `contextValue` — только в `TreeNode`.
 - **Новый view/webview:** класс в `ui/views/<Имя>ViewProvider.ts` (без XML/FS) → данные готовит отдельный сервис → создание и команда открытия через `Container`.

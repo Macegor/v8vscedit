@@ -4,6 +4,7 @@ import {
   type ParsedCanonicalPath,
 } from '../../domain/CanonicalNames';
 import { getMetaFolder, type MetaKind } from '../../domain/MetaTypes';
+import { resolveFormBodyFromNode, resolveObjectFormNodeParts } from '../tree/formNodePaths';
 import type { MetadataNode } from '../tree/TreeNode';
 import type { McpMetadataPathService } from './McpMetadataPathService';
 
@@ -33,27 +34,35 @@ export function resolveObjectXmlByCanonical(
 }
 
 /**
- * Резолвит канонический путь формы (`Справочники.X.Форма.Y` или
- * `ОбщиеФормы.X`) в путь к файлу-дескриптору формы. Все формо-инструменты
- * (info/validate/edit/compile) принимают этот путь и сами достраивают
- * `Ext/Form.xml` при необходимости.
+ * Резолвит канонический путь формы (`Справочники.X.Форма.Y` или `ОбщиеФормы.X`)
+ * в путь к ТЕЛУ формы — `…/Ext/Form.xml`.
+ *
+ * Брать `node.xmlPath` как «путь формы» нельзя: у формы объекта это XML
+ * ОБЪЕКТА-владельца (сознательный адрес открытия по клику), и формо-инструменты
+ * работали с XML справочника вместо формы. Сама деривация живёт в
+ * {@link resolveFormBodyFromNode} — общей с командами навигатора.
  */
 export function resolveFormXmlByCanonical(
   paths: McpMetadataPathService,
   canonical: string,
   configuration?: string,
 ): string {
+  return resolveFormBodyFromNode(paths.resolveNode(canonical, configuration), canonical);
+}
+
+/**
+ * Резолвит канонический путь формы объекта в узел дерева, XML владельца и имя формы.
+ * Узел возвращается вместе с путями намеренно: вызывающему он нужен для
+ * `gate.assertNodeEditable`, и повторный `paths.resolveNode` (полный скан плоского
+ * индекса дерева) ради того же узла — чистые лишние затраты.
+ */
+export function resolveObjectFormNodeByCanonical(
+  paths: McpMetadataPathService,
+  canonical: string,
+  configuration?: string,
+): { node: MetadataNode; ownerObjectXmlPath: string; formName: string } {
   const node = paths.resolveNode(canonical, configuration);
-  if (node.nodeKind !== 'Form' && node.nodeKind !== 'CommonForm') {
-    throw new Error(
-      `Путь "${canonical}" должен указывать на форму (Справочники.X.Форма.Y или ОбщиеФормы.X), ` +
-      `получено ${node.nodeKind}.`,
-    );
-  }
-  if (!node.xmlPath) {
-    throw new Error(`Форма "${canonical}" не имеет XML-файла.`);
-  }
-  return node.xmlPath;
+  return { node, ...resolveObjectFormNodeParts(node, canonical) };
 }
 
 /**

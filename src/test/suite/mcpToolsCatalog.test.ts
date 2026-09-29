@@ -948,10 +948,17 @@ suite('V8McpServer — единый post-mutation гейт на репрезен
       'подготовительное создание формы должно пройти успешно (непустой changedFiles)',
     );
     const formXmlPath = path.join(configRoot, 'Catalogs', 'Контрагенты', 'Forms', 'ФормаЭлемента', 'Ext', 'Form.xml');
+    // Узел формы собран ТАК ЖЕ, как его собирает продакшн-билдер дерева
+    // (`resolveLeafXmlPath`, `MetadataCache.resolveLeafXmlPath`): `xmlPath` формы
+    // объекта — это XML ОБЪЕКТА-владельца (адрес открытия по клику), а не тело
+    // формы. Прежняя фикстура подсовывала сюда путь `…/Ext/Form.xml`, которого
+    // продакшн не делает никогда, — именно поэтому `edit_form` был зелёным в
+    // тестах и одновременно перезаписывал XML справочника формой в жизни.
+    const catalogXmlBefore = fs.readFileSync(catalogXmlPath);
     const formNode = new MetadataNode({
       label: 'ФормаЭлемента',
       nodeKind: 'Form',
-      xmlPath: formXmlPath,
+      xmlPath: catalogXmlPath,
       metaContext: { rootMetaKind: 'Catalog', ownerObjectXmlPath: catalogXmlPath },
     }, vscode.TreeItemCollapsibleState.None);
 
@@ -978,6 +985,13 @@ suite('V8McpServer — единый post-mutation гейт на репрезен
     const parsed = JSON.parse(extractText(result)) as { changedFiles: string[] };
     assert.ok(parsed.changedFiles.length > 0, 'успешное редактирование формы должно вернуть непустой changedFiles');
     assertGateFired(spy, parsed.changedFiles, 'edit_form success');
+    // Правка обязана лечь в ТЕЛО формы, а XML объекта остаться нетронутым.
+    assert.deepStrictEqual(parsed.changedFiles, [formXmlPath],
+      'edit_form должен изменить ровно тело формы Ext/Form.xml');
+    assert.ok(fs.readFileSync(catalogXmlPath).equals(catalogXmlBefore),
+      'XML справочника не должен измениться при правке формы (регресс: правка формы писалась поверх XML объекта)');
+    assert.ok(fs.readFileSync(formXmlPath, 'utf-8').includes('ПередЗакрытием'),
+      'клиентское событие формы должно появиться в теле формы');
 
     fs.rmSync(configRoot, { recursive: true, force: true });
   });
