@@ -374,7 +374,7 @@ suite('FormValidateService — T-17: защитные guard-ветки', () => {
   });
 });
 
-suite('FormValidateService — секция 2 (AutoCommandBar): обе error-ветки', () => {
+suite('FormValidateService — секция 2 (AutoCommandBar): обе ветки отклонения', () => {
   const FORM_XMLNS_HEAD = '<?xml version="1.0" encoding="UTF-8"?>\n<Form xmlns="http://v8.1c.ru/8.3/xcf/logform" version="2.21">\n';
 
   test('тег <AutoCommandBar> отсутствует в документе вовсе → "AutoCommandBar element missing", проверка не останавливает прогон', () => {
@@ -388,16 +388,18 @@ suite('FormValidateService — секция 2 (AutoCommandBar): обе error-в�
     assert.ok(result.lines.some((l) => l.startsWith('[OK]    MainAttribute:')), result.lines.join('\n'));
   });
 
-  test('<AutoCommandBar id> отличается от "-1" → "AutoCommandBar id=\'5\', expected \'-1\'"', () => {
+  // Нетипичный id — предупреждение, а не ошибка: платформа выгружает такие
+  // формы (2 из 6329 в эталоне example/), см. FormValidateService.
+  test('<AutoCommandBar id> отличается от "-1" → WARN "AutoCommandBar id=\'5\' — atypical…"', () => {
     const xml = FORM_XMLNS_HEAD +
       '\t<AutoCommandBar name="ПанельКоманд" id="5"/>\n' +
       '\t<ChildItems/>\n' +
       '</Form>\n';
     const result = service.validate({ formPath: writeFormCopy(xml), detailed: true });
-    assert.ok(
-      result.lines.includes("[ERROR] AutoCommandBar id='5', expected '-1'"),
-      result.lines.join('\n')
-    );
+    const line = result.lines.find((l) => l.startsWith("[WARN]  AutoCommandBar id='5'"));
+    assert.ok(line, result.lines.join('\n'));
+    assert.ok(line.includes("normally has id='-1'"), line);
+    assert.strictEqual(result.errors, 0, result.lines.join('\n'));
     assert.ok(!result.lines.some((l) => l.startsWith('[OK]    AutoCommandBar:')), result.lines.join('\n'));
   });
 
@@ -411,7 +413,7 @@ suite('FormValidateService — секция 2 (AutoCommandBar): обе error-в�
       '</Form>\n';
     const result = service.validate({ formPath: writeFormCopy(xml), detailed: true });
     assert.ok(
-      result.lines.includes("[ERROR] AutoCommandBar id='', expected '-1'"),
+      result.lines.some((l) => l.startsWith("[WARN]  AutoCommandBar id='' — atypical")),
       result.lines.join('\n')
     );
   });

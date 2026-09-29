@@ -34,7 +34,12 @@ async function showFormInfo(node: MetadataNode | undefined, services: CommandSer
 async function validateForm(node: MetadataNode | undefined, services: CommandServices): Promise<void> {
   await runFormReport(node, (formPath) => {
     const result = services.formToolsService.validate({ formPath, detailed: true, maxErrors: 100 });
-    return { title: `Валидация формы: ${String(result.errors)} ошибок`, lines: result.lines };
+    // Предупреждения в заголовке обязательны: после смягчения части правил
+    // содержательный вывод бывает целиком в них, и «0 ошибок» их прятало.
+    return {
+      title: `Валидация формы: ${String(result.errors)} ошибок, ${String(result.warnings)} предупреждений`,
+      lines: result.lines,
+    };
   });
 }
 

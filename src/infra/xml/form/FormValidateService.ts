@@ -1,9 +1,16 @@
 /**
- * Аналог `.claude/skills/form-validate/scripts/form-validate.py`.
  * Проверяет Form.xml: версия, AutoCommandBar, уникальность ID,
  * companion-элементы, DataPath → реквизит, CommandName → команда,
  * обработчики событий, callType, типы (cfg-префиксы), MainAttribute,
  * Title, и расширения (BaseForm + ID >= 1000000).
+ *
+ * Исторически — порт `.claude/skills/form-validate/scripts/form-validate.py`,
+ * но паритета с ним больше нет и он не подразумевается: набор правил здесь
+ * правился по замерам на эталоне `example/` (пространства id, версия формата,
+ * рекурсия `Items.*`, смягчение правил Action/AutoCommandBar). Скил
+ * синхронизирован вручную только по этим правилам; по остальным проверкам
+ * расхождение сохраняется, и источником правды для расширения является ЭТОТ
+ * файл, а не скрипт скила.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -21,6 +28,7 @@ import {
   collectCommands,
   collectElements,
 } from './FormInfoService';
+import { isKnownFormatVersion, KNOWN_FORMAT_VERSIONS } from '../format/formatRegistry';
 import {
   collectIdSpaces,
   countCheckedEntries,
@@ -89,6 +97,15 @@ const COMPANION_RULES: Record<string, readonly string[]> = {
   Table: ['ContextMenu', 'AutoCommandBar', 'SearchStringAddition', 'ViewStatusAddition', 'SearchControlAddition'],
 };
 
+/**
+ * Максимальное число переходов `Items.<Таблица>.CurrentData.…` → DataPath этой
+ * таблицы. Нужен только как страховка от битой формы: цикл ловится раньше по
+ * множеству уже посещённых таблиц, а честная вложенность таблиц в эталоне не
+ * превышает 2. Ровно столько переходов и допускается — цепочка из 16 звеньев
+ * разворачивается, ошибка «deeper than 16 hops» начинается с 17-го.
+ */
+const MAX_ITEMS_DEPTH = 16;
+
 const SKIP_DATAPATH_TAGS = new Set([
   'ContextMenu', 'ExtendedTooltip', 'AutoCommandBar',
   'SearchStringAddition', 'ViewStatusAddition', 'SearchControlAddition',
@@ -123,16 +140,24 @@ export class FormValidateService {
       const hint = isMetaDataObjectRootXml(xml)
         ? ' Это XML объекта метаданных; тело формы лежит в <Объект>/Forms/<Имя>/Ext/Form.xml.'
         : '';
-      reportError(`Root element is not Form: ${formPath}.${hint}`);
+      // Путь файла в текст НЕ подставляется: он уже есть отдельным полем
+      // `formPath` результата, а абсолютный путь внутри строки отчёта делает
+      // отчёт непереносимым между машинами и ломает ассёрты по тексту.
+      reportError(`Root element is not Form.${hint}`);
       return finalize(formPath, report, lines);
     }
     const versionM = /<Form\b[^>]*\bversion="([^"]+)"/.exec(xml);
     if (versionM) {
+      // Список версий — общий с валидатором внешнего объекта и с выбором
+      // ruleset генерации (`infra/xml/format/formatRegistry`). Своего набора
+      // здесь быть не должно: 2.21 — текущее поколение формата, а 2.18 —
+      // `DEFAULT_FORMAT_VERSION` проекта, который наш же генератор пишет в
+      // новый Form.xml; локальный список уже разошёлся с центральным по 2.18.
       const v = versionM[1];
-      if (v === '2.17' || v === '2.20') {
+      if (isKnownFormatVersion(v)) {
         reportOk(`Root element: Form version=${v}`);
       } else {
-        reportWarn(`Form version='${v}' (expected 2.17 or 2.20)`);
+        reportWarn(`Form version='${v}' (expected ${KNOWN_FORMAT_VERSIONS.join(', ')})`);
       }
     } else {
       reportWarn('Form version attribute missing');
@@ -153,7 +178,13 @@ export class FormValidateService {
       if (acbId === '-1') {
         reportOk(`AutoCommandBar: name='${acbName}', id=${acbId}`);
       } else {
-        reportError(`AutoCommandBar id='${acbId}', expected '-1'`);
+        // Не ошибка, а «нетипично»: у командной панели формы верхнего уровня
+        // почти всегда id='-1' (замер по эталону example/: 6327 форм из 6329),
+        // но платформа выгружает и обычный id — ровно 2 формы корпуса
+        // (Documents/ЭлектроннаяСопроводительнаяВедомость/Forms/ОсновнаяФорма*,
+        // id='607'). Правило эмпирическое, XSD-схемы Form.xml в проекте нет,
+        // поэтому обратно в ошибку его поднимать нельзя.
+        reportWarn(`AutoCommandBar id='${acbId}' — atypical, form-level AutoCommandBar normally has id='-1'`);
       }
     }
 
@@ -189,7 +220,7 @@ export class FormValidateService {
 
     // 8. Command actions present
     if (!report.stopped) {
-      validateCommandActions(xml, commands, reportError, reportOk);
+      validateCommandActions(xml, commands, reportWarn, reportOk);
     }
 
     // 9. MainAttribute count
@@ -396,31 +427,20 @@ function validateDataPaths(
     if (!dataPath) {continue;}
     if (/^\d+$/.test(dataPath) || /^\d+\/\d+:[0-9a-fA-F-]+$/.test(dataPath)) {continue;}
     checked++;
-    let clean = dataPath.replace(/\[\d+\]/g, '');
-    if (clean.startsWith('~')) {clean = clean.slice(1);}
-    const segments = clean.split('.');
-    let rootAttr = segments[0];
-
-    if (rootAttr === 'Items') {
-      if (segments.length < 3 || segments[2] !== 'CurrentData') {
-        reportWarn(`[${el.tag}] '${el.name}': DataPath='${dataPath}' — unknown Items.* shape, expected Items.<Table>.CurrentData.*`);
-        continue;
-      }
-      const tableName = segments[1];
-      const tableEl = elements.find((e) => e.tag === 'Table' && e.name === tableName);
-      if (!tableEl) {
-        reportError(`[${el.tag}] '${el.name}': DataPath='${dataPath}' — table element '${tableName}' not found`);
-        bad++;
-        continue;
-      }
-      const tablePath = tableEl.dataPath?.trim();
-      if (!tablePath) {continue;}
-      let tableClean = tablePath.replace(/\[\d+\]/g, '');
-      if (tableClean.startsWith('~')) {tableClean = tableClean.slice(1);}
-      rootAttr = tableClean.split('.')[0];
+    const resolution = resolveDataPathRoot(normalizeDataPath(dataPath), elements);
+    const prefix = `[${el.tag}] '${el.name}': DataPath='${dataPath}' — `;
+    if (resolution.kind === 'skip') {continue;}
+    if (resolution.kind === 'warn') {
+      reportWarn(prefix + resolution.message);
+      continue;
     }
-    if (!attrNames.has(rootAttr)) {
-      reportError(`[${el.tag}] '${el.name}': DataPath='${dataPath}' — attribute '${rootAttr}' not found`);
+    if (resolution.kind === 'error') {
+      reportError(prefix + resolution.message);
+      bad++;
+      continue;
+    }
+    if (!attrNames.has(resolution.root)) {
+      reportError(`${prefix}attribute '${resolution.root}' not found`);
       bad++;
     }
   }
@@ -432,6 +452,65 @@ function validateDataPaths(
       reportOk(`DataPath references: ${parts.join(', ')}`);
     }
   }
+}
+
+/** Результат разворачивания DataPath до корневого реквизита формы. */
+type DataPathResolution =
+  | { readonly kind: 'root'; readonly root: string }
+  | { readonly kind: 'skip' }
+  | { readonly kind: 'warn'; readonly message: string }
+  | { readonly kind: 'error'; readonly message: string };
+
+/** Снимает индексы `[N]` и служебный префикс `~` перед разбором на сегменты. */
+function normalizeDataPath(dataPath: string): string {
+  const clean = dataPath.replace(/\[\d+\]/g, '');
+  return clean.startsWith('~') ? clean.slice(1) : clean;
+}
+
+/**
+ * Разворачивает `Items.<Таблица>.CurrentData.…` РЕКУРСИВНО: у вложенной таблицы
+ * её собственный DataPath тоже начинается с `Items.`, и однократная подстановка
+ * оставляла корнем само слово `Items` — отсюда бессмысленное «attribute 'Items'
+ * not found» на корректной платформенной выгрузке (эталон example/, форма
+ * DataProcessors/НастройкаПравилОбработкиЗаявокСотрудников: таблица
+ * НастройкиПравилСтруктураПредприятияЭтапы с
+ * DataPath='Items.НастройкиПравилСтруктураПредприятия.CurrentData.Этапы').
+ *
+ * Зацикливаться на битой форме валидатор не имеет права, поэтому цепочка
+ * ограничена и множеством уже посещённых таблиц (взаимная ссылка A→B→A), и
+ * жёстким пределом глубины.
+ */
+function resolveDataPathRoot(clean: string, elements: readonly FormElementInfo[]): DataPathResolution {
+  let segments = clean.split('.');
+  const visited = new Set<string>();
+  // Переходов ровно MAX_ITEMS_DEPTH, а итераций на одну больше: последняя не
+  // делает перехода, а проверяет корень, полученный предыдущей. Со строгим `<`
+  // цепочка ровно из MAX_ITEMS_DEPTH звеньев объявлялась «глубже предела»,
+  // хотя развернулась до конца, и сообщение врало на единицу.
+  for (let depth = 0; depth <= MAX_ITEMS_DEPTH; depth++) {
+    const root = segments[0];
+    if (root !== 'Items') {
+      return { kind: 'root', root };
+    }
+    if (segments.length < 3 || segments[2] !== 'CurrentData') {
+      return { kind: 'warn', message: 'unknown Items.* shape, expected Items.<Table>.CurrentData.*' };
+    }
+    const tableName = segments[1];
+    if (visited.has(tableName)) {
+      return { kind: 'error', message: `cyclic Items.* reference through table element '${tableName}'` };
+    }
+    visited.add(tableName);
+    const tableEl = elements.find((e) => e.tag === 'Table' && e.name === tableName);
+    if (!tableEl) {
+      return { kind: 'error', message: `table element '${tableName}' not found` };
+    }
+    const tablePath = tableEl.dataPath?.trim();
+    if (!tablePath) {
+      return { kind: 'skip' };
+    }
+    segments = normalizeDataPath(tablePath).split('.');
+  }
+  return { kind: 'error', message: `Items.* chain is deeper than ${String(MAX_ITEMS_DEPTH)} hops` };
 }
 
 function validateCommandRefs(elements: readonly FormElementInfo[], commands: readonly FormCommandInfo[], reportError: (msg: string) => void, reportOk: (msg: string) => void): void {
@@ -471,7 +550,15 @@ function validateEventHandlers(xml: string, reportError: (msg: string) => void, 
   }
 }
 
-function validateCommandActions(xml: string, commands: readonly FormCommandInfo[], reportError: (msg: string) => void, reportOk: (msg: string) => void): void {
+/**
+ * Команда формы без `<Action>` — ПРЕДУПРЕЖДЕНИЕ, а не ошибка: платформа штатно
+ * выгружает такие команды (замер по эталону example/: 179 команд из 23 417,
+ * 0,8%, в 119 формах — полноценные команды с Title/ToolTip/Picture, например
+ * DataProcessors/БизнесСеть/Forms/ОтправкаПриглашенийКонтрагентам, команды
+ * ВыбратьВсе/СнятьВсе). Совсем убирать проверку нельзя: в рукописной форме
+ * команда без обработчика — чаще всего реальная недоделка.
+ */
+function validateCommandActions(xml: string, commands: readonly FormCommandInfo[], reportWarn: (msg: string) => void, reportOk: (msg: string) => void): void {
   if (commands.length === 0) {return;}
   const cmdsBlock = extractBlock(xml, 'Commands') ?? '';
   let bad = 0;
@@ -480,7 +567,7 @@ function validateCommandActions(xml: string, commands: readonly FormCommandInfo[
     const body = re.exec(cmdsBlock)?.[1] ?? '';
     const actionM = /<Action\b[^>]*>([^<]*)<\/Action>/.exec(body);
     if (!actionM?.[1].trim()) {
-      reportError(`Command '${cmd.name}': missing or empty Action`);
+      reportWarn(`Command '${cmd.name}': missing or empty Action — may be legitimate (platform exports such commands)`);
       bad++;
     }
   }
