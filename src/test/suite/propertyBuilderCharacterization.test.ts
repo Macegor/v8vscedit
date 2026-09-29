@@ -10,6 +10,7 @@ import {
 } from '../../ui/views/properties/PropertyBuilder';
 import type { NodeKind } from '../../ui/tree/TreeNode';
 import type { EnumPropertyValue, MetadataTypeValue } from '../../ui/views/properties/_types';
+import { skipWithoutCorpus } from './support/corpus';
 
 /**
  * Характеризационные (снапшот) тесты `PropertyBuilder.ts` — страховочная сеть
@@ -393,6 +394,12 @@ suite('PropertyBuilder — характеризация перед декомп�
   });
 
   suite('buildRootMetaObjectProperties — снапшот на реальных фикстурах example/2.20/src/cf', () => {
+    // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+    // (единый гейт: support/corpus.ts).
+    suiteSetup(function () {
+      skipWithoutCorpus(this);
+    });
+
     // Enum взят полностью (маленький, компактный объект) — deep-equal всего массива
     // защищает и от потери ключей, и от изменения структуры/значений value.
     test('Enums/PushУведомления.xml -> полный снапшот свойств', () => {
@@ -628,6 +635,12 @@ suite('PropertyBuilder — характеризация перед декомп�
   });
 
   suite('Экстракторы — точечная страховка перед переносом в propertyExtractors.ts', () => {
+    // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+    // (единый гейт: support/corpus.ts).
+    suiteSetup(function () {
+      skipWithoutCorpus(this);
+    });
+
     test('extractRootObjectPropertiesInnerXml достаёт внутренность блока Properties корневого тега', () => {
       const xmlPath = path.join(EXAMPLE_CF, 'Enums', 'PushУведомления.xml');
       const xml = fs.readFileSync(xmlPath, 'utf-8');

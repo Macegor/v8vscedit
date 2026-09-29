@@ -20,6 +20,7 @@ import {
   type TreeNodeDtoLike,
   type UniversalPanelFixture,
 } from './support/universalPanelHarness';
+import { skipWithoutCorpus } from './support/corpus';
 
 const DUMP_ALL_COMMAND_ID = 'v8vscedit.dumpAllExtensionsToCfe';
 const LOAD_ALL_COMMAND_ID = 'v8vscedit.loadAllExtensionsFromCfe';
@@ -33,13 +34,21 @@ function commandsOf(node: TreeNodeDtoLike): string[] {
 suite('UniversalPanelViewProvider — пункты меню пакетной выгрузки/загрузки всех расширений', function () {
   this.timeout(60_000);
   let fixture: UniversalPanelFixture;
+  let disposeFixture: (() => void) | undefined;
 
-  suiteSetup(() => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts). Проверка ДО построения стенда: он читает
+  // Configuration.xml обеих генераций и без корпуса упал бы в хуке.
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
     fixture = createUniversalPanelFixture();
+    disposeFixture = () => fixture.dispose();
   });
 
   suiteTeardown(() => {
-    fixture.dispose();
+    // При пропуске по гейту корпуса стенд не создавался — безусловный dispose
+    // ронял бы хук и выдавал «нет корпуса» за падение теста.
+    disposeFixture?.();
   });
 
   test('узел-контейнер расширений (extensions-root) содержит ОБА пункта с непустыми заголовком и иконкой', () => {
