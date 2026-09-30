@@ -141,6 +141,9 @@ src/
 │   │   ├── childObjects/             # канон порядка <ChildObjects> (см. docs/xml-format-rulesets.md)
 │   │   │   ├── ChildObjectsOrder.ts  # ДАННЫЕ: CHILD_OBJECTS_ORDER (по MetaKind), childTagRank, hasOrderRule
 │   │   │   └── ChildObjectsEditor.ts # МЕХАНИКА: resolveInsertOffset — не знает ни одного вида метаданных
+│   │   ├── properties/               # канон порядка <Properties> КОРНЕВОГО объекта (docs/xml-format-rulesets.md)
+│   │   │   ├── PropertyOrder.ts      # ДАННЫЕ: ROOT_PROPERTY_ORDER (по MetaKind), rootPropertyRank, hasRootPropertyOrderRule
+│   │   │   └── PropertyInsert.ts     # МЕХАНИКА: insertPropertyBlockInOrder — не знает ни одного вида метаданных
 │   │   └── format/                   # ruleset формата сериализации (см. docs/xml-format-rulesets.md)
 │   │       ├── FormatRuleset.ts      # интерфейс правил генерации одного поколения формата
 │   │       ├── baselineRuleset.ts    # правила текущего формата (2.21)
@@ -309,7 +312,7 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
 
 Для каждого сценария указано, какие файлы трогать. Если требуется править сверх списка — задача решается в другом слое.
 
-- **Новый тип метаданных:** запись в `META_TYPES` → при спец-модуле `ModuleSlot` + карта в `MetaPathResolver` → при наборе свойств схема в `PROPERTY_SCHEMAS` → иконка `src/icons/{light,dark}/<icon>.svg` → при нестандартной сборке узла builder в `ui/tree/nodeBuilders/` → тест `ObjectXmlReader` на пример из `example/`.
+- **Новый тип метаданных:** запись в `META_TYPES` → при спец-модуле `ModuleSlot` + карта в `MetaPathResolver` → при наборе свойств схема в `PROPERTY_SCHEMAS` → **строка в `ROOT_PROPERTY_ORDER`** (`infra/xml/properties/PropertyOrder.ts`, порядок свойств корня в `<Properties>`; снимается с эталона `example/`). **Без неё деградация МОЛЧАЛИВАЯ:** отсутствующее свойство вставляется в конец `<Properties>` мимо порядка платформы, а корпусный гейт этого не поймает — он сверяет только виды с экземплярами в `example/`, у нового вида экземпляров нет, значит нет и требования строки. Вид без экземпляров в корпусе — вакуумный ноль: строку заводить только по реальному эталону, иначе консервативный фолбэк «в конец» (см. [xml-format-rulesets.md](./docs/xml-format-rulesets.md#порядок-прямых-детей-properties-корневого-объекта-по-виду)) → иконка `src/icons/{light,dark}/<icon>.svg` → при нестандартной сборке узла builder в `ui/tree/nodeBuilders/` → тест `ObjectXmlReader` на пример из `example/`.
 - **Новый слот модуля (`ModuleSlot`):** литерал в `domain/ModuleSlot.ts` → путь в карте `MetaPathResolver` → при необходимости `OpenModuleCommandId` + команда → поле `modules` в записях `META_TYPES`.
 - **Новый дочерний тег (`ChildTag`):** значение в `domain/ChildTag.ts` + `CHILD_TAG_CONFIG` → при своём контейнере расширить `ObjectXmlReader.parseChildren` → тег в `childTags` нужных `META_TYPES`.
 - **Новый контейнерный дочерний тип со своими вложенными листьями** (паттерн ТЧ→Колонка; второй прецедент — HTTPСервис→URLШаблон→Метод, см. [mcp-paths.md](./docs/mcp-paths.md#26-расширенные-примеры-путей) и [metadata-navigator.md](./docs/metadata-navigator.md#контейнерные-дочерние-узлы-тчколонка-и-httpсервисurlшаблонметод)): контейнер и лист — обе отдельные записи `MetaKind`/`META_TYPES`/`ChildTag`; лист парсится в `MetaChild.columns` контейнера через `ObjectXmlReader.toXxxChild` (образец `toTabularSectionChild`) → имя родителя-контейнера пробрасывается ПАРАЛЛЕЛЬНЫМ полем контекста (`tabularSectionName`/`urlTemplateName`), а не переименованием существующего слота и не новым реестром → `domain/CanonicalNames.ts` (`canonicalChildPath`) обобщает контейнерную ветку по этому полю → узел дерева строится симметрично в ДВУХ источниках — `infra/cache/MetadataCache.ts` (webview) и `ui/tree/nodeBuilders/metaObjectTreeBuilder.ts` (нативный TreeView/свойства) → `infra/xml/XmlUtils.ts` получает nesting-aware `findXxxRangeInYyy`/`extractXxxXmlFromYyy` (образец `findColumnRangeInTabularSection`) → MCP add-инструмент для листа получает флаг-аналог `inTabularSection` (например `inUrlTemplate`) в `McpAddToolsRegistration.ts`, владелец — сам контейнер (`allowedOwnerKinds: ['<Контейнер>']`).
@@ -430,6 +433,27 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
   [xml-format-rulesets.md](./docs/xml-format-rulesets.md#две-оси-допустимость-дочернего-тега-и-порядок-сериализации).
   Новый дочерний тег вида метаданных → в `childTags` (допустимость) и, если расширение его вставляет, в
   `CHILD_OBJECTS_ORDER` (порядок); `allowedOwnerKinds` add-инструмента выводится из `childTags` сам.
+- **Новое правило порядка свойств `<Properties>` КОРНЕВОГО объекта** (в каком порядке вид сериализует
+  прямых детей `<Properties>` — `Name`/`Synonym`/`Comment`/…/`DefaultForm`/…, см.
+  [xml-format-rulesets.md](./docs/xml-format-rulesets.md#порядок-прямых-детей-properties-корневого-объекта-по-виду)):
+  строка в `ROOT_PROPERTY_ORDER` (`infra/xml/properties/PropertyOrder.ts`), снятая с эталона `example/`
+  сканом КОНТРПРИМЕРОВ и проверкой АЦИКЛИЧНОСТИ графа предшествования (не «какой порядок чаще» — частотный
+  критерий дал бы ложное «правила нет»: варианты — это разные подмножества необязательных свойств) → три
+  корпусных гейта (`propertyOrderCorpus.test.ts`: прямой — нет пары тегов, чей порядок в таблице
+  противоречит хоть одному файлу; полноты; обратный — каждый ключ строки подтверждён эталоном; критерий
+  НЕ «равно топосортировке») плюс сшивка `propertyOrder.registry.test.ts` → механика вставки
+  (`properties/PropertyInsert.ts`) НЕ трогается — она не знает ни одного вида, только ранги. Существующие
+  блоки `<Properties>` НЕ переупорядочиваются никогда, только вставка отсутствующего тега; валидацию
+  порядка в `validate_metadata` заводить нельзя (0 срабатываний на эталоне, чинить отказались —
+  предупреждение неисполнимо). Фолбэки асимметричны намеренно: писатель объектов (`ObjectXmlReader`)
+  неизвестный ключ дописывает в конец, писатель корня конфигурации (`ConfigurationXmlEditor`) — отказ
+  (опечатка иначе породила бы мусорный тег). **Не сливать четыре разные оси:** `ROOT_PROPERTY_ORDER` —
+  порядок СЕРИАЛИЗАЦИИ свойств корня; `ui/views/properties/propertyKeyOrder.ts` — порядок ПОКАЗА в панели
+  (у справочника `ObjectPresentation` в файле 36–40-й, в панели 4–8-й; у отчёта `MainDataCompositionSchema`
+  в файле между двумя формами, в панели после всех шести); `CONTROLLED_PROPERTY_KEYS` — свойства
+  ДОЧЕРНЕГО элемента; `FORM_PROPERTY_KEYS_BY_KIND` — какие ключи вида — ссылки на форму. Вставка `<Type>`
+  ищет якорь по разобранным блокам (`collectPropertyBlocks`), а не парной регуляркой `<Comment>…</Comment>`
+  — платформа пустой комментарий пишет самозакрытым `<Comment/>`.
 - **Новый вспомогательный XML-файл объекта** (`Ext/Flowchart.xml`, дескриптор формы, макет и т.п.):
   корневой элемент и пространство имён берутся с эталона `example/`, а НЕ выводятся по аналогии с соседним
   файлом (`Flowchart.xml` писался как `<Flowchart xmlns=MDClasses/>`, эталон — `<GraphicalSchema
