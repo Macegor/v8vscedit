@@ -270,19 +270,34 @@ suite('Пикер формы — путь от сообщения webview до �
     assert.deepStrictEqual(errorMessages, [], 'повтор того же значения — не ошибка');
   });
 
-  test('свойства формы нет в Configuration.xml: показана ошибка, файл не тронут', async () => {
+  test('свойства формы нет в Configuration.xml: тег дописывается на каноническое место', async () => {
     const dump = createDump(['ФормаОтчета'], { withOwnForm: false });
-    const before = fs.readFileSync(dump.configXmlPath, 'utf-8');
     const controller = createController();
     controller.setActiveNode(makeNode('configuration', 'ТестоваяКонфигурация', dump.configXmlPath));
     quickPickSelector = (items) => items[0];
 
-    // Тега <DefaultConstantsForm/> в фикстуре нет — редактор дописывать свойство
-    // в обход порядка xs:sequence не должен, а обязан отказать с сообщением.
+    // Тега <DefaultConstantsForm/> в фикстуре нет. РАНЬШЕ редактор отказывал: канона
+    // порядка не существовало, и дописать тег можно было только в конец, мимо
+    // xs:sequence, — отказ был меньшим злом. Теперь канон снят с эталона
+    // (ROOT_PROPERTY_ORDER), и отказывать больше не за что: у ключа есть ранг, тег
+    // встаёт на своё место. Ветка отказа осталась для ключа БЕЗ ранга и покрыта на
+    // уровне редактора (configurationXmlEditorPropertyOrder.test.ts).
     await controller.handleWebviewMessage({ type: 'openFormPicker', key: 'DefaultConstantsForm' });
 
-    assert.strictEqual(errorMessages.length, 1, `ожидалась ошибка записи, получено: ${errorMessages.join('; ')}`);
-    assert.strictEqual(fs.readFileSync(dump.configXmlPath, 'utf-8'), before);
+    assert.deepStrictEqual(errorMessages, [], 'отказа быть не должно');
+    const updated = fs.readFileSync(dump.configXmlPath, 'utf-8');
+    assert.ok(
+      updated.includes('<DefaultConstantsForm>CommonForm.ФормаОтчета</DefaultConstantsForm>'),
+      `свойство не записано: ${updated}`
+    );
+
+    // Позиция, а не только наличие: DefaultConstantsForm — последний ключ канона
+    // конфигурации (ранг 71 из 72, сразу после CompatibilityMode), поэтому он
+    // обязан встать ПОСЛЕ уже присутствующего DefaultReportVariantForm.
+    assert.ok(
+      updated.indexOf('<DefaultReportVariantForm') < updated.indexOf('<DefaultConstantsForm'),
+      `нарушен порядок свойств: ${updated}`
+    );
   });
 
   test('свойство только для чтения: показывается предупреждение, список не открывается', async () => {
