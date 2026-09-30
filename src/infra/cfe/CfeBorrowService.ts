@@ -3,13 +3,18 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { META_TYPES, type MetaKind, getMetaFolder } from '../../domain/MetaTypes';
 import { ConfigurationXmlEditor } from '../xml/ConfigurationXmlEditor';
+import { writeFileAtomic } from '../fs/AtomicFileWriter';
 import {
+  detectRootObjectKind,
   escapeRegExp,
   escapeXmlText,
   extractChildMetaElementXml,
   extractNestingAwareBlock,
   findChildElementsFullXmlInBlock,
+  findNestingAwareElementRange,
+  writeTextFilePreservingBomAndEol,
 } from '../xml/XmlUtils';
+import { resolveInsertOffset } from '../xml/childObjects/ChildObjectsEditor';
 
 /** Типы, для которых XML-оболочка заимствованного объекта содержит пустой `<ChildObjects/>` */
 const TYPES_WITH_CHILD_OBJECTS = new Set<string>([
@@ -240,7 +245,7 @@ export class CfeBorrowService {
     const targetDir = path.join(extDir, folder);
     fs.mkdirSync(targetDir, { recursive: true });
     const targetFile = path.join(targetDir, `${objectName}.xml`);
-    fs.writeFileSync(targetFile, borrowedXml, 'utf-8');
+    writeFileAtomic(targetFile, borrowedXml);
 
     const extConfigXmlPath = path.join(extDir, 'Configuration.xml');
     this.configEditor.addChildObject(extConfigXmlPath, `${typeName}.${objectName}`);
@@ -294,7 +299,7 @@ export class CfeBorrowService {
     fs.mkdirSync(formMetaDir, { recursive: true });
 
     const formMetaXml = this.buildBorrowedFormMetaXml(formName, sourceFormUuid, formatVersion);
-    fs.writeFileSync(formMetaFile, formMetaXml, 'utf-8');
+    writeFileAtomic(formMetaFile, formMetaXml);
     files.push(formMetaFile);
 
     const sourceFormExtXmlPath = path.join(
@@ -306,14 +311,14 @@ export class CfeBorrowService {
       const formExtDir = path.join(formMetaDir, formName, 'Ext');
       fs.mkdirSync(formExtDir, { recursive: true });
       const formExtFile = path.join(formExtDir, 'Form.xml');
-      fs.writeFileSync(formExtFile, borrowedFormExtXml, 'utf-8');
+      writeFileAtomic(formExtFile, borrowedFormExtXml);
       files.push(formExtFile);
 
       const moduleDir = path.join(formExtDir, 'Form');
       fs.mkdirSync(moduleDir, { recursive: true });
       const moduleFile = path.join(moduleDir, 'Module.bsl');
       if (!fs.existsSync(moduleFile)) {
-        fs.writeFileSync(moduleFile, '', 'utf-8');
+        writeFileAtomic(moduleFile, '');
         files.push(moduleFile);
       }
     }
@@ -388,35 +393,63 @@ export class CfeBorrowService {
       return false;
     }
 
-    let xml = fs.readFileSync(objFile, 'utf-8');
+    // Исходное содержимое запоминается ОТДЕЛЬНОЙ константой и дальше не
+    // переприсваивается: для писателя это эталон стиля (BOM + переводы строк),
+    // и подмена его уже изменённым текстом сделала бы сохранение стиля пустым.
+    const originalXml = fs.readFileSync(objFile, 'utf-8');
 
-    if (extractChildMetaElementXml(xml, childTag, childName)) {
+    if (extractChildMetaElementXml(originalXml, childTag, childName)) {
       return false;
     }
 
     const textChildRe = new RegExp(`\\s*<${childTag}>${escapeRegExp(childName)}</${childTag}>`);
-    if (childXml && textChildRe.test(xml)) {
-      xml = xml.replace(textChildRe, `\n${childXml}`);
-      fs.writeFileSync(objFile, xml, 'utf-8');
+    if (childXml && textChildRe.test(originalXml)) {
+      writeTextFilePreservingBomAndEol(objFile, originalXml, originalXml.replace(textChildRe, `\n${childXml}`));
       return true;
     }
 
-    if (textChildRe.test(xml)) {
+    if (textChildRe.test(originalXml)) {
       return false;
     }
 
     const entry = childXml ?? `\t\t\t<${childTag}>${escapeXmlText(childName)}</${childTag}>`;
 
-    if (/<ChildObjects\s*\/>/.test(xml)) {
-      xml = xml.replace(/<ChildObjects\s*\/>/, `<ChildObjects>\n${entry}\n\t\t</ChildObjects>`);
-    } else if (xml.includes('</ChildObjects>')) {
-      xml = xml.replace('</ChildObjects>', `${entry}\n\t\t</ChildObjects>`);
-    } else {
+    const nextXml = this.insertIntoOwnerChildObjects(originalXml, childTag, entry);
+    if (nextXml === null) {
       return false;
     }
 
-    fs.writeFileSync(objFile, xml, 'utf-8');
+    writeTextFilePreservingBomAndEol(objFile, originalXml, nextXml);
     return true;
+  }
+
+  /**
+   * Вставляет готовый фрагмент в `<ChildObjects>` САМОГО владельца по канону
+   * порядка его вида (см. `infra/xml/childObjects/`).
+   *
+   * Поиск блока — nesting-aware, а не `xml.replace('</ChildObjects>', …)`:
+   * у заимствованной табличной части есть СВОЙ вложенный `<ChildObjects>`
+   * (в т.ч. самозакрытый), и его тег текстуально встречается РАНЬШЕ
+   * закрывающего тега владельца — наивный replace клал заимствованное
+   * измерение или форму ВНУТРЬ табличной части, ломая структуру объекта.
+   *
+   * `null` — блока `<ChildObjects>` в файле нет (повреждённый целевой XML),
+   * заимствование тихо не выполняется, как и раньше.
+   */
+  private insertIntoOwnerChildObjects(xml: string, tag: string, entry: string): string | null {
+    const range = findNestingAwareElementRange(xml, 'ChildObjects');
+    if (!range) {
+      return null;
+    }
+    if (/\/>\s*$/.test(xml.slice(range.start, range.openEnd))) {
+      return `${xml.slice(0, range.start)}<ChildObjects>\n${entry}\n\t\t</ChildObjects>${xml.slice(range.end)}`;
+    }
+    const inner = xml.slice(range.openEnd, range.closeStart);
+    const insertOffset = resolveInsertOffset(inner, detectRootObjectKind(xml), tag, 'root');
+    const nextInner = insertOffset !== null
+      ? `${inner.slice(0, insertOffset)}${entry}\n${inner.slice(insertOffset)}`
+      : `${inner.replace(/\s+$/, '')}\n${entry}\n\t\t`;
+    return `${xml.slice(0, range.openEnd)}${nextInner}${xml.slice(range.closeStart)}`;
   }
 
   private buildBorrowedChildXml(
@@ -759,7 +792,7 @@ export class CfeBorrowService {
     if (!fs.existsSync(objFile)) {
       return;
     }
-    let xml = fs.readFileSync(objFile, 'utf-8');
+    const xml = fs.readFileSync(objFile, 'utf-8');
 
     // Проверяем, не зарегистрирована ли форма
     const alreadyRegistered = new RegExp(`<Form>${escapeRegExp(formName)}</Form>`).test(xml);
@@ -769,13 +802,14 @@ export class CfeBorrowService {
 
     const formEntry = `\t\t\t<Form>${formName}</Form>`;
 
-    if (/<ChildObjects\s*\/>/.test(xml)) {
-      xml = xml.replace(/<ChildObjects\s*\/>/, `<ChildObjects>\n${formEntry}\n\t\t</ChildObjects>`);
-    } else {
-      xml = xml.replace('</ChildObjects>', `${formEntry}\n\t\t</ChildObjects>`);
+    const nextXml = this.insertIntoOwnerChildObjects(xml, 'Form', formEntry);
+    if (nextXml === null) {
+      return;
     }
 
-    fs.writeFileSync(objFile, xml, 'utf-8');
+    // Вставляемый блок собран с `\n`: в CRLF-файле без нормализации по эталону
+    // остались бы смешанные окончания строк (запрет №12).
+    writeTextFilePreservingBomAndEol(objFile, xml, nextXml);
   }
 
   private newGuid(): string {

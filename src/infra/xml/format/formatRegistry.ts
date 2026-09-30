@@ -22,14 +22,28 @@ export const SCAFFOLD_FORMAT_VERSION = '2.17';
  * Версии формата, известные проекту как валидные. Отдельный от
  * `SUPPORTED_FORMATS` набор: последний отвечает за выбор ruleset генерации
  * (и намеренно не содержит 2.17, чтобы scaffold-выгрузка резолвилась на
- * baseline). Здесь же перечислены версии, которые валидатор внешнего объекта
- * считает «обычными» и не помечает предупреждением.
+ * baseline). Здесь же перечислены версии, которые валидаторы (внешнего объекта
+ * и формы) считают «обычными» и не помечают предупреждением.
+ *
+ * Ось версии у `MetaDataObject` и у `Form` одна: генератор подставляет в оба
+ * корня одну и ту же переменную (`creator/auxiliaryFileBuilders.ts`), поэтому
+ * второго перечня версий для форм заводить нельзя. Список экспортируется
+ * именно списком — текст предупреждения валидатора перечисляет версии, и копии
+ * перечня в сообщении быть не должно.
+ *
+ * Замер по эталону `example/` (обе генерации, cf и cfe): в `Form.xml` версии
+ * 2.21 (6249 форм) и 2.20 (80), в корнях `MetaDataObject` — 2.21 (27 885) и
+ * 2.20 (372); форм/объектов без атрибута `version` нет. 2.19 в корпусе не
+ * встречается, поэтому в этот список она не добавлена (в `SUPPORTED_FORMATS`
+ * она есть только как привязка к ruleset генерации).
  */
-const KNOWN_FORMAT_VERSIONS: ReadonlySet<string> = new Set(['2.17', '2.18', '2.20', '2.21']);
+export const KNOWN_FORMAT_VERSIONS: readonly string[] = ['2.17', '2.18', '2.20', '2.21'];
+
+const KNOWN_FORMAT_VERSION_SET: ReadonlySet<string> = new Set(KNOWN_FORMAT_VERSIONS);
 
 /** true для версии формата, известной проекту (см. `KNOWN_FORMAT_VERSIONS`). */
 export function isKnownFormatVersion(version: string): boolean {
-  return KNOWN_FORMAT_VERSIONS.has(version);
+  return KNOWN_FORMAT_VERSION_SET.has(version);
 }
 
 /** Все зарегистрированные ruleset'ы по их id. */

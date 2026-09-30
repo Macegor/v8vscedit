@@ -3,7 +3,16 @@ import * as path from 'path';
 import { getMetaFolder, type MetaKind } from '../../domain/MetaTypes';
 import { getObjectLocationFromXml } from '../fs/ObjectLocation';
 import { ObjectXmlReader } from './ObjectXmlReader';
-import { escapeRegExp, escapeXmlText, writeTextFilePreservingBomAndEol } from './XmlUtils';
+import {
+  detectRootObjectKind,
+  escapeRegExp,
+  escapeXmlText,
+  isEmptyPropertyValue,
+  writeTextFilePreservingBomAndEol,
+} from './XmlUtils';
+import { CONFIGURATION_CHILD_ORDER } from './childObjects/ChildObjectsOrder';
+import { insertPropertyBlockInOrder } from './properties/PropertyInsert';
+import { rootPropertyRank } from './properties/PropertyOrder';
 
 type PropertyValueKind = 'string' | 'boolean' | 'localizedString' | 'metadataReferenceList' | 'metadataFieldList';
 type RootPropertyKind = 'scalar' | 'localized' | 'reference' | 'boolean' | 'multiEnum';
@@ -82,12 +91,21 @@ export class ConfigurationXmlEditor {
       return this.fail('В Configuration.xml отсутствует блок <Properties>.');
     }
     const propRe = new RegExp(`<${propertyName}>[\\s\\S]*?<\\/${propertyName}>|<${propertyName}\\s*\\/>`);
-    if (!propRe.test(properties)) {
+    const replacement = this.buildRootPropertyBlock(propertyName, value, kind);
+    // Фолбэк «тега в файле нет» здесь ЗАПРЕЩАЮЩИЙ и этим намеренно отличается от
+    // писателя объектов (`ObjectXmlReader.updatePropertyInElement` дописывает
+    // неизвестный ключ в конец): вставляем только свойство с известным рангом.
+    // Разрешить «создать любой тег» нельзя — опечатка в имени тихо породила бы
+    // мусорный тег, который платформа не примет.
+    const ownerKind = detectRootObjectKind(xml);
+    const updatedProps = propRe.test(properties)
+      ? properties.replace(propRe, () => replacement)
+      : rootPropertyRank(ownerKind, propertyName) === null
+        ? null
+        : insertPropertyBlockInOrder(properties, ownerKind, propertyName, replacement);
+    if (updatedProps === null) {
       return this.fail(`Свойство "${propertyName}" не найдено.`);
     }
-
-    const replacement = this.buildRootPropertyBlock(propertyName, value, kind);
-    const updatedProps = properties.replace(propRe, () => replacement);
     if (updatedProps === properties) {
       return this.warn('Значение свойства не изменилось.');
     }
@@ -340,11 +358,16 @@ export class ConfigurationXmlEditor {
         '</UsePurposes>',
       ].join('\n');
     }
+    // Пустое значение — самозакрытый тег, как у списочных веток выше и как у
+    // писателя свойств объекта (`ObjectXmlReader`). Проверка идёт ДО разбора по
+    // видам: правило от вида значения не зависит, а разложенное по веткам знание
+    // уже разошлось — списки его соблюдали, строка и локализованная строка нет,
+    // и сброс уже пустого `<Vendor/>` на корне давал git-дифф на ровном месте.
+    if (isEmptyPropertyValue(value)) {
+      return `<${propertyName}/>`;
+    }
     if (kind === 'localized') {
       const localizedValue = String(value);
-      if (!localizedValue) {
-        return `<${propertyName}></${propertyName}>`;
-      }
       return [
         `<${propertyName}>`,
         '\t\t\t\t<v8:item>',
@@ -381,17 +404,8 @@ export class ConfigurationXmlEditor {
   }
 
   private sortChildObjects(a: { type: string; name: string }, b: { type: string; name: string }): number {
-    const order = [
-      'Language', 'Subsystem', 'StyleItem', 'Style', 'CommonPicture', 'SessionParameter', 'Role', 'CommonTemplate',
-      'FilterCriterion', 'CommonModule', 'CommonAttribute', 'ExchangePlan', 'XDTOPackage', 'WebService', 'HTTPService',
-      'WSReference', 'EventSubscription', 'ScheduledJob', 'SettingsStorage', 'FunctionalOption', 'FunctionalOptionsParameter',
-      'DefinedType', 'CommonCommand', 'CommandGroup', 'Constant', 'CommonForm', 'Catalog', 'Document', 'DocumentNumerator',
-      'Sequence', 'DocumentJournal', 'Enum', 'Report', 'DataProcessor', 'InformationRegister', 'AccumulationRegister',
-      'ChartOfCharacteristicTypes', 'ChartOfAccounts', 'AccountingRegister', 'ChartOfCalculationTypes', 'CalculationRegister',
-      'BusinessProcess', 'Task', 'IntegrationService',
-    ];
-    const ai = order.indexOf(a.type);
-    const bi = order.indexOf(b.type);
+    const ai = CONFIGURATION_CHILD_ORDER.indexOf(a.type);
+    const bi = CONFIGURATION_CHILD_ORDER.indexOf(b.type);
     if (ai !== bi) {
       return (ai === -1 ? Number.MAX_SAFE_INTEGER : ai) - (bi === -1 ? Number.MAX_SAFE_INTEGER : bi);
     }

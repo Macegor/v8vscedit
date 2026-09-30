@@ -2,8 +2,14 @@ import * as path from 'path';
 import { getString } from '../core/args';
 import { resolveConnection } from '../core/connection';
 import { createTempDir, runDesignerAndPrintResult, safeRemoveDir, writeUtf8BomLines } from '../core/onecCommon';
-import type { CliArgs } from '../core/types';
+import type { CliArgs, OnecConnection } from '../core/types';
 import { readExtensionListFromDumpFile } from '../../infra/environment/ExtensionListParser';
+
+/** Результат запроса списка расширений у базы: код возврата Конфигуратора и сами имена. */
+export interface DbExtensionListResult {
+  readonly exitCode: number;
+  readonly names: string[];
+}
 
 /**
  * Получает список расширений, подключённых к базе, через Конфигуратор
@@ -18,6 +24,22 @@ export async function listDbExtensions(args: CliArgs): Promise<number> {
     throw new Error('Error: -ResultFile required');
   }
 
+  const result = await queryDbExtensionList(connection);
+  if (result.exitCode === 0) {
+    writeUtf8BomLines(resultFile, result.names);
+  }
+  return result.exitCode;
+}
+
+/**
+ * ЕДИНСТВЕННОЕ место вектора запроса списка расширений — его переиспользуют и
+ * пакетные команды. `-AllExtensions` у `/DumpDBCfgList` ключ ШТАТНЫЙ и
+ * обязательный (без него платформа отвечает «Ошибка в параметрах командной
+ * строки»), в отличие от `/DumpCfg`/`/LoadCfg`, где такого ключа не существует
+ * и он принимается молча. Копии этого вектора по командам разводить нельзя:
+ * ошибку в нём не диагностирует ни код возврата, ни лог.
+ */
+export async function queryDbExtensionList(connection: OnecConnection): Promise<DbExtensionListResult> {
   const tempDir = createTempDir('db_ext_list_');
   try {
     const designerOut = path.join(tempDir, 'ext_list.txt');
@@ -31,10 +53,7 @@ export async function listDbExtensions(args: CliArgs): Promise<number> {
       designerOut
     );
 
-    if (exitCode === 0) {
-      writeUtf8BomLines(resultFile, readExtensionListFromDumpFile(designerOut));
-    }
-    return exitCode;
+    return { exitCode, names: exitCode === 0 ? readExtensionListFromDumpFile(designerOut) : [] };
   } finally {
     safeRemoveDir(tempDir);
   }

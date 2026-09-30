@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { DataCompositionSchemaService } from '../../infra/xml/DataCompositionSchemaService';
 import type { SkdDefinition } from '../../infra/xml/DataCompositionSchemaService';
+import { skipWithoutCorpus } from './support/corpus';
 
 /**
  * Байт-в-байт характеризация DataCompositionSchemaService ДО дробления на подфайлы
@@ -303,7 +304,9 @@ suite('DataCompositionSchemaService — байт-golden характеризац
     assert.deepStrictEqual(info.lines, expectedLines);
   });
 
-  test('edit — цепочка add-field/modify-field/add-parameter/rename-parameter/reorder-parameters на реальной выгрузке example/2.21 (Reports/ПраваДоступа): полный байтовый эталон после каждого шага', () => {
+  test('edit — цепочка add-field/modify-field/add-parameter/rename-parameter/reorder-parameters на реальной выгрузке example/2.21 (Reports/ПраваДоступа): полный байтовый эталон после каждого шага', function () {
+    // Тест работает на эталоне `example/` (не в git) — без корпуса пропускается.
+    skipWithoutCorpus(this);
     // Реальная выгрузка 1С с BOM + CRLF: сохранение обоих через
     // writeTextFilePreservingBomAndEol — часть контракта, который обязан пережить
     // дробление сервиса. Фикстура компактна (68 строк), но содержит multi-valueType
@@ -770,7 +773,9 @@ suite('DataCompositionSchemaService — байт-golden характеризац
     assert.strictEqual(afterReorder, expectedAfterReorder);
   });
 
-  test('info: полный эталон buildInfoLines (mode=full) на реальной выгрузке example/2.21 (Reports/ПраваДоступа) без предварительных edit', () => {
+  test('info: полный эталон buildInfoLines (mode=full) на реальной выгрузке example/2.21 (Reports/ПраваДоступа) без предварительных edit', function () {
+    // Тест работает на эталоне `example/` (не в git) — без корпуса пропускается.
+    skipWithoutCorpus(this);
     const fixture = path.resolve(
       __dirname,
       '../../../example/2.21/src/cf/Reports/ПраваДоступа/Templates/МакетПараметров/Ext/Template.xml'

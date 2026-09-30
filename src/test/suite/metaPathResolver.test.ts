@@ -3,9 +3,12 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { MetaPathResolver } from '../../infra/fs/MetaPathResolver';
+import { skipWithoutCorpus } from './support/corpus';
 
 suite('MetaPathResolver', () => {
-  test('создаёт отсутствующий модуль объекта в штатном каталоге Ext', () => {
+  test('создаёт отсутствующий модуль объекта в штатном каталоге Ext', function () {
+    // Тест работает на эталоне `example/` (не в git) — без корпуса пропускается.
+    skipWithoutCorpus(this);
     // Берём любой Catalog из example/2.20/src/cf и копируем его во временный каталог.
     // Так тест не зависит от конкретного объекта в выгрузке и не модифицирует example/.
     const catalogsDir = path.join(__dirname, '..', '..', '..', 'example', '2.20', 'src', 'cf', 'Catalogs');

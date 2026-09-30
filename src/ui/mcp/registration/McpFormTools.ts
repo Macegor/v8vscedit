@@ -6,9 +6,23 @@
  */
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
-import { resolveFormXmlByCanonical, resolveOwnerObjectXmlByCanonical } from '../McpPathResolvers';
+import {
+  resolveFormXmlByCanonical,
+  resolveObjectFormNodeByCanonical,
+  resolveOwnerObjectXmlByCanonical,
+} from '../McpPathResolvers';
+import { resolveFormBodyFromNode } from '../../tree/formNodePaths';
 import type { McpRegistrationDeps } from './McpRegistrationDeps';
 
+/**
+ * Путь тела формы берётся двумя формами записи, и это не разнобой конвенций.
+ * Read-only инструменты (`form_info`, `validate_form`) зовут
+ * `resolveFormXmlByCanonical` — им узел не нужен ни для чего, кроме деривации.
+ * Мутирующим (`compile_form`, `edit_form`, `remove_form`) узел нужен отдельно,
+ * для `gate.assertNodeEditable`, поэтому они резолвят его ОДИН раз и дальше
+ * зовут `resolveFormBodyFromNode`; свести их к первой форме значило бы вернуть
+ * второй скан индекса дерева ради того же самого узла.
+ */
 export function registerFormTools(server: McpServer, deps: McpRegistrationDeps): void {
   const { paths, services, gate } = deps;
 
@@ -40,9 +54,11 @@ export function registerFormTools(server: McpServer, deps: McpRegistrationDeps):
     {
       title: 'Валидировать форму',
       description: [
-        'Проверяет Form.xml: версию, уникальность ID, DataPath, CommandName,',
-        'события, callType, типы. Принимает канонический путь формы:',
-        'Справочники.Контрагенты.Форма.ФормаСписка или ОбщиеФормы.X.',
+        'Проверяет Form.xml: версию, уникальность ID внутри каждого пространства нумерации',
+        '(элементы формы / реквизиты / команды / колонки таблицы отдельно — не по всему файлу),',
+        'DataPath, CommandName, события, callType, типы. Регион <BaseForm> (копия базовой формы',
+        'в расширении) из проверки уникальности исключается целиком. Принимает канонический путь',
+        'формы: Справочники.Контрагенты.Форма.ФормаСписка или ОбщиеФормы.X.',
       ].join(' '),
       inputSchema: z.object({
         path: z.string(),
@@ -112,14 +128,13 @@ export function registerFormTools(server: McpServer, deps: McpRegistrationDeps):
       },
     },
     ({ path: canonical, configuration }) => gate.wrap(() => {
-      const node = paths.resolveNode(canonical, configuration);
-      if (node.nodeKind !== 'Form' || !node.metaContext?.ownerObjectXmlPath) {
-        throw new Error(`Путь "${canonical}" должен указывать на форму объекта (Справочники.X.Форма.Y).`);
-      }
+      // Порядок сохранён прежний: вид узла проверяется ДО блокировки — общая форма и
+      // не-формовые пути отбиваются раньше, чем спрашивается поддержка/хранилище.
+      const { node, ownerObjectXmlPath, formName } = resolveObjectFormNodeByCanonical(paths, canonical, configuration);
       gate.assertNodeEditable(node);
       const result = services.formToolsService.removeForm({
-        objectPath: node.metaContext.ownerObjectXmlPath,
-        formName: node.textLabel,
+        objectPath: ownerObjectXmlPath,
+        formName,
       });
       // Сервис бросает исключение при провале (перехват в wrap); дошли сюда — успех.
       gate.afterMutationIfSucceeded(result.changedFiles);
@@ -147,8 +162,11 @@ export function registerFormTools(server: McpServer, deps: McpRegistrationDeps):
       },
     },
     ({ path: canonical, configuration, ...rest }) => gate.wrap(() => {
-      gate.assertNodeEditable(paths.resolveNode(canonical, configuration));
-      const outputPath = resolveFormXmlByCanonical(paths, canonical, configuration);
+      // Узел резолвится один раз: порядок «блокировка → вид узла» тот же, что раньше,
+      // но без повторного скана индекса дерева ради того же самого узла.
+      const node = paths.resolveNode(canonical, configuration);
+      gate.assertNodeEditable(node);
+      const outputPath = resolveFormBodyFromNode(node, canonical);
       const result = services.formToolsService.compile({ ...rest, outputPath });
       // Сервис бросает исключение при провале (перехват в wrap); дошли сюда — успех.
       gate.afterMutationIfSucceeded(result.changedFiles);
@@ -175,8 +193,10 @@ export function registerFormTools(server: McpServer, deps: McpRegistrationDeps):
       },
     },
     (args) => gate.wrap(() => {
-      gate.assertNodeEditable(paths.resolveNode(args.path, args.configuration));
-      const formPath = resolveFormXmlByCanonical(paths, args.path, args.configuration);
+      // См. compile: один resolveNode на вызов, порядок проверок не меняется.
+      const node = paths.resolveNode(args.path, args.configuration);
+      gate.assertNodeEditable(node);
+      const formPath = resolveFormBodyFromNode(node, args.path);
       const result = services.formToolsService.edit({ ...args, formPath });
       // Сервис бросает исключение при провале (перехват в wrap); дошли сюда — успех.
       gate.afterMutationIfSucceeded(result.changedFiles);

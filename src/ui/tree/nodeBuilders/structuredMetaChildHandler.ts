@@ -9,6 +9,7 @@ import {
   extractStandardAttributeXml,
 } from '../../../infra/xml';
 import { getObjectLocationFromXml } from '../../../infra/fs/MetaPathResolver';
+import type { TypeAwarePropertyOwnerKind } from '../../../infra/xml/TypedFieldPropertyRules';
 import type { ObjectHandler, ObjectPropertiesCollection } from './_types';
 import {
   buildCommandProperties,
@@ -82,7 +83,8 @@ export const structuredMetaChildHandler: ObjectHandler = {
             extractChildMetaElementXml(objectXml, 'Attribute', label),
             'typed',
             inheritedObjectXml ? extractChildMetaElementXml(inheritedObjectXml, 'Attribute', label) : null,
-            node.metaContext.rootMetaKind
+            node.metaContext.rootMetaKind,
+            'Attribute'
           );
         case 'StandardAttribute': {
           const standardAttributeName = node.metaContext.standardAttributeName ?? label;
@@ -99,21 +101,24 @@ export const structuredMetaChildHandler: ObjectHandler = {
             extractChildMetaElementXml(objectXml, 'AddressingAttribute', label),
             'typed',
             inheritedObjectXml ? extractChildMetaElementXml(inheritedObjectXml, 'AddressingAttribute', label) : null,
-            node.metaContext.rootMetaKind
+            node.metaContext.rootMetaKind,
+            'AddressingAttribute'
           );
         case 'Dimension':
           return propsFromElementXml(
             extractChildMetaElementXml(objectXml, 'Dimension', label),
             'typed',
             inheritedObjectXml ? extractChildMetaElementXml(inheritedObjectXml, 'Dimension', label) : null,
-            node.metaContext.rootMetaKind
+            node.metaContext.rootMetaKind,
+            'Dimension'
           );
         case 'Resource':
           return propsFromElementXml(
             extractChildMetaElementXml(objectXml, 'Resource', label),
             'typed',
             inheritedObjectXml ? extractChildMetaElementXml(inheritedObjectXml, 'Resource', label) : null,
-            node.metaContext.rootMetaKind
+            node.metaContext.rootMetaKind,
+            'Resource'
           );
         case 'EnumValue':
           return propsFromElementXml(
@@ -135,7 +140,8 @@ export const structuredMetaChildHandler: ObjectHandler = {
             extractColumnXmlFromTabularSection(objectXml, tsName, label),
             'typed',
             inheritedObjectXml ? extractColumnXmlFromTabularSection(inheritedObjectXml, tsName, label) : null,
-            node.metaContext.rootMetaKind
+            node.metaContext.rootMetaKind,
+            'Column'
           );
         }
         case 'Form': {
@@ -214,7 +220,8 @@ function propsFromElementXml(
   elementXml: string | null,
   mode: 'typed' | 'tabular' | 'enumValue' | 'standardAttribute' = 'typed',
   inheritedElementXml: string | null = null,
-  ownerKind?: string
+  ownerKind?: string,
+  role?: TypeAwarePropertyOwnerKind
 ): ObjectPropertiesCollection {
   if (!elementXml && !inheritedElementXml) {
     return [];
@@ -228,7 +235,9 @@ function propsFromElementXml(
   if (mode === 'standardAttribute') {
     return buildStandardAttributeProperties(elementXml ?? '', inheritedElementXml);
   }
-  return buildTypedFieldProperties(elementXml ?? '', inheritedElementXml, ownerKind);
+  // Роль поля — из вида узла дерева: по тегу XML колонку ТЧ от реквизита
+  // верхнего уровня не отличить, а состав свойств у них разный.
+  return buildTypedFieldProperties(elementXml ?? '', inheritedElementXml, ownerKind, role);
 }
 
 function notFoundProps(message: string): ObjectPropertiesCollection {

@@ -30,6 +30,7 @@ import {
   type ChangesFixture,
   type HistoryFixture,
 } from './support/changesFixtures';
+import { skipWithoutCorpus } from './support/corpus';
 
 function nowSec(): number {
   return Math.floor(Date.now() / 1000);
@@ -59,6 +60,12 @@ function findByLabel(section: ChangesSectionDto, label: string): TreeNodeDto | u
 }
 
 suite('ChangesHistorySection — состояние графа истории панели «Изменения метаданных» (склейка historyGraphController)', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   // ─── load/refresh/loadMore — ленивость и пересчёт состояния графа ──────
   suite('load/refresh/loadMore — на реальном ветвлении+merge (buildHistoryRepo, configRoots не нужны)', () => {
     let fixture: HistoryFixture;

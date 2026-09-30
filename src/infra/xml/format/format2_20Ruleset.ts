@@ -6,6 +6,8 @@ import type { FormatRuleset } from './FormatRuleset';
  * выгрузки `example/2.20`:
  *   - у корневого `<MetaDataObject>` НЕТ пространства имён `xmlns:pal`
  *     (палитра появилась в наборе префиксов только в 2.21);
+ *   - у корня графической схемы `<GraphicalSchema>` — ровно то же отличие
+ *     (эталон example/2.20/src/cf/BusinessProcesses/Поручение/Ext/Flowchart.xml);
  *   - у отчёта НЕТ свойства `<AuxiliaryVariantForm/>` (добавлено в 2.21).
  *
  * Блоки `<StandardAttributes>`/`<StandardTabularSections>` и таблица
@@ -16,6 +18,10 @@ export const FORMAT_2_20_RULESET: FormatRuleset = {
   ...BASELINE_RULESET,
   id: 'format-2.20',
   metaDataObjectXmlns: BASELINE_RULESET.metaDataObjectXmlns.replace(
+    ' xmlns:pal="http://v8.1c.ru/8.1/data/ui/colors/palette"',
+    ''
+  ),
+  graphicalSchemaXmlns: BASELINE_RULESET.graphicalSchemaXmlns.replace(
     ' xmlns:pal="http://v8.1c.ru/8.1/data/ui/colors/palette"',
     ''
   ),

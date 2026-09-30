@@ -22,6 +22,7 @@ import * as vscode from 'vscode';
 import { GitStateObserver } from '../../ui/git/GitStateObserver';
 import type { GitApiLike, RepositoryLike } from '../../ui/git/gitExtensionApi';
 import { buildChangesBaselineRepo, removeFixtureRepo, type ChangesFixture } from './support/changesFixtures';
+import { skipWithoutCorpus } from './support/corpus';
 
 /** Один репозиторий Git Extension API — верная in-memory реализация формы `RepositoryLike`. */
 function createFakeRepository(root: string): RepositoryLike {
@@ -77,6 +78,12 @@ function createFakeGitApi(initialState: 'uninitialized' | 'initialized'): GitApi
 type FakeRepository = RepositoryLike & { _fireStateChange: () => void; _dispose: () => void };
 
 suite('GitStateObserver — подписка на события встроенного Git-расширения', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   let fixture: ChangesFixture;
 
   setup(() => {

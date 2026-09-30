@@ -6,6 +6,7 @@ import { MetadataXmlCreator } from '../../infra/xml/MetadataXmlCreator';
 import { MetadataXmlRemover } from '../../infra/xml/MetadataXmlRemover';
 import { getMetaFolder } from '../../domain/MetaTypes';
 import { importAndUpdate, isOnecAvailable, readOnecEnv } from './support/onecEnv';
+import { skipWithoutCorpus } from './support/corpus';
 
 /**
  * Интеграционный тест генератора: на реальной тестовой базе из `example/2.20/env.json`
@@ -61,6 +62,12 @@ function removeAllTestObjects(): void {
 }
 
 suite('Интеграция генератора 2.20: загрузка сгенерированного XML в 1С', function () {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   // Запуск конфигуратора 1С долгий — снимаем ограничение Mocha по времени.
   this.timeout(20 * 60 * 1000);
 

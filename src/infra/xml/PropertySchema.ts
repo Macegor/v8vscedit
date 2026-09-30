@@ -5,13 +5,25 @@
  * это упорядоченный список ключей из блока `<Properties>`. Наборы ключей
  * и правила их отображения описываются тут, а не в хэндлерах.
  *
+ * ⚠ ЧИТАТЬ ДО ПРАВКИ: реестр {@link PROPERTY_SCHEMAS} в конце файла НЕ читается
+ * ничем — панель свойств корневого объекта берёт порядок ключей из
+ * `ui/views/properties/propertyKeyOrder.ts`. Правка `COMMON_ROOT_KEYS`/
+ * `ENUM_ROOT_KEYS` «чтобы в панели появилось свойство» не даёт вообще никакого
+ * эффекта; это уже приводило к постановке задачи мимо цели. Действующие в этом
+ * файле источники правды — {@link PROPERTY_TITLE_RU} (подписи),
+ * {@link FORM_PROPERTY_KEYS_BY_KIND} (свойства выбора форм), {@link ENUM_OPTIONS}
+ * и множества boolean/localized-тегов.
+ *
  * При добавлении нового набора свойств нужно:
  *   1) добавить ключ → подпись в `PROPERTY_TITLE_RU` (если отсутствует);
  *   2) при необходимости — расширить множества в `BOOLEAN_PROPERTY_TAGS` /
  *      `LOCALIZED_PROPERTY_TAGS` / enum-опции;
- *   3) зарегистрировать `PropertySchema` в `PROPERTY_SCHEMAS`;
- *   4) привязать схему к типу через поле `propertySchema` в `META_TYPES`.
+ *   3) добавить ключ в порядок вида в `ui/views/properties/propertyKeyOrder.ts`
+ *      (именно он на поведение и влияет);
+ *   4) привязать схему к типу через поле `propertySchema` в `META_TYPES` —
+ *      это поле сегодня использует только `TypedFieldOwnerRules`.
  */
+import type { MetaKind } from '../../domain/MetaTypes';
 
 /** Опция enum-свойства (например, FillChecking, Indexing) */
 export interface EnumPropertyOption {
@@ -643,6 +655,15 @@ export const PROPERTY_TITLE_RU: Readonly<Record<string, string>> = {
   FormType: 'Тип формы',
   UseStandardCommands: 'Использовать стандартные команды',
   DefaultForm: 'Основная форма',
+  AuxiliaryForm: 'Дополнительная форма',
+  DefaultSettingsForm: 'Основная форма настроек',
+  AuxiliarySettingsForm: 'Дополнительная форма настроек',
+  DefaultVariantForm: 'Основная форма варианта',
+  AuxiliaryVariantForm: 'Дополнительная форма варианта',
+  DefaultSaveForm: 'Основная форма сохранения',
+  AuxiliarySaveForm: 'Дополнительная форма сохранения',
+  DefaultLoadForm: 'Основная форма загрузки',
+  AuxiliaryLoadForm: 'Дополнительная форма загрузки',
   ExtendedPresentation: 'Расширенное представление',
   ChoiceMode: 'Режим выбора',
   Color: 'Цвет',
@@ -715,6 +736,191 @@ export const PROPERTY_TITLE_RU: Readonly<Record<string, string>> = {
   Event: 'Событие',
   ProcedureName: 'Имя процедуры',
 };
+
+// ── Свойства выбора форм по виду объекта ───────────────────────────────
+
+/**
+ * Свойства выбора основных/дополнительных форм по виду объекта-владельца.
+ *
+ * Состав и порядок сняты ЭМПИРИЧЕСКИ сканом эталона `example/` (генерации 2.20 и
+ * 2.21, cf и cfe; 45 077 файлов, 28 257 корней `<MetaDataObject>`): в наборе ровно
+ * те теги `*Form`, которые платформа пишет прямым ребёнком `<Properties>` корневого
+ * объекта этого вида. Критерий — присутствие тега, а не заполненное значение:
+ * пустой `<DefaultForm/>` доказывает существование свойства у вида ничуть не хуже
+ * заполненного (у обработок тег есть у всех 357, значение — у 258). Порядок внутри
+ * вида в корпусе единственный — вариантов сериализации ровно по одному на вид
+ * (исключение — Report и Configuration, где 2.20 не пишет часть `Auxiliary*`;
+ * это подпоследовательность полного порядка 2.21, взятого за канон).
+ *
+ * Дополнять «из общих соображений» нельзя: лишний ключ панель показывает
+ * недостающим и предлагает записать, а платформа файл с чужим свойством не
+ * принимает. Обе оси проверяет корпусный гейт `formPropertyKeysCorpus.test.ts`.
+ *
+ * Здесь НЕТ `ChoiceForm`: это форма выбора ТИПА типизированного поля (константа,
+ * общий реквизит), другая ось — она живёт в `TypedFieldPropertyRules`.
+ *
+ * ОГОВОРКА ПРО ОТСУТСТВУЮЩИЕ ВИДЫ: «0 примеров в эталоне» доказывает отсутствие
+ * свойства только у вида, экземпляры которого в корпусе ЕСТЬ. Для видов, которых
+ * в `example/` нет ни одного (`ExternalDataSource`, `Sequence`, `Interface`,
+ * `WebSocketClient`), ноль — вакуумный: он значит «мерить было не на чем», а не
+ * «формы не бывает». Такой вид в таблицу не попадает, и это НЕ утверждение о
+ * платформе; появится эталон — измерить заново. У `DocumentNumerator` (2
+ * экземпляра) и `Bot` (1) ноль, наоборот, НАСТОЯЩИЙ — экземпляры в корпусе есть,
+ * формовых тегов в них нет, поэтому их отсутствие в таблице измерено.
+ */
+export const FORM_PROPERTY_KEYS_BY_KIND: Partial<Record<MetaKind, readonly string[]>> = {
+  // ×140 (2 у AccountingRegister, 1 у CalculationRegister) — только список
+  AccountingRegister: ['DefaultListForm', 'AuxiliaryListForm'],
+  AccumulationRegister: ['DefaultListForm', 'AuxiliaryListForm'],
+  CalculationRegister: ['DefaultListForm', 'AuxiliaryListForm'],
+  // ×1155 — регистр сведений редактируется ещё и по записи
+  InformationRegister: ['DefaultRecordForm', 'DefaultListForm', 'AuxiliaryRecordForm', 'AuxiliaryListForm'],
+  // ×750 Catalog / ×11 ChartOfCharacteristicTypes — иерархические: есть формы групп
+  Catalog: [
+    'DefaultObjectForm',
+    'DefaultFolderForm',
+    'DefaultListForm',
+    'DefaultChoiceForm',
+    'DefaultFolderChoiceForm',
+    'AuxiliaryObjectForm',
+    'AuxiliaryFolderForm',
+    'AuxiliaryListForm',
+    'AuxiliaryChoiceForm',
+    'AuxiliaryFolderChoiceForm',
+  ],
+  ChartOfCharacteristicTypes: [
+    'DefaultObjectForm',
+    'DefaultFolderForm',
+    'DefaultListForm',
+    'DefaultChoiceForm',
+    'DefaultFolderChoiceForm',
+    'AuxiliaryObjectForm',
+    'AuxiliaryFolderForm',
+    'AuxiliaryListForm',
+    'AuxiliaryChoiceForm',
+    'AuxiliaryFolderChoiceForm',
+  ],
+  // ×356 Document / ×26 ExchangePlan / ×10 BusinessProcess / ×3 ChartOfCalculationTypes /
+  // ×2 ChartOfAccounts / ×2 Task — объект+список+выбор, форм групп нет даже у планов
+  // счетов и видов расчёта (иерархия там есть, а формы группы платформа не пишет).
+  Document: [
+    'DefaultObjectForm',
+    'DefaultListForm',
+    'DefaultChoiceForm',
+    'AuxiliaryObjectForm',
+    'AuxiliaryListForm',
+    'AuxiliaryChoiceForm',
+  ],
+  ExchangePlan: [
+    'DefaultObjectForm',
+    'DefaultListForm',
+    'DefaultChoiceForm',
+    'AuxiliaryObjectForm',
+    'AuxiliaryListForm',
+    'AuxiliaryChoiceForm',
+  ],
+  BusinessProcess: [
+    'DefaultObjectForm',
+    'DefaultListForm',
+    'DefaultChoiceForm',
+    'AuxiliaryObjectForm',
+    'AuxiliaryListForm',
+    'AuxiliaryChoiceForm',
+  ],
+  Task: [
+    'DefaultObjectForm',
+    'DefaultListForm',
+    'DefaultChoiceForm',
+    'AuxiliaryObjectForm',
+    'AuxiliaryListForm',
+    'AuxiliaryChoiceForm',
+  ],
+  ChartOfAccounts: [
+    'DefaultObjectForm',
+    'DefaultListForm',
+    'DefaultChoiceForm',
+    'AuxiliaryObjectForm',
+    'AuxiliaryListForm',
+    'AuxiliaryChoiceForm',
+  ],
+  ChartOfCalculationTypes: [
+    'DefaultObjectForm',
+    'DefaultListForm',
+    'DefaultChoiceForm',
+    'AuxiliaryObjectForm',
+    'AuxiliaryListForm',
+    'AuxiliaryChoiceForm',
+  ],
+  // ×1144 — у перечисления нет формы объекта
+  Enum: ['DefaultListForm', 'DefaultChoiceForm', 'AuxiliaryListForm', 'AuxiliaryChoiceForm'],
+  // ×357 DataProcessor / ×51 DocumentJournal / ×12 FilterCriterion / ×999 Constant —
+  // единственная форма объекта называется просто DefaultForm
+  DataProcessor: ['DefaultForm', 'AuxiliaryForm'],
+  DocumentJournal: ['DefaultForm', 'AuxiliaryForm'],
+  FilterCriterion: ['DefaultForm', 'AuxiliaryForm'],
+  Constant: ['DefaultForm'],
+  // ×362 — у отчёта сверх основной формы ещё настройки и вариант
+  Report: [
+    'DefaultForm',
+    'AuxiliaryForm',
+    'DefaultSettingsForm',
+    'AuxiliarySettingsForm',
+    'DefaultVariantForm',
+    'AuxiliaryVariantForm',
+  ],
+  // ×5 — хранилище настроек различает сохранение и загрузку
+  SettingsStorage: ['DefaultSaveForm', 'DefaultLoadForm', 'AuxiliarySaveForm', 'AuxiliaryLoadForm'],
+  // Корень выгрузки: формы уровня приложения. 18 тегов, порядок — эталон 2.21
+  // (в 2.20 платформа пишет только 10 основных, это подпоследовательность).
+  // Все 5 заполненных значений корпуса — общие формы (`CommonForm.*`), своих
+  // форм у конфигурации не бывает вовсе. Расширение (`extension`) показывает
+  // тот же набор: у него общий с конфигурацией порядок свойств корня.
+  configuration: [
+    'DefaultReportForm',
+    'DefaultReportVariantForm',
+    'DefaultReportSettingsForm',
+    'DefaultDynamicListSettingsForm',
+    'DefaultSearchForm',
+    'DefaultDataHistoryChangeHistoryForm',
+    'DefaultDataHistoryVersionDataForm',
+    'DefaultDataHistoryVersionDifferencesForm',
+    'DefaultCollaborationSystemUsersChoiceForm',
+    'AuxiliaryReportForm',
+    'AuxiliaryReportVariantForm',
+    'AuxiliaryReportSettingsForm',
+    'AuxiliaryDynamicListSettingsForm',
+    'AuxiliaryDataHistoryChangeHistoryForm',
+    'AuxiliaryDataHistoryVersionDataForm',
+    'AuxiliaryDataHistoryVersionDifferencesForm',
+    'AuxiliaryCollaborationSystemUsersChoiceForm',
+    'DefaultConstantsForm',
+  ],
+};
+
+const NO_FORM_PROPERTY_KEYS: readonly string[] = [];
+
+/**
+ * Свойства выбора форм вида метаданных. Вид, которого нет в таблице, форм не
+ * выбирает — пустой список, а не «общий набор на всякий случай».
+ *
+ * Параметр — `string`, а не `MetaKind`: вызывающий приходит из дерева с
+ * `NodeKind` (надмножество `MetaKind` — там есть служебные узлы и группы).
+ * Сама таблица типизирована по `MetaKind`, поэтому опечатка в ИМЕНИ ВИДА
+ * ловится компилятором при её редактировании.
+ */
+export function getFormPropertyKeys(kind: string): readonly string[] {
+  const table: Readonly<Record<string, readonly string[] | undefined>> = FORM_PROPERTY_KEYS_BY_KIND;
+  return table[kind] ?? NO_FORM_PROPERTY_KEYS;
+}
+
+const ALL_FORM_PROPERTY_KEYS: ReadonlySet<string> = new Set(
+  Object.values(FORM_PROPERTY_KEYS_BY_KIND).flatMap((keys) => [...keys])
+);
+
+/** Ключ из таблицы выбора форм (любого вида) — признак секции «Формы» в панели свойств. */
+export function isFormPropertyKey(key: string): boolean {
+  return ALL_FORM_PROPERTY_KEYS.has(key);
+}
 
 // ── Наборы ключей по типам ─────────────────────────────────────────────
 
@@ -850,7 +1056,15 @@ const ENUM_VALUE_KEYS = ['Name', 'Synonym', 'Comment', 'Color'] as const;
 const TEMPLATE_KEYS = ['Name', 'Synonym', 'Comment', 'TemplateType'] as const;
 const SCHEDULED_JOB_KEYS = ['Name', 'Synonym', 'Comment', 'MethodName', 'Use', 'Predefined'] as const;
 
-/** Реестр схем по ключу `META_TYPES.propertySchema` */
+/**
+ * Реестр схем по ключу `META_TYPES.propertySchema`.
+ *
+ * ВНИМАНИЕ: панель свойств корневого объекта этот реестр НЕ читает — порядок
+ * ключей ей даёт `ui/views/properties/propertyKeyOrder.ts`, а состав свойств
+ * выбора форм — {@link FORM_PROPERTY_KEYS_BY_KIND} выше. Здешние наборы
+ * (`COMMON_ROOT_KEYS`/`ENUM_ROOT_KEYS`) на поведение не влияют, и правка их
+ * «чтобы в панели появилось свойство» ничего не изменит.
+ */
 export const PROPERTY_SCHEMAS: Readonly<Record<string, PropertySchema>> = {
   catalog: { id: 'catalog', keys: COMMON_ROOT_KEYS, source: 'propertiesInner' },
   document: { id: 'document', keys: COMMON_ROOT_KEYS, source: 'propertiesInner' },

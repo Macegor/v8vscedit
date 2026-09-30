@@ -1,18 +1,43 @@
 /**
- * Аналог `.claude/skills/form-validate/scripts/form-validate.py`.
  * Проверяет Form.xml: версия, AutoCommandBar, уникальность ID,
  * companion-элементы, DataPath → реквизит, CommandName → команда,
  * обработчики событий, callType, типы (cfg-префиксы), MainAttribute,
  * Title, и расширения (BaseForm + ID >= 1000000).
+ *
+ * Исторически — порт `.claude/skills/form-validate/scripts/form-validate.py`,
+ * но паритета с ним больше нет и он не подразумевается: набор правил здесь
+ * правился по замерам на эталоне `example/` (пространства id, версия формата,
+ * рекурсия `Items.*`, смягчение правил Action/AutoCommandBar). Скил
+ * синхронизирован вручную только по этим правилам; по остальным проверкам
+ * расхождение сохраняется, и источником правды для расширения является ЭТОТ
+ * файл, а не скрипт скила.
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { attr, escapeRegExp, extractBlock, resolveFormXmlPath, VALID_CALL_TYPES } from './FormShared';
+import {
+  attr,
+  escapeRegExp,
+  extractBlock,
+  isFormRootXml,
+  isMetaDataObjectRootXml,
+  resolveFormXmlPath,
+  VALID_CALL_TYPES,
+} from './FormShared';
 import {
   collectAttributes,
   collectCommands,
   collectElements,
 } from './FormInfoService';
+import { isKnownFormatVersion, KNOWN_FORMAT_VERSIONS } from '../format/formatRegistry';
+import {
+  collectIdSpaces,
+  countCheckedEntries,
+  findDuplicateIds,
+  splitBaseForm,
+  type FormIdDuplicate,
+  type FormIdSpace,
+  type IdSpaceKind,
+} from './FormIdSpaces';
 import type {
   FormAttributeInfo,
   FormCommandInfo,
@@ -72,6 +97,15 @@ const COMPANION_RULES: Record<string, readonly string[]> = {
   Table: ['ContextMenu', 'AutoCommandBar', 'SearchStringAddition', 'ViewStatusAddition', 'SearchControlAddition'],
 };
 
+/**
+ * Максимальное число переходов `Items.<Таблица>.CurrentData.…` → DataPath этой
+ * таблицы. Нужен только как страховка от битой формы: цикл ловится раньше по
+ * множеству уже посещённых таблиц, а честная вложенность таблиц в эталоне не
+ * превышает 2. Ровно столько переходов и допускается — цепочка из 16 звеньев
+ * разворачивается, ошибка «deeper than 16 hops» начинается с 17-го.
+ */
+const MAX_ITEMS_DEPTH = 16;
+
 const SKIP_DATAPATH_TAGS = new Set([
   'ContextMenu', 'ExtendedTooltip', 'AutoCommandBar',
   'SearchStringAddition', 'ViewStatusAddition', 'SearchControlAddition',
@@ -80,53 +114,50 @@ const SKIP_DATAPATH_TAGS = new Set([
 export class FormValidateService {
   validate(options: ValidateFormOptions): FormValidationResult {
     const formPath = resolveFormXmlPath(options.formPath);
-    const maxErrors = options.maxErrors ?? 30;
-    const detailed = options.detailed === true;
     const formName = resolveFormName(formPath);
     const lines: string[] = [`=== Validation: Form.${formName} ===`, ''];
-    let errors = 0;
-    let warnings = 0;
-    let ok = 0;
-    // Расширяем тип до boolean, иначе TS сужает до литерала false и линтер считает,
-    // что проверки `if (!stopped)` всегда истинны — а на самом деле reportError
-    // выставляет stopped=true как сайд-эффект из замыкания.
-    let stopped = false as boolean;
-    const reportOk = (msg: string) => {
-      ok++;
-      if (detailed) {lines.push(`[OK]    ${msg}`);}
-    };
-    const reportWarn = (msg: string) => {
-      warnings++;
-      lines.push(`[WARN]  ${msg}`);
-    };
-    const reportError = (msg: string) => {
-      errors++;
-      lines.push(`[ERROR] ${msg}`);
-      if (errors >= maxErrors) {stopped = true;}
-    };
+    const report = new ValidationReport(lines, options.maxErrors ?? 30, options.detailed === true);
+    const reportOk = (msg: string) => { report.ok(msg); };
+    const reportWarn = (msg: string) => { report.warn(msg); };
+    const reportError = (msg: string) => { report.error(msg); };
 
     let xml: string;
     try {
       xml = fs.readFileSync(formPath, 'utf-8');
     } catch (err) {
       reportError(`Cannot read file: ${String(err)}`);
-      return finalize(formPath, errors, warnings, ok, lines);
+      return finalize(formPath, report, lines);
     }
 
     const isConfigContext = detectConfigContext(formPath);
 
     // 1. Root element
-    if (!/<Form\b/.test(xml)) {
-      reportError('Root element is not Form.');
-      return finalize(formPath, errors, warnings, ok, lines);
+    // Критерий — ПЕРВЫЙ элемент документа (isFormRootXml), а не подстрока `<Form`:
+    // в XML справочника есть <Form>ФормаСписка</Form> внутри <ChildObjects>, и такой
+    // файл проходил проверку, после чего сыпалась пачка ложных ошибок про форму.
+    // validate read-only, поэтому это отчёт об ошибке, а не исключение.
+    if (!isFormRootXml(xml)) {
+      const hint = isMetaDataObjectRootXml(xml)
+        ? ' Это XML объекта метаданных; тело формы лежит в <Объект>/Forms/<Имя>/Ext/Form.xml.'
+        : '';
+      // Путь файла в текст НЕ подставляется: он уже есть отдельным полем
+      // `formPath` результата, а абсолютный путь внутри строки отчёта делает
+      // отчёт непереносимым между машинами и ломает ассёрты по тексту.
+      reportError(`Root element is not Form.${hint}`);
+      return finalize(formPath, report, lines);
     }
     const versionM = /<Form\b[^>]*\bversion="([^"]+)"/.exec(xml);
     if (versionM) {
+      // Список версий — общий с валидатором внешнего объекта и с выбором
+      // ruleset генерации (`infra/xml/format/formatRegistry`). Своего набора
+      // здесь быть не должно: 2.21 — текущее поколение формата, а 2.18 —
+      // `DEFAULT_FORMAT_VERSION` проекта, который наш же генератор пишет в
+      // новый Form.xml; локальный список уже разошёлся с центральным по 2.18.
       const v = versionM[1];
-      if (v === '2.17' || v === '2.20') {
+      if (isKnownFormatVersion(v)) {
         reportOk(`Root element: Form version=${v}`);
       } else {
-        reportWarn(`Form version='${v}' (expected 2.17 or 2.20)`);
+        reportWarn(`Form version='${v}' (expected ${KNOWN_FORMAT_VERSIONS.join(', ')})`);
       }
     } else {
       reportWarn('Form version attribute missing');
@@ -135,18 +166,25 @@ export class FormValidateService {
     const hasBaseForm = /<BaseForm\b/.test(xml);
 
     // 2. AutoCommandBar
-    if (!stopped) {
-      const acb = /<AutoCommandBar\b([^>]*?)(\/?)>/.exec(xml);
-      if (!acb) {
-        reportError('AutoCommandBar element missing');
+    // Единственная ошибка секции 1 («Root element is not Form.») завершает
+    // проверку немедленным return выше, поэтому досюда `stopped` дойти не может —
+    // guard'а здесь намеренно нет.
+    const acb = /<AutoCommandBar\b([^>]*?)(\/?)>/.exec(xml);
+    if (!acb) {
+      reportError('AutoCommandBar element missing');
+    } else {
+      const acbId = attr(acb[1], 'id') ?? '';
+      const acbName = attr(acb[1], 'name') ?? '';
+      if (acbId === '-1') {
+        reportOk(`AutoCommandBar: name='${acbName}', id=${acbId}`);
       } else {
-        const acbId = attr(acb[1], 'id') ?? '';
-        const acbName = attr(acb[1], 'name') ?? '';
-        if (acbId === '-1') {
-          reportOk(`AutoCommandBar: name='${acbName}', id=${acbId}`);
-        } else {
-          reportError(`AutoCommandBar id='${acbId}', expected '-1'`);
-        }
+        // Не ошибка, а «нетипично»: у командной панели формы верхнего уровня
+        // почти всегда id='-1' (замер по эталону example/: 6327 форм из 6329),
+        // но платформа выгружает и обычный id — ровно 2 формы корпуса
+        // (Documents/ЭлектроннаяСопроводительнаяВедомость/Forms/ОсновнаяФорма*,
+        // id='607'). Правило эмпирическое, XSD-схемы Form.xml в проекте нет,
+        // поэтому обратно в ошибку его поднимать нельзя.
+        reportWarn(`AutoCommandBar id='${acbId}' — atypical, form-level AutoCommandBar normally has id='-1'`);
       }
     }
 
@@ -154,72 +192,168 @@ export class FormValidateService {
     const attributes = collectAttributes(xml);
     const commands = collectCommands(xml);
 
-    // 3. Unique element IDs
-    if (!stopped) {
-      stopped = !checkUniqueIds(elements.map((e) => ({ kind: 'element', name: e.name, id: e.id })), reportError, () => reportOk(`Unique element IDs: ${String(elements.filter((e) => e.id && e.id !== '-1').length)} elements`), maxErrors, errors) || stopped;
-    }
-    if (!stopped) {
-      stopped = !checkUniqueIds(attributes.map((a) => ({ kind: 'attribute', name: a.name, id: a.id })), reportError, () => attributes.length ? reportOk(`Unique attribute IDs: ${String(attributes.length)} entries`) : undefined, maxErrors, errors) || stopped;
-    }
-    if (!stopped) {
-      stopped = !checkUniqueIds(commands.map((c) => ({ kind: 'command', name: c.name, id: c.id })), reportError, () => commands.length ? reportOk(`Unique command IDs: ${String(commands.length)} entries`) : undefined, maxErrors, errors) || stopped;
-    }
-
-    // 3b. Column IDs within each attribute
-    if (!stopped) {
-      validateColumnIds(xml, attributes, reportError);
-    }
+    // 3. Пространства нумерации id: element / attribute / command / колонки.
+    // Регион <BaseForm> — копия базовой формы, её id живут отдельно и с
+    // собственными id расширения не пересекаются (см. FormIdSpaces).
+    // Внешнего guard'а нет: проверка пространств сама уважает `stopped`.
+    validateIdSpaces(collectIdSpaces(splitBaseForm(xml).own), report);
 
     // 4. Companion elements
-    if (!stopped) {
+    if (!report.stopped) {
       validateCompanions(xml, elements, reportError, reportOk);
     }
 
     // 5. DataPath → attribute
-    if (!stopped) {
+    if (!report.stopped) {
       validateDataPaths(xml, elements, attributes, hasBaseForm, reportError, reportWarn, reportOk);
     }
 
     // 6. Command references
-    if (!stopped) {
+    if (!report.stopped) {
       validateCommandRefs(elements, commands, reportError, reportOk);
     }
 
     // 7. Event handlers non-empty
-    if (!stopped) {
+    if (!report.stopped) {
       validateEventHandlers(xml, reportError, reportOk);
     }
 
     // 8. Command actions present
-    if (!stopped) {
-      validateCommandActions(xml, commands, reportError, reportOk);
+    if (!report.stopped) {
+      validateCommandActions(xml, commands, reportWarn, reportOk);
     }
 
     // 9. MainAttribute count
-    const mainCount = attributes.filter((a) => a.main).length;
-    if (mainCount > 1) {
-      reportError(`Multiple MainAttribute=true (${String(mainCount)} found, expected 0 or 1)`);
-    } else {
-      reportOk(`MainAttribute: ${mainCount === 1 ? '1 main attribute' : 'no main attribute'}`);
+    if (!report.stopped) {
+      const mainCount = attributes.filter((a) => a.main).length;
+      if (mainCount > 1) {
+        reportError(`Multiple MainAttribute=true (${String(mainCount)} found, expected 0 or 1)`);
+      } else {
+        reportOk(`MainAttribute: ${mainCount === 1 ? '1 main attribute' : 'no main attribute'}`);
+      }
     }
 
     // 10. Title must be multilingual
-    if (!stopped) {
+    if (!report.stopped) {
       validateTitle(xml, reportError, reportOk);
     }
 
     // 11. Extension validations + callType
-    if (!stopped) {
+    if (!report.stopped) {
       validateCallTypesAndExtension(xml, attributes, commands, hasBaseForm, reportError, reportWarn, reportOk);
     }
 
     // 12. Type validation
-    if (!stopped) {
+    if (!report.stopped) {
       validateTypes(xml, isConfigContext, reportError, reportWarn, reportOk);
     }
 
-    return finalize(formPath, errors, warnings, ok, lines);
+    return finalize(formPath, report, lines);
   }
+}
+
+/**
+ * Единый счётчик отчёта: ошибки/предупреждения/OK и признак останова живут в
+ * одном месте, поэтому проверки сами ничего не считают. Как только достигнут
+ * лимит `maxErrors`, ошибки перестают приниматься — число ошибок в результате
+ * никогда не превышает лимит, даже если проверка внутри себя нашла больше.
+ */
+class ValidationReport {
+  private errorCount = 0;
+  private warningCount = 0;
+  private okCount = 0;
+  private limitReached = false;
+
+  constructor(
+    private readonly lines: string[],
+    private readonly maxErrors: number,
+    private readonly detailed: boolean,
+  ) {}
+
+  get errors(): number { return this.errorCount; }
+  get warnings(): number { return this.warningCount; }
+  get okChecks(): number { return this.okCount; }
+  get stopped(): boolean { return this.limitReached; }
+
+  error(msg: string): void {
+    if (this.limitReached) {
+      return;
+    }
+    this.errorCount++;
+    this.lines.push(`[ERROR] ${msg}`);
+    if (this.errorCount >= this.maxErrors) {
+      this.limitReached = true;
+    }
+  }
+
+  warn(msg: string): void {
+    this.warningCount++;
+    this.lines.push(`[WARN]  ${msg}`);
+  }
+
+  ok(msg: string): void {
+    this.okCount++;
+    if (this.detailed) {
+      this.lines.push(`[OK]    ${msg}`);
+    }
+  }
+}
+
+/** Единица измерения OK-строки по виду пространства. */
+const OK_UNIT: Record<Exclude<IdSpaceKind, 'column'>, string> = {
+  element: 'elements',
+  attribute: 'entries',
+  command: 'entries',
+};
+
+/**
+ * Проверяет пространства в фиксированном порядке (element → attribute →
+ * command → колоночные контейнеры). OK-строка пространства печатается ТОЛЬКО
+ * при нуле дублей в нём, иначе отчёт «0 ошибок, уникальных id: N» снова стал бы
+ * ложным. Колонки суммируются в одну строку по всем контейнерам.
+ */
+function validateIdSpaces(spaces: readonly FormIdSpace[], report: ValidationReport): void {
+  let columnEntries = 0;
+  let columnContainers = 0;
+  let columnsClean = true;
+  for (const space of spaces) {
+    if (report.stopped) {
+      return;
+    }
+    const duplicates = findDuplicateIds(space);
+    for (const duplicate of duplicates) {
+      report.error(formatDuplicate(space, duplicate));
+    }
+    const kind = space.kind;
+    if (kind === 'column') {
+      columnContainers++;
+      columnEntries += countCheckedEntries(space);
+      columnsClean = columnsClean && duplicates.length === 0;
+      continue;
+    }
+    if (duplicates.length === 0) {
+      report.ok(`Unique ${kind} IDs: ${String(countCheckedEntries(space))} ${OK_UNIT[kind]}`);
+    }
+  }
+  if (columnContainers > 0 && columnsClean) {
+    report.ok(`Unique column IDs: ${String(columnEntries)} columns in ${String(columnContainers)} containers`);
+  }
+}
+
+function formatDuplicate(space: FormIdSpace, duplicate: FormIdDuplicate): string {
+  const current = quoteName(duplicate.current.name);
+  const previous = quoteName(duplicate.previous.name);
+  if (space.kind === 'element') {
+    return `Duplicate element id=${duplicate.id}: ${current} <${duplicate.current.tag}> and ${previous} <${duplicate.previous.tag}>`;
+  }
+  if (space.kind === 'column') {
+    return `Duplicate column id=${duplicate.id} in ${space.label}: ${current} and ${previous}`;
+  }
+  return `Duplicate ${space.kind} id=${duplicate.id}: ${current} and ${previous}`;
+}
+
+function quoteName(name: string): string {
+  return `'${name || '(unnamed)'}'`;
 }
 
 function resolveFormName(formPath: string): string {
@@ -241,48 +375,6 @@ function detectConfigContext(formPath: string): boolean {
     walkDir = parent;
   }
   return false;
-}
-
-interface IdItem { kind: string; name: string; id: string }
-
-function checkUniqueIds(items: readonly IdItem[], reportError: (msg: string) => void, reportOkFn: () => void, maxErrors: number, errorsSoFar: number): boolean {
-  const seen = new Map<string, string>();
-  let lastErrors = errorsSoFar;
-  for (const item of items) {
-    if (!item.id || item.id === '-1') {continue;}
-    const previous = seen.get(item.id);
-    if (previous) {
-      reportError(`Duplicate ${item.kind} id=${item.id}: '${item.name}' and '${previous}'`);
-      lastErrors++;
-      if (lastErrors >= maxErrors) {return false;}
-      continue;
-    }
-    seen.set(item.id, item.name);
-  }
-  reportOkFn();
-  return true;
-}
-
-function validateColumnIds(xml: string, attributes: readonly FormAttributeInfo[], reportError: (msg: string) => void): void {
-  const attrsBlock = extractBlock(xml, 'Attributes') ?? '';
-  for (const attrInfo of attributes) {
-    const re = new RegExp(`<Attribute\\b[^>]*name="${escapeRegExp(attrInfo.name)}"[^>]*>([\\s\\S]*?)<\\/Attribute>`);
-    const body = re.exec(attrsBlock)?.[1] ?? '';
-    const columnsM = /<Columns>([\s\S]*?)<\/Columns>/.exec(body);
-    if (!columnsM) {continue;}
-    const ids = new Map<string, string>();
-    for (const c of columnsM[1].matchAll(/<Column\b([^>]*)\/?>/g)) {
-      const id = attr(c[1], 'id');
-      const name = attr(c[1], 'name') ?? '';
-      if (!id) {continue;}
-      const prev = ids.get(id);
-      if (prev) {
-        reportError(`Duplicate column id=${id} in '${attrInfo.name}': '${name}' and '${prev}'`);
-      } else {
-        ids.set(id, name);
-      }
-    }
-  }
 }
 
 function validateCompanions(xml: string, elements: readonly FormElementInfo[], reportError: (msg: string) => void, reportOk: (msg: string) => void): void {
@@ -335,31 +427,20 @@ function validateDataPaths(
     if (!dataPath) {continue;}
     if (/^\d+$/.test(dataPath) || /^\d+\/\d+:[0-9a-fA-F-]+$/.test(dataPath)) {continue;}
     checked++;
-    let clean = dataPath.replace(/\[\d+\]/g, '');
-    if (clean.startsWith('~')) {clean = clean.slice(1);}
-    const segments = clean.split('.');
-    let rootAttr = segments[0];
-
-    if (rootAttr === 'Items') {
-      if (segments.length < 3 || segments[2] !== 'CurrentData') {
-        reportWarn(`[${el.tag}] '${el.name}': DataPath='${dataPath}' — unknown Items.* shape, expected Items.<Table>.CurrentData.*`);
-        continue;
-      }
-      const tableName = segments[1];
-      const tableEl = elements.find((e) => e.tag === 'Table' && e.name === tableName);
-      if (!tableEl) {
-        reportError(`[${el.tag}] '${el.name}': DataPath='${dataPath}' — table element '${tableName}' not found`);
-        bad++;
-        continue;
-      }
-      const tablePath = tableEl.dataPath?.trim();
-      if (!tablePath) {continue;}
-      let tableClean = tablePath.replace(/\[\d+\]/g, '');
-      if (tableClean.startsWith('~')) {tableClean = tableClean.slice(1);}
-      rootAttr = tableClean.split('.')[0];
+    const resolution = resolveDataPathRoot(normalizeDataPath(dataPath), elements);
+    const prefix = `[${el.tag}] '${el.name}': DataPath='${dataPath}' — `;
+    if (resolution.kind === 'skip') {continue;}
+    if (resolution.kind === 'warn') {
+      reportWarn(prefix + resolution.message);
+      continue;
     }
-    if (!attrNames.has(rootAttr)) {
-      reportError(`[${el.tag}] '${el.name}': DataPath='${dataPath}' — attribute '${rootAttr}' not found`);
+    if (resolution.kind === 'error') {
+      reportError(prefix + resolution.message);
+      bad++;
+      continue;
+    }
+    if (!attrNames.has(resolution.root)) {
+      reportError(`${prefix}attribute '${resolution.root}' not found`);
       bad++;
     }
   }
@@ -371,6 +452,65 @@ function validateDataPaths(
       reportOk(`DataPath references: ${parts.join(', ')}`);
     }
   }
+}
+
+/** Результат разворачивания DataPath до корневого реквизита формы. */
+type DataPathResolution =
+  | { readonly kind: 'root'; readonly root: string }
+  | { readonly kind: 'skip' }
+  | { readonly kind: 'warn'; readonly message: string }
+  | { readonly kind: 'error'; readonly message: string };
+
+/** Снимает индексы `[N]` и служебный префикс `~` перед разбором на сегменты. */
+function normalizeDataPath(dataPath: string): string {
+  const clean = dataPath.replace(/\[\d+\]/g, '');
+  return clean.startsWith('~') ? clean.slice(1) : clean;
+}
+
+/**
+ * Разворачивает `Items.<Таблица>.CurrentData.…` РЕКУРСИВНО: у вложенной таблицы
+ * её собственный DataPath тоже начинается с `Items.`, и однократная подстановка
+ * оставляла корнем само слово `Items` — отсюда бессмысленное «attribute 'Items'
+ * not found» на корректной платформенной выгрузке (эталон example/, форма
+ * DataProcessors/НастройкаПравилОбработкиЗаявокСотрудников: таблица
+ * НастройкиПравилСтруктураПредприятияЭтапы с
+ * DataPath='Items.НастройкиПравилСтруктураПредприятия.CurrentData.Этапы').
+ *
+ * Зацикливаться на битой форме валидатор не имеет права, поэтому цепочка
+ * ограничена и множеством уже посещённых таблиц (взаимная ссылка A→B→A), и
+ * жёстким пределом глубины.
+ */
+function resolveDataPathRoot(clean: string, elements: readonly FormElementInfo[]): DataPathResolution {
+  let segments = clean.split('.');
+  const visited = new Set<string>();
+  // Переходов ровно MAX_ITEMS_DEPTH, а итераций на одну больше: последняя не
+  // делает перехода, а проверяет корень, полученный предыдущей. Со строгим `<`
+  // цепочка ровно из MAX_ITEMS_DEPTH звеньев объявлялась «глубже предела»,
+  // хотя развернулась до конца, и сообщение врало на единицу.
+  for (let depth = 0; depth <= MAX_ITEMS_DEPTH; depth++) {
+    const root = segments[0];
+    if (root !== 'Items') {
+      return { kind: 'root', root };
+    }
+    if (segments.length < 3 || segments[2] !== 'CurrentData') {
+      return { kind: 'warn', message: 'unknown Items.* shape, expected Items.<Table>.CurrentData.*' };
+    }
+    const tableName = segments[1];
+    if (visited.has(tableName)) {
+      return { kind: 'error', message: `cyclic Items.* reference through table element '${tableName}'` };
+    }
+    visited.add(tableName);
+    const tableEl = elements.find((e) => e.tag === 'Table' && e.name === tableName);
+    if (!tableEl) {
+      return { kind: 'error', message: `table element '${tableName}' not found` };
+    }
+    const tablePath = tableEl.dataPath?.trim();
+    if (!tablePath) {
+      return { kind: 'skip' };
+    }
+    segments = normalizeDataPath(tablePath).split('.');
+  }
+  return { kind: 'error', message: `Items.* chain is deeper than ${String(MAX_ITEMS_DEPTH)} hops` };
 }
 
 function validateCommandRefs(elements: readonly FormElementInfo[], commands: readonly FormCommandInfo[], reportError: (msg: string) => void, reportOk: (msg: string) => void): void {
@@ -410,7 +550,15 @@ function validateEventHandlers(xml: string, reportError: (msg: string) => void, 
   }
 }
 
-function validateCommandActions(xml: string, commands: readonly FormCommandInfo[], reportError: (msg: string) => void, reportOk: (msg: string) => void): void {
+/**
+ * Команда формы без `<Action>` — ПРЕДУПРЕЖДЕНИЕ, а не ошибка: платформа штатно
+ * выгружает такие команды (замер по эталону example/: 179 команд из 23 417,
+ * 0,8%, в 119 формах — полноценные команды с Title/ToolTip/Picture, например
+ * DataProcessors/БизнесСеть/Forms/ОтправкаПриглашенийКонтрагентам, команды
+ * ВыбратьВсе/СнятьВсе). Совсем убирать проверку нельзя: в рукописной форме
+ * команда без обработчика — чаще всего реальная недоделка.
+ */
+function validateCommandActions(xml: string, commands: readonly FormCommandInfo[], reportWarn: (msg: string) => void, reportOk: (msg: string) => void): void {
   if (commands.length === 0) {return;}
   const cmdsBlock = extractBlock(xml, 'Commands') ?? '';
   let bad = 0;
@@ -419,7 +567,7 @@ function validateCommandActions(xml: string, commands: readonly FormCommandInfo[
     const body = re.exec(cmdsBlock)?.[1] ?? '';
     const actionM = /<Action\b[^>]*>([^<]*)<\/Action>/.exec(body);
     if (!actionM?.[1].trim()) {
-      reportError(`Command '${cmd.name}': missing or empty Action`);
+      reportWarn(`Command '${cmd.name}': missing or empty Action — may be legitimate (platform exports such commands)`);
       bad++;
     }
   }
@@ -580,8 +728,10 @@ function validateTypes(
   }
 }
 
-function finalize(formPath: string, errors: number, warnings: number, ok: number, lines: string[]): FormValidationResult {
-  const checks = errors + warnings + ok;
+function finalize(formPath: string, report: ValidationReport, lines: string[]): FormValidationResult {
+  const errors = report.errors;
+  const warnings = report.warnings;
+  const checks = errors + warnings + report.okChecks;
   if (errors === 0 && warnings === 0 && lines.length <= 2) {
     lines.push(`=== Validation OK: ${path.basename(formPath)} (${String(checks)} checks) ===`);
   } else {

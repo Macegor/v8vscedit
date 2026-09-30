@@ -1,6 +1,7 @@
 import { XMLParser } from 'fast-xml-parser';
 import * as fs from 'fs';
 import { getDefaultStandardAttributeIndexing } from '../../domain/StandardAttribute';
+import { writeFileAtomic } from '../fs/AtomicFileWriter';
 
 export interface XmlTextNode { '#text': string }
 export type XmlElementNode = Record<string, XmlNodeList>;
@@ -147,8 +148,13 @@ function findFirstElementRange(xml: string, tagName: string): XmlElementRange | 
   return findNestingAwareElementRange(xml, tagName);
 }
 
-export function findDirectElementRanges(xml: string, tagName: string): { start: number; end: number }[] {
-  const ranges: { start: number; end: number }[] = [];
+/**
+ * ВСЕ прямые (верхнего уровня) элементы фрагмента в ДОКУМЕНТНОМ порядке, вместе
+ * с именем тега. Нужен там, где важна последовательность разнотипных детей
+ * (порядок в `<ChildObjects>`), а не поиск одного тега.
+ */
+export function findDirectElementEntries(xml: string): { tag: string; start: number; end: number }[] {
+  const entries: { tag: string; start: number; end: number }[] = [];
   const tagRe = /<\/?([A-Za-z_][\w:.-]*)(?:\s[^<>]*)?\/?>/g;
   let depth = 0;
   let current: { tag: string; start: number } | null = null;
@@ -160,16 +166,16 @@ export function findDirectElementRanges(xml: string, tagName: string): { start: 
     if (text.startsWith('</')) {
       depth = Math.max(0, depth - 1);
       if (depth === 0 && current?.tag === name) {
-        ranges.push({ start: current.start, end: match.index + text.length });
+        entries.push({ tag: name, start: current.start, end: match.index + text.length });
         current = null;
       }
       continue;
     }
 
     const selfClosing = text.endsWith('/>');
-    if (depth === 0 && name === tagName) {
+    if (depth === 0) {
       if (selfClosing) {
-        ranges.push({ start: match.index, end: match.index + text.length });
+        entries.push({ tag: name, start: match.index, end: match.index + text.length });
       } else {
         current = { tag: name, start: match.index };
       }
@@ -179,7 +185,41 @@ export function findDirectElementRanges(xml: string, tagName: string): { start: 
     }
   }
 
-  return ranges;
+  return entries;
+}
+
+export function findDirectElementRanges(xml: string, tagName: string): { start: number; end: number }[] {
+  return findDirectElementEntries(xml)
+    .filter((entry) => entry.tag === tagName)
+    .map(({ start, end }) => ({ start, end }));
+}
+
+/**
+ * Вид объекта метаданных из КОРНЯ файла (`Catalog`, `InformationRegister`, …) —
+ * тег, вложенный в `<MetaDataObject>`. Им задаются и состав свойств дочерних
+ * полей, и канон порядка `<ChildObjects>`, поэтому реализация одна на всех
+ * потребителей (ObjectXmlReader, генератор дочерних элементов, FormAddService,
+ * заимствование в расширение).
+ *
+ * @param allowBareRoot Считать видом сам корневой тег, если обёртки
+ *   `<MetaDataObject>` нет (нестандартный файл/фрагмент). По умолчанию
+ *   выключено: вызывающий, который дальше ищет `<ChildObjects>` ВЛАДЕЛЬЦА,
+ *   обязан отличать «это вообще не файл объекта метаданных» от «объект без
+ *   детей», иначе первая ошибка маскируется второй.
+ */
+export function detectRootObjectKind(xml: string, allowBareRoot = false): string | undefined {
+  const text = xml.trimStart().replace(/^<\?xml\b[\s\S]*?\?>\s*/, '');
+  const wrapped = /^<MetaDataObject\b[^>]*>\s*<([A-Za-z][A-Za-z0-9]*)\b/.exec(text)?.[1];
+  if (wrapped !== undefined || !allowBareRoot) {
+    return wrapped;
+  }
+  // Из production-пути сюда не попасть: единственный потребитель `allowBareRoot`
+  // (ObjectXmlReader.updateType) читает файл объекта по пути из MetaPathResolver,
+  // а такой файл всегда обёрнут <MetaDataObject>. Но функция экспортирована, и
+  // ветка тривиально достижима вызовом — значит покрывается тестом, а не
+  // прячется под `c8 ignore`: подавлять покрытие там, где его можно измерить,
+  // значит приучать не доверять собственному гейту.
+  return /^<([A-Za-z][A-Za-z0-9]*)\b/.exec(text)?.[1];
 }
 
 /**
@@ -613,6 +653,29 @@ function buildDefaultStandardAttributeXml(rootKind: string, attributeName: strin
 }
 
 /**
+ * Пустое ли значение свойства — то есть надо ли писать САМОЗАКРЫТЫЙ тег.
+ *
+ * Платформа пустое значение всегда сериализует как `<Key/>`; парного пустого
+ * тега (`<Key></Key>`) в эталоне нет ни разу при 475 620 самозакрытых
+ * (скан контрпримеров по 28 257 корням `MetaDataObject` трёх поколений,
+ * см. docs/xml-format-rulesets.md). Парный тег делал сброс УЖЕ пустого
+ * свойства видимым изменением — git-дифф на ровном месте и потеря
+ * идемпотентности операции.
+ *
+ * Пустота — ровно нулевая длина, а НЕ `trim()`: в эталоне есть значения из
+ * одних пробелов (`<Comment> </Comment>`, 157 строковых `FillValue`), и они
+ * значения, а не пустота.
+ *
+ * Хелпер общий для всех писателей свойств: у корня конфигурации свой
+ * построитель блока (`ConfigurationXmlEditor.buildRootPropertyBlock`),
+ * и разложенное по файлам знание уже один раз разошлось — ветки списков
+ * правило соблюдали, ветки строки и локализованной строки нет.
+ */
+export function isEmptyPropertyValue(value: string | boolean | string[]): boolean {
+  return Array.isArray(value) ? value.length === 0 : value === '';
+}
+
+/**
  * Экранирует текстовое содержимое тегов: `&`, `<`, `>`.
  * Кавычки не трогает — для значений атрибутов используйте {@link escapeXmlAttribute}.
  * Канонический хелпер: ранее по проекту были рассыпаны идентичные локальные копии.
@@ -737,5 +800,8 @@ export function writeTextFilePreservingBomAndEol(
   const hasBom = originalContent.charCodeAt(0) === 0xfeff;
   const eol = originalContent.includes('\r\n') ? '\r\n' : '\n';
   const normalized = nextContent.replace(/\r\n|\n/g, eol);
-  fs.writeFileSync(filePath, `${hasBom && normalized.charCodeAt(0) !== 0xfeff ? '\ufeff' : ''}${normalized}`, 'utf-8');
+  // Запись — только атомарной подменой файла: обрыв прямой записи на середине
+  // оставил бы обрезанный XML, а битый XML одного объекта делает нечитаемой всю
+  // конфигурацию.
+  writeFileAtomic(filePath, `${hasBom && normalized.charCodeAt(0) !== 0xfeff ? '\ufeff' : ''}${normalized}`);
 }

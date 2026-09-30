@@ -13,6 +13,7 @@ import {
   resolveFormatRuleset,
   setFormatRulesetWarning,
 } from '../../infra/xml/format/formatRegistry';
+import { skipWithoutCorpus } from './support/corpus';
 
 const EXAMPLE_2_20_CF = path.resolve(__dirname, '../../../example/2.20/src/cf');
 
@@ -237,6 +238,12 @@ suite('Генерация объектов по версии формата', ()
 });
 
 suite('Golden: порядок свойств совпадает с эталоном 2.20', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   const goldenCases: [MetaKind, string][] = [
     ['Catalog', 'Регионы.xml'],
     ['Document', 'Заказ.xml'],

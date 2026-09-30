@@ -16,6 +16,7 @@ import {
   type PartChange,
   type RawChange,
 } from '../../infra/git/MetadataChangeAggregator';
+import { skipWithoutCorpus } from './support/corpus';
 
 /**
  * Реальный временный git-репозиторий со штатной структурой `src/cf`, собранной
@@ -122,6 +123,12 @@ function buildFixtureRepo(): Fixture {
 }
 
 suite('MetadataChangeAggregator — агрегация изменений на реальном git-репозитории', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   let fixture: Fixture;
   let model: ChangesModel;
 

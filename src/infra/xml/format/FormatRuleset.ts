@@ -1,5 +1,5 @@
 import type { MetaKind } from '../../../domain/MetaTypes';
-import type { RegisterOwnerKind, TypeAwarePropertyOwnerKind } from '../TypedFieldPropertyRules';
+import type { TypeAwarePropertyOwnerKind } from '../TypedFieldPropertyRules';
 
 /** Описание сгенерированного типа объекта (xr:GeneratedType) — префикс + категория. */
 export interface GeneratedTypeDef {
@@ -39,6 +39,16 @@ export interface FormatRuleset {
    */
   readonly metaDataObjectXmlns: string;
 
+  /**
+   * Строка xmlns-объявлений корня графической схемы `<GraphicalSchema …>` (без
+   * `version` — его дописывает builder, как и у `metaDataObjectXmlns`).
+   *
+   * Отдельное от `metaDataObjectXmlns` поле: у схемы своё пространство
+   * (`…/xcf/scheme`) и свой, более узкий набор префиксов. Ось версии здесь та
+   * же, что у объектов: в эталоне 2.20 префикса `pal` нет, в 2.21 есть.
+   */
+  readonly graphicalSchemaXmlns: string;
+
   /** Таблица сгенерированных типов (`xr:GeneratedType`) по виду метаданных. */
   readonly generatedTypes: Partial<Record<MetaKind, readonly GeneratedTypeDef[]>>;
 
@@ -73,14 +83,14 @@ export interface FormatRuleset {
    * Дополнительные блоки свойств нового типизированного поля, зависящие от его
    * типа (`<Type>`-состав определяет, какие свойства уместны). `typeInnerXml` —
    * XML блока типа для определения категории, `indent` — отступ свойств.
-   * `registerKind` — тип регистра-владельца измерения/ресурса (набор свойств и
-   * их значения по умолчанию зависят от типа регистра).
+   * `ownerKind` — вид объекта-владельца: вместе с ролью поля он задаёт состав
+   * свойств (таблица владелец×роль) и значения по умолчанию.
    */
   buildTypedFieldProperties(
     kind: TypeAwarePropertyOwnerKind,
     typeInnerXml: string,
     indent: string,
-    registerKind?: RegisterOwnerKind
+    ownerKind?: string
   ): readonly string[];
 
   /**

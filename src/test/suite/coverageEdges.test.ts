@@ -14,6 +14,7 @@ import {
   buildMetadataTypeInnerXml,
   buildMetadataTypeItem,
 } from '../../ui/views/properties/MetadataTypeService';
+import { skipWithoutCorpus } from './support/corpus';
 
 const EXAMPLE_CF = path.resolve(__dirname, '../../../example/2.20/src/cf');
 const EXAMPLE_CFE_ROOT = path.resolve(__dirname, '../../../example/2.21/src/cfe');
@@ -36,6 +37,8 @@ function findFirstCfeRoot(): string | null {
 
 suite('coverage edge-сценарии на реальных данных', () => {
   test('обходит оставшиеся ветки хеш-кэша, детектора изменений и кэша подсистем', function () {
+    // Тест работает на эталоне `example/` (не в git) — без корпуса пропускается.
+    skipWithoutCorpus(this);
     this.timeout(60000);
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-coverage-'));
     const dataDir = path.join(tempRoot, 'data');

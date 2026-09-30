@@ -7,6 +7,7 @@ import type { MetaChild } from '../../domain/MetaObject';
 import { type MetaKind, getMetaFolder, getMetaType, getMetaTypesByGroup } from '../../domain/MetaTypes';
 import { buildScopeKey } from './HashCache';
 import type { MetadataGitDecorationTarget } from '../git/GitMetadataStatusService';
+import { writeFileAtomic } from '../fs/AtomicFileWriter';
 import { getObjectLocationFromXml, resolveObjectXmlPath } from '../fs/MetaPathResolver';
 import { parseConfigXml, parseObjectXml, readTemplateTypeFromXml } from '../xml';
 
@@ -146,16 +147,9 @@ export function saveMetadataCache(projectRoot: string, snapshot: MetadataCacheSn
   // Отпечаток пересчитываем здесь, в единой точке, уже ПОСЛЕ того как мутации ФС применены
   // (объект добавлен/переименован/удалён), чтобы updateMetadataCacheAfter* писали актуальное состояние.
   const persisted: MetadataCacheSnapshot = { ...snapshot, fingerprint: computeFingerprint(snapshot.rootPath) };
-  // Пишем во временный файл рядом и атомарно подменяем целевой через rename,
-  // чтобы прерывание записи не оставило битый JSON в кэше (образец — HashCache.saveHashCache).
-  const tempPath = `${filePath}.${String(process.pid)}.${String(Date.now())}.tmp`;
-  try {
-    fs.writeFileSync(tempPath, JSON.stringify(persisted), 'utf-8');
-    fs.renameSync(tempPath, filePath);
-  } catch (error) {
-    fs.rmSync(tempPath, { force: true });
-    throw error;
-  }
+  // Общий примитив temp+rename (infra/fs/AtomicFileWriter), тот же, что у
+  // HashCache: прерывание записи не должно оставить битый JSON в кэше.
+  writeFileAtomic(filePath, JSON.stringify(persisted));
   // Держим переданный снимок согласованным с тем, что записано на диск.
   snapshot.fingerprint = persisted.fingerprint;
 }

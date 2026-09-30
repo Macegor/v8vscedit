@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import {
   buildLocalizedTag,
+  detectRootObjectKind,
   escapeRegExp,
   escapeXmlAttribute,
   escapeXmlText,
@@ -370,5 +371,27 @@ suite('XmlUtils — extractMetaDataObjectVersion (единый примитив 
 
   test('совпадает по границе слова: MetaDataObjectX не матчится', () => {
     assert.strictEqual(extractMetaDataObjectVersion('<MetaDataObjectX version="9.9">'), undefined);
+  });
+});
+
+suite('detectRootObjectKind', () => {
+  test('вид берётся из тега, вложенного в MetaDataObject', () => {
+    assert.strictEqual(detectRootObjectKind('<?xml version="1.0"?>\n<MetaDataObject xmlns="x"><Catalog uuid="1">'), 'Catalog');
+  });
+
+  test('без обёртки MetaDataObject по умолчанию возвращается undefined', () => {
+    // Умолчание защищает вызывающего, который дальше ищет <ChildObjects> ВЛАДЕЛЬЦА:
+    // иначе «это вообще не файл объекта метаданных» замаскировалось бы под
+    // «объект без детей».
+    assert.strictEqual(detectRootObjectKind('<Catalog uuid="1">'), undefined);
+  });
+
+  test('allowBareRoot: видом считается сам корневой тег, пролог снимается', () => {
+    assert.strictEqual(detectRootObjectKind('<Catalog uuid="1">', true), 'Catalog');
+    assert.strictEqual(detectRootObjectKind('<?xml version="1.0"?>\n  <InformationRegister>', true), 'InformationRegister');
+  });
+
+  test('allowBareRoot на не-XML содержимом не выдумывает вид', () => {
+    assert.strictEqual(detectRootObjectKind('не xml вовсе', true), undefined);
   });
 });

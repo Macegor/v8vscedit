@@ -5,6 +5,7 @@ import * as path from 'path';
 import { MetadataXmlCreator } from '../../infra/xml/MetadataXmlCreator';
 import { MetadataXmlRemover } from '../../infra/xml/MetadataXmlRemover';
 import { ObjectXmlReader } from '../../infra/xml/ObjectXmlReader';
+import { skipWithoutCorpus } from './support/corpus';
 
 /**
  * Полный E2E жизненный цикл HTTP-сервиса на реальных XML-мутациях (без БД 1С,
@@ -190,6 +191,12 @@ suite('E2E: полный жизненный цикл HTTP-сервиса (соз
 });
 
 suite('E2E: roundtrip донора ServiceEntry.xml', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   const SERVICE_ENTRY_XML = path.resolve(__dirname, '../../../example/2.21/src/cf/HTTPServices/ServiceEntry.xml');
 
   function copyDonor(): string {

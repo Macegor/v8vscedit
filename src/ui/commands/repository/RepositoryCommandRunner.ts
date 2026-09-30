@@ -7,6 +7,7 @@ import type { RepositoryBinding, RepositoryNodeRef, RepositoryService, Repositor
 import { resolveDbPassword, type ProjectSecretStorage } from '../../../infra/environment';
 import {
   describeProcessInterruption,
+  formatCommandLineForLog,
   normalizeInfoBasePath,
   pickMostReadableText,
   resolveV8ExecutablePath,
@@ -80,7 +81,15 @@ export async function runRepositoryCliCommand(
     }
     designerArgs.push('/Out', outFile, '/DisableStartupDialogs');
 
-    const commandAsText = `${v8Path} ${designerArgs.join(' ')}`;
+    // В векторе два секрета: пароль базы (слитно, `/P<пароль>`) и пароль
+    // хранилища (`/ConfigurationRepositoryP <пароль>`). Оба передаются маскеру
+    // ЗНАЧЕНИЯМИ — это точнее правил по ключам и не зависит от формы записи.
+    const commandAsText = formatCommandLineForLog(v8Path, designerArgs, [
+      // Пароль базы необязателен в env.json (тип допускает undefined), пароль
+      // хранилища — нет. Пустая строка маскером игнорируется.
+      connection.password ?? '',
+      binding.repoPassword,
+    ]);
     services.outputChannel.appendLine(`[repository] Старт: ${commandAsText}`);
 
     const stdoutChunks: string[] = [];

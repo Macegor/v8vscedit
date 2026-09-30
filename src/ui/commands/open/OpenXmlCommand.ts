@@ -28,7 +28,20 @@ export function registerOpenXmlCommand(
   );
 }
 
+/**
+ * Ставит readonly-статус в сессии на уже открытый редактор.
+ *
+ * Issue #4: `showTextDocument` здесь и раньше вызывался без `preserveFocus`
+ * (то есть с `false` по умолчанию) — это безусловно перехватывало фокус клавиатуры
+ * повторно, сразу ПОСЛЕ того, как вызывающий код (`openModule`/`openXmlFile`) уже
+ * корректно открыл документ со своим осмысленным `preserveFocus` (например,
+ * `true` из `UniversalPanelViewProvider.selectNode` — открытие модуля из
+ * контекстного меню/выделения узла НЕ должно отбирать фокус у навигатора).
+ * `preserveFocus: true` здесь оправдан всегда: единственная цель повторного
+ * `showTextDocument` — гарантировать `window.activeTextEditor` перед командой
+ * ниже, а не менять фокус, уже корректно установленный вызывающим кодом.
+ */
 export async function setEditorReadonly(editor: vscode.TextEditor): Promise<void> {
-  await vscode.window.showTextDocument(editor.document, { viewColumn: editor.viewColumn });
+  await vscode.window.showTextDocument(editor.document, { viewColumn: editor.viewColumn, preserveFocus: true });
   await vscode.commands.executeCommand('workbench.action.files.setActiveEditorReadonlyInSession');
 }

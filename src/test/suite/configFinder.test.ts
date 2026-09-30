@@ -3,11 +3,18 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { findConfigurations } from '../../infra/fs/ConfigLocator';
+import { skipWithoutCorpus } from './support/corpus';
 
 /** Путь к папке с примерами конфигурации */
 const EXAMPLE_PATH = path.resolve(__dirname, '../../../example/2.20');
 
 suite('ConfigFinder', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('Находит конфигурацию cf в example/cf', () => {
     const entries = findConfigurations(EXAMPLE_PATH);
     const cf = entries.find((e) => e.kind === 'cf');

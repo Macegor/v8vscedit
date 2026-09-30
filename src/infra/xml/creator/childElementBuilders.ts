@@ -3,14 +3,15 @@ import * as path from 'path';
 import type { ChildTag } from '../../../domain/ChildTag';
 import { getObjectLocationFromXml } from '../../fs/MetaPathResolver';
 import type { FormatRuleset } from '../format/FormatRuleset';
-import { type RegisterOwnerKind, toRegisterOwnerKind } from '../TypedFieldPropertyRules';
 import {
+  detectRootObjectKind,
   escapeRegExp,
   findChildMetaElementRange,
   findDirectElementRanges,
   findNestingAwareElementRange,
   hasDirectChildElementNameInBlock,
 } from '../XmlUtils';
+import { resolveInsertOffset } from '../childObjects/ChildObjectsEditor';
 import {
   buildFormDescriptorXml,
   buildManagedFormXml,
@@ -34,7 +35,16 @@ export function addChildToObjectXml(xml: string, options: AddChildMetadataOption
     if (!options.tabularSectionName) {
       return { changed: false, error: 'Не указана табличная часть для добавления колонки.' };
     }
-    return addColumnToTabularSectionXml(xml, options.tabularSectionName, options.name, ruleset);
+    // Вид владельца нужен и колонке: состав её свойств зеркален составу
+    // реквизита верхнего уровня того же объекта (у справочника свойства
+    // заполнения есть у реквизита, у обработки — наоборот, у колонки).
+    return addColumnToTabularSectionXml(
+      xml,
+      options.tabularSectionName,
+      options.name,
+      ruleset,
+      detectRootObjectKind(xml)
+    );
   }
 
   if (options.childTag === 'Method') {
@@ -44,7 +54,7 @@ export function addChildToObjectXml(xml: string, options: AddChildMetadataOption
     return addMethodToUrlTemplateXml(xml, options.urlTemplateName, options.name);
   }
 
-  const ownerKind = extractMetadataObjectKind(xml);
+  const ownerKind = detectRootObjectKind(xml);
   if (!ownerKind) {
     return { changed: false, error: 'Не найден корневой элемент объекта метаданных.' };
   }
@@ -60,7 +70,8 @@ export function addChildToObjectXml(xml: string, options: AddChildMetadataOption
   const indent = detectChildIndent(childObjectsInner, '\t\t\t');
   const ownerName = extractObjectName(xml);
   const fragment = buildChildFragment(options.childTag, options.name, indent, ruleset, ownerKind, ownerName);
-  const replacement = buildChildObjectsReplacement({ ...childObjects, inner: childObjectsInner }, fragment, indent);
+  const insertOffset = resolveInsertOffset(childObjectsInner, ownerKind, options.childTag, 'root');
+  const replacement = buildChildObjectsReplacement({ ...childObjects, inner: childObjectsInner }, fragment, indent, insertOffset);
   const nextXml = `${xml.slice(0, childObjects.start)}${replacement}${xml.slice(childObjects.end)}`;
   return {
     changed: true,
@@ -68,7 +79,13 @@ export function addChildToObjectXml(xml: string, options: AddChildMetadataOption
   };
 }
 
-function addColumnToTabularSectionXml(xml: string, tabularSectionName: string, columnName: string, ruleset: FormatRuleset): { changed: true; xml: string } | { changed: false; error: string } {
+function addColumnToTabularSectionXml(
+  xml: string,
+  tabularSectionName: string,
+  columnName: string,
+  ruleset: FormatRuleset,
+  ownerKind?: string
+): { changed: true; xml: string } | { changed: false; error: string } {
   const section = findNamedChildBlock(xml, 'TabularSection', tabularSectionName);
   if (!section) {
     return { changed: false, error: `Табличная часть "${tabularSectionName}" не найдена.` };
@@ -85,8 +102,10 @@ function addColumnToTabularSectionXml(xml: string, tabularSectionName: string, c
   const indent = detectChildIndent(childObjects.inner, '\t\t\t\t\t');
   // Тег колонки в XML — <Attribute>, но набор свойств у неё «колоночный»
   // (без свойств заполнения), поэтому передаём kind='Column'.
-  const fragment = buildTypedFieldFragment('Attribute', columnName, indent, ruleset, 'Column');
-  const replacement = buildChildObjectsReplacement(childObjects, fragment, indent);
+  const fragment = buildTypedFieldFragment('Attribute', columnName, indent, ruleset, 'Column', ownerKind);
+  // container='nested': это <ChildObjects> САМОЙ табличной части, а не владельца —
+  // канон владельца (справочника/регистра) к её колонкам неприменим.
+  const replacement = buildChildObjectsReplacement(childObjects, fragment, indent, resolveInsertOffset(childObjects.inner, ownerKind, 'Attribute', 'nested'));
   const nextSectionXml = `${sectionXml.slice(0, childObjects.start)}${replacement}${sectionXml.slice(childObjects.end)}`;
   return {
     changed: true,
@@ -110,7 +129,8 @@ function addMethodToUrlTemplateXml(xml: string, urlTemplateName: string, methodN
 
   const indent = detectChildIndent(childObjects.inner, '\t\t\t\t\t');
   const fragment = buildMethodFragment(methodName, indent);
-  const replacement = buildChildObjectsReplacement(childObjects, fragment, indent);
+  // container='nested': <ChildObjects> URL-шаблона, а не HTTP-сервиса.
+  const replacement = buildChildObjectsReplacement(childObjects, fragment, indent, resolveInsertOffset(childObjects.inner, 'URLTemplate', 'Method', 'nested'));
   const nextTemplateXml = `${templateXml.slice(0, childObjects.start)}${replacement}${templateXml.slice(childObjects.end)}`;
   return {
     changed: true,
@@ -130,7 +150,7 @@ function buildChildFragment(
     throw new Error('Стандартные реквизиты создаются платформой 1С и не добавляются вручную.');
   }
   if (tag === 'Attribute' || tag === 'AddressingAttribute' || tag === 'Dimension' || tag === 'Resource') {
-    return buildTypedFieldFragment(tag, name, indent, ruleset, tag, toRegisterOwnerKind(ownerKind));
+    return buildTypedFieldFragment(tag, name, indent, ruleset, tag, ownerKind);
   }
   if (tag === 'TabularSection') {
     return buildTabularSectionFragment(name, indent, ruleset, ownerKind, ownerName);
@@ -201,7 +221,7 @@ function buildTypedFieldFragment(
   indent: string,
   ruleset: FormatRuleset,
   propertyKind: 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column' = tag,
-  registerKind?: RegisterOwnerKind
+  ownerKind?: string
 ): string {
   const typeBlock = ruleset.buildDefaultTypeBlock(`${indent}\t\t`);
   return [
@@ -211,7 +231,7 @@ function buildTypedFieldFragment(
     buildLocalizedTag(`${indent}\t\t`, 'Synonym', splitCamelCase(name)),
     `${indent}\t\t<Comment/>`,
     typeBlock,
-    ...ruleset.buildTypedFieldProperties(propertyKind, typeBlock, `${indent}\t\t`, registerKind),
+    ...ruleset.buildTypedFieldProperties(propertyKind, typeBlock, `${indent}\t\t`, ownerKind),
     `${indent}\t</Properties>`,
     `${indent}</${tag}>`,
   ].join('\n');
@@ -293,19 +313,26 @@ function getChildObjectsBlock(xml: string): { inner: string; start: number; end:
 function buildChildObjectsReplacement(
   block: { inner: string; selfClosing: boolean },
   fragment: string,
-  indent: string
+  indent: string,
+  insertOffset: number | null
 ): string {
   const parentIndent = indent.length > 0 ? indent.slice(0, -1) : '';
   if (block.selfClosing) {
     return `<ChildObjects>\n${fragment}\n${parentIndent}</ChildObjects>`;
   }
-  return insertChildFragment(block.inner, fragment, indent);
+  return insertChildFragment(block.inner, fragment, indent, insertOffset);
 }
 
-function insertChildFragment(inner: string, fragment: string, indent: string): string {
+function insertChildFragment(inner: string, fragment: string, indent: string, insertOffset: number | null): string {
   const parentIndent = indent.length > 0 ? indent.slice(0, -1) : '';
   if (!inner.trim()) {
     return `\n${fragment}\n${parentIndent}`;
+  }
+  if (insertOffset !== null) {
+    // Смещение указывает на начало строки соседа-«потомка старшего ранга»:
+    // его собственный отступ остаётся за вставкой, ни одна существующая строка
+    // не переписывается (чистый diff «+N строк»).
+    return `${inner.slice(0, insertOffset)}${fragment}\n${inner.slice(insertOffset)}`;
   }
   const trimmedRight = inner.replace(/\s+$/, '');
   return `${trimmedRight}\n${fragment}\n${parentIndent}`;
@@ -338,10 +365,6 @@ function removeNestedSimpleChildReference(inner: string, tag: ChildTag, name: st
 
 function extractObjectName(xml: string): string | undefined {
   return /<Properties>[\s\S]*?<Name>([^<]+)<\/Name>/.exec(xml)?.[1];
-}
-
-function extractMetadataObjectKind(xml: string): string | undefined {
-  return /<MetaDataObject\b[^>]*>\s*<([A-Za-z][A-Za-z0-9]*)\b/.exec(xml)?.[1];
 }
 
 function updateMainDataCompositionSchemaIfNeeded(
@@ -399,7 +422,7 @@ export function ensureAuxiliaryChildFiles(options: AddChildMetadataOptions, form
       fs.writeFileSync(templateXml, buildTemplateXml(options.name, formatVersion, templateType, ruleset), 'utf-8');
       changedFiles.push(templateXml);
     }
-    changedFiles.push(...ensureTemplateContentFiles(templateDir, templateType, formatVersion));
+    changedFiles.push(...ensureTemplateContentFiles(templateDir, templateType, formatVersion, ruleset));
     return changedFiles;
   }
   return [];

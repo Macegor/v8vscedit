@@ -20,6 +20,11 @@ import {
   listConnectedDatabaseExtensions,
 } from './ExtensionCommandRunner';
 import { planExtensionChoices } from '../../../infra/environment';
+import {
+  endConfigurationOperation,
+  isConfigurationOperationRunning,
+  tryBeginConfigurationOperation,
+} from './configurationOperationLock';
 
 interface ActionItem extends vscode.QuickPickItem {
   actionId: 'import' | 'update' | 'compileAndUpdateExt';
@@ -35,8 +40,6 @@ interface RootConfigurationTarget extends ImportTarget {
   extensionName?: string;
 }
 
-let isUpdatingConfigurations = false;
-
 /** Регистрирует команды управления расширением 1С. */
 export function registerExtensionCommands(
   context: vscode.ExtensionContext,
@@ -44,7 +47,7 @@ export function registerExtensionCommands(
 ): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('v8vscedit.importConfigurations', async () => {
-      if (isUpdatingConfigurations) {
+      if (isConfigurationOperationRunning()) {
         await showOperationAlreadyRunningMessage();
         return;
       }
@@ -63,8 +66,10 @@ export function registerExtensionCommands(
         return;
       }
 
-      isUpdatingConfigurations = true;
-      await vscode.commands.executeCommand('setContext', 'v8vscedit.isUpdatingConfigurations', true);
+      if (!await tryBeginConfigurationOperation()) {
+        await showOperationAlreadyRunningMessage();
+        return;
+      }
       beginConfigurationProgress(services, 'Импорт конфигураций', 'подготовка');
       await yieldToUi();
       const completedRootPaths: string[] = [];
@@ -120,21 +125,17 @@ export function registerExtensionCommands(
         setConfigurationProgress(services, 'Импорт конфигураций', 'ошибка', false);
         showConfigurationCommandError('Ошибка импорта конфигураций.', error, services);
       } finally {
-        isUpdatingConfigurations = false;
-        await vscode.commands.executeCommand('setContext', 'v8vscedit.isUpdatingConfigurations', false);
+        await endConfigurationOperation();
         services.markConfigurationsClean(completedRootPaths);
         clearConfigurationProgress(services);
       }
     }),
 
     vscode.commands.registerCommand('v8vscedit.updateChangedConfigurations', async () => {
-      if (isUpdatingConfigurations) {
+      if (!await tryBeginConfigurationOperation()) {
         await showOperationAlreadyRunningMessage();
         return false;
       }
-
-      isUpdatingConfigurations = true;
-      await vscode.commands.executeCommand('setContext', 'v8vscedit.isUpdatingConfigurations', true);
       beginConfigurationProgress(services, 'Обновление конфигураций', 'проверка изменений');
       await yieldToUi();
       const completedRootPaths: string[] = [];
@@ -144,7 +145,7 @@ export function registerExtensionCommands(
         if (changed.length === 0) {
           setConfigurationProgress(services, 'Обновление конфигураций', 'изменений нет', false);
           // Уведомление показываем без await: `await` внутри критической секции
-          // держал бы isUpdatingConfigurations=true до закрытия нотификации
+          // держал бы замок операции занятым до закрытия нотификации
           // пользователем, а до тех пор любая операция отбивалась сообщением
           // «уже выполняется» (состояние «идёт обновление» залипало).
           void vscode.window.showInformationMessage('Изменений в конфигурациях не обнаружено.');
@@ -205,8 +206,7 @@ export function registerExtensionCommands(
         showConfigurationCommandError('Ошибка обновления конфигураций.', error, services);
         return false;
       } finally {
-        isUpdatingConfigurations = false;
-        await vscode.commands.executeCommand('setContext', 'v8vscedit.isUpdatingConfigurations', false);
+        await endConfigurationOperation();
         services.markConfigurationsClean(completedRootPaths);
         clearConfigurationProgress(services);
       }
@@ -946,13 +946,10 @@ async function runExclusiveConfigurationOperation(
   },
   operation: () => Promise<boolean>
 ): Promise<boolean> {
-  if (isUpdatingConfigurations) {
+  if (!await tryBeginConfigurationOperation()) {
     await showOperationAlreadyRunningMessage();
     return false;
   }
-
-  isUpdatingConfigurations = true;
-  await vscode.commands.executeCommand('setContext', 'v8vscedit.isUpdatingConfigurations', true);
   beginConfigurationProgress(options.services, options.title, options.startMessage);
   await yieldToUi();
   let failureHookCalled = false;
@@ -987,8 +984,7 @@ async function runExclusiveConfigurationOperation(
     showConfigurationCommandError(`Ошибка операции "${options.title}".`, error, options.services);
     return false;
   } finally {
-    isUpdatingConfigurations = false;
-    await vscode.commands.executeCommand('setContext', 'v8vscedit.isUpdatingConfigurations', false);
+    await endConfigurationOperation();
     clearConfigurationProgress(options.services);
   }
 }

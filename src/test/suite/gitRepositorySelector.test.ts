@@ -12,8 +12,15 @@
 import * as assert from 'assert';
 import { selectGitRepository } from '../../infra/git/GitRepositorySelector';
 import { buildChangesBaselineRepo, removeFixtureRepo, type ChangesFixture } from './support/changesFixtures';
+import { skipWithoutCorpus } from './support/corpus';
 
 suite('GitRepositorySelector — поиск репозитория Git Extension API по корню', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   let fixture: ChangesFixture;
 
   setup(() => {

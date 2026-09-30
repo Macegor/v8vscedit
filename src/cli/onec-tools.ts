@@ -9,6 +9,8 @@ const BOOLEAN_SWITCHES = new Set([
   'ForceBindAlreadyBindedUser',
   'ForceReplaceCfg',
   'Force',
+  'Overwrite',
+  'CreateMissing',
   'Revised',
   'KeepLocked',
   'RestoreDeletedUser',
@@ -46,9 +48,9 @@ async function main(): Promise<void> {
 
 function printUsage(): void {
   console.log('Usage: node dist/cli/onec-tools.js <command>');
-  console.log('Commands: export-configuration, import-configuration, sync-configuration-partial, sync-configuration-full, update-configuration, import-git-changes, list-db-extensions, refresh-hash-cache');
+  console.log('Commands: export-configuration, import-configuration, sync-configuration-partial, sync-configuration-full, update-configuration, import-git-changes, list-db-extensions, dump-cf, load-cf, dump-cfe-all, load-cfe-all, refresh-hash-cache');
   console.log('Repository: repository-create, repository-bind, repository-unbind, repository-lock, repository-unlock, repository-commit, repository-update, repository-add-user, repository-copy-users, repository-dump, repository-report, repository-set-label');
-  console.log('Aliases: db-dump-xml, db-load-xml, db-load-git, db-update, update-partial, update-full');
+  console.log('Aliases: db-dump-xml, db-load-xml, db-load-git, db-dump-cf, db-load-cf, db-dump-cfe-all, db-load-cfe-all, db-update, update-partial, update-full');
 }
 
 void main();

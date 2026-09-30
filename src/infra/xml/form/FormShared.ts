@@ -1,7 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { FormPurpose } from './types';
+import { resolveFormXmlByDescriptor } from '../../fs/MetaPathResolver';
 import { escapeXmlAttribute, escapeRegExp, buildLocalizedTag, extractMetaDataObjectVersion } from '../XmlUtils';
+import { maxIdByKind } from './FormIdSpaces';
 
 export const MD_XMLNS = 'xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:app="http://v8.1c.ru/8.2/managed-application/core" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:cmi="http://v8.1c.ru/8.2/managed-application/cmi" xmlns:ent="http://v8.1c.ru/8.1/data/enterprise" xmlns:lf="http://v8.1c.ru/8.2/managed-application/logform" xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:sys="http://v8.1c.ru/8.1/data/ui/fonts/system" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:web="http://v8.1c.ru/8.1/data/ui/colors/web" xmlns:win="http://v8.1c.ru/8.1/data/ui/colors/windows" xmlns:xen="http://v8.1c.ru/8.3/xcf/enums" xmlns:xpr="http://v8.1c.ru/8.3/xcf/predef" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"';
 export const FORM_XMLNS = 'xmlns="http://v8.1c.ru/8.3/xcf/logform" xmlns:app="http://v8.1c.ru/8.2/managed-application/core" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:dcscor="http://v8.1c.ru/8.1/data-composition-system/core" xmlns:dcsset="http://v8.1c.ru/8.1/data-composition-system/settings" xmlns:ent="http://v8.1c.ru/8.1/data/enterprise" xmlns:lf="http://v8.1c.ru/8.2/managed-application/logform" xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:sys="http://v8.1c.ru/8.1/data/ui/fonts/system" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:web="http://v8.1c.ru/8.1/data/ui/colors/web" xmlns:win="http://v8.1c.ru/8.1/data/ui/colors/windows" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"';
@@ -16,21 +18,18 @@ export interface IdAllocator {
   nextCommand(): number;
 }
 
+/**
+ * Счётчики новых id опираются на {@link maxIdByKind}: максимум берётся
+ * структурно (любой тег с `id`, кроме Attribute/Column/Command) и по ВСЕМУ
+ * документу, включая `<BaseForm>`. Собственного списка тегов у аллокатора нет —
+ * иначе новый вид поля 1С снова оказался бы невидимым и генератор выдал бы
+ * коллизию id.
+ */
 export function createIdAllocator(xml: string): IdAllocator {
-  const max = (re: RegExp, min: number) => {
-    let result = min;
-    let match: RegExpExecArray | null;
-    while ((match = re.exec(xml)) !== null) {
-      const value = Number(match[1]);
-      if (Number.isFinite(value) && value > result) {
-        result = value;
-      }
-    }
-    return result;
-  };
-  let elementId = max(/\b(?:InputField|CheckBoxField|LabelDecoration|LabelField|Table|UsualGroup|Pages|Page|Button|PictureDecoration|PictureField|CalendarField|CommandBar|Popup|ContextMenu|ExtendedTooltip|AutoCommandBar|SearchStringAddition|ViewStatusAddition|SearchControlAddition)\b[^>]*\bid="(\d+)"/g, 0);
-  let attrId = max(/<Attribute\b[^>]*\bid="(\d+)"/g, 0);
-  let commandId = max(/<Command\b[^>]*\bid="(\d+)"/g, 0);
+  const max = maxIdByKind(xml);
+  let elementId = max.element;
+  let attrId = max.attribute;
+  let commandId = max.command;
   const extension = /<BaseForm\b/.test(xml);
   if (extension) {
     elementId = Math.max(elementId, 999999);
@@ -81,41 +80,137 @@ export function resolveObjectXmlPath(inputPath: string): string | null {
   return fs.existsSync(resolved) ? resolved : null;
 }
 
+/**
+ * Нормализует вход инструмента формы в путь СУЩЕСТВУЮЩЕГО тела формы.
+ *
+ * Отказ вместо «вернуть вход как есть» принципиален: прежняя ветка молча отдавала
+ * любой существующий файл, и по пути XML объекта метаданных правка формы ложилась
+ * поверх самого объекта.
+ */
 export function resolveFormXmlPath(inputPath: string): string {
   const resolved = path.resolve(inputPath);
-  if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
-    return path.join(resolved, 'Ext', 'Form.xml');
-  }
   if (fs.existsSync(resolved)) {
+    if (fs.statSync(resolved).isDirectory()) {
+      // Каталог формы: тело достраивается без проверки существования — вызывающий
+      // получает штатный путь и падает уже на чтении, если выгрузка неполна.
+      return path.join(resolved, 'Ext', 'Form.xml');
+    }
     if (path.basename(resolved) === 'Form.xml') {
       return resolved;
     }
-    if (resolved.endsWith('.xml')) {
-      const formName = path.basename(resolved, '.xml');
-      const body = path.join(path.dirname(resolved), formName, 'Ext', 'Form.xml');
-      if (fs.existsSync(body)) {
-        return body;
-      }
+    // Дескриптор формы: тело лежит рядом. Для любого другого файла (XML объекта,
+    // .bsl, …) такого соседа не окажется, и мы честно отказываем ниже.
+    const body = resolveFormXmlByDescriptor(resolved);
+    if (fs.existsSync(body)) {
+      return body;
     }
-  }
-  if (path.basename(resolved) === 'Form.xml') {
+  } else if (path.basename(resolved) === 'Form.xml') {
     const candidate = path.join(path.dirname(resolved), 'Ext', 'Form.xml');
     if (fs.existsSync(candidate)) {
       return candidate;
     }
   }
-  if (!fs.existsSync(resolved)) {
-    throw new Error(`Form.xml не найден: ${inputPath}`);
-  }
-  return resolved;
+  throw new Error(`Form.xml не найден: ${inputPath}`);
 }
 
+/**
+ * Нормализует вход в путь тела формы для записи/создания (файла может ещё не быть).
+ *
+ * Порядок веток важен: тело формы тоже оканчивается на `.xml`, и проверь мы сначала
+ * расширение — `Form.xml` был бы принят за дескриптор и превращён в `Form/Ext/Form.xml`.
+ */
 export function resolveFormXmlPathForWrite(inputPath: string): string {
   const resolved = path.resolve(inputPath);
   if (path.basename(resolved) === 'Form.xml') {
     return resolved;
   }
+  if (resolved.endsWith('.xml')) {
+    return resolveFormXmlByDescriptor(resolved);
+  }
   return path.join(resolved, 'Ext', 'Form.xml');
+}
+
+/**
+ * Первый элемент документа: снимает BOM, пролог `<?xml …?>`, пробелы и XML-комментарии.
+ * `null` — корня нет (пустой/оборванный документ), решение по корню принять нельзя.
+ */
+function sliceToRootElement(xml: string): string | null {
+  let rest = xml.startsWith('﻿') ? xml.slice(1) : xml;
+  for (;;) {
+    rest = rest.replace(/^\s+/, '');
+    if (rest.startsWith('<?')) {
+      const end = rest.indexOf('?>');
+      if (end < 0) {
+        return null;
+      }
+      rest = rest.slice(end + 2);
+      continue;
+    }
+    if (rest.startsWith('<!--')) {
+      const end = rest.indexOf('-->', 4);
+      if (end < 0) {
+        return null;
+      }
+      rest = rest.slice(end + 3);
+      continue;
+    }
+    return rest;
+  }
+}
+
+/** Локальное имя первого тега: префикс пространства (`lf:Form`) допустим. */
+function rootLocalNamePattern(localName: string): RegExp {
+  return new RegExp(`^<(?:[A-Za-z_][A-Za-z0-9_.-]*:)?${localName}(?=[\\s/>])`);
+}
+
+const FORM_ROOT = rootLocalNamePattern('Form');
+const META_DATA_OBJECT_ROOT = rootLocalNamePattern('MetaDataObject');
+
+/**
+ * Документ является телом управляемой формы: ПЕРВЫЙ элемент — `Form`.
+ *
+ * Критерий снят с эталона `example/`: 6329 файлов `Form.xml` обеих генераций (cf и cfe) —
+ * у 100% корень `Form`, у 100% пространство `http://v8.1c.ru/8.3/xcf/logform`, у 100% BOM,
+ * контрпримеров нет. Пространство имён намеренно НЕ требуется: сужать guard сверх
+ * необходимого не на чем, а ложный отказ на форме дороже пропуска экзотического корня.
+ *
+ * Проверять подстрокой `<Form` нельзя: в XML справочника есть `<Form>ФормаСписка</Form>`
+ * внутри `<ChildObjects>`, и XML объекта проходил как форма.
+ */
+export function isFormRootXml(xml: string): boolean {
+  const root = sliceToRootElement(xml);
+  return root !== null && FORM_ROOT.test(root);
+}
+
+/**
+ * Документ является XML объекта метаданных: первый элемент — `MetaDataObject`.
+ * Нужен, чтобы отличить самую частую ошибку адресации (передали объект вместо формы)
+ * от произвольного чужого корня и дать по ней конкретную подсказку.
+ */
+export function isMetaDataObjectRootXml(xml: string): boolean {
+  const root = sliceToRootElement(xml);
+  return root !== null && META_DATA_OBJECT_ROOT.test(root);
+}
+
+/** Бросает, если по пути лежит не тело формы. Для XML объекта метаданных — отдельный текст. */
+export function assertFormRootXml(xml: string, filePath: string): void {
+  if (isFormRootXml(xml)) {
+    return;
+  }
+  if (isMetaDataObjectRootXml(xml)) {
+    throw new Error(
+      `По пути ${filePath} лежит XML объекта метаданных, а не Form.xml. ` +
+      'Тело формы хранится в <Объект>/Forms/<Имя>/Ext/Form.xml (общая форма — CommonForms/<Имя>/Ext/Form.xml).'
+    );
+  }
+  throw new Error(`Файл ${filePath} не является управляемой формой: первый элемент документа не <Form>.`);
+}
+
+/** Единственная точка чтения тела формы: содержимое как есть + guard корневого элемента. */
+export function readFormXml(formPath: string): string {
+  const xml = fs.readFileSync(formPath, 'utf-8');
+  assertFormRootXml(xml, formPath);
+  return xml;
 }
 
 /**

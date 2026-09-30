@@ -11,6 +11,7 @@ import { MetadataNode } from '../../ui/tree/TreeNode';
 import type { MetaTreeNodeContext } from '../../ui/tree/TreeNodeModel';
 import { PropertiesViewController } from '../../ui/views/properties/PropertiesViewController';
 import { TypeRegistryService } from '../../ui/views/properties/TypeRegistryService';
+import { skipWithoutCorpus } from './support/corpus';
 
 /**
  * CHARACTERIZATION-тесты перед декомпозицией God-класса
@@ -164,6 +165,12 @@ function makeColumnNode(
 }
 
 suite('PropertiesViewController — characterization: edit-lock резолвер', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('без supportService isEditLockedBySupport всегда false, resolveNodeSupportMode — None', () => {
     const controller = createController();
     const node = makeAttributeNode(BANKS_XML_PATH, BANKS_ATTRIBUTE_NAME);
@@ -344,6 +351,12 @@ suite('PropertiesViewController — characterization: edit-lock резолвер
 });
 
 suite('PropertiesViewController — characterization: классификация/snapshot узлов', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('isConfigurationRootNode: true для configuration и extension, false для обычного объекта метаданных', () => {
     const controller = createController();
     const api = asClassificationApi(controller);

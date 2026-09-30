@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { MetadataXmlRemover } from '../../infra/xml/MetadataXmlRemover';
+import { skipWithoutCorpus } from './support/corpus';
 
 /**
  * Удаление Method/URLTemplate из HTTP-сервиса. Method — третий уровень
@@ -40,6 +41,12 @@ function removeUrlTemplate(remover: MetadataXmlRemover, xmlPath: string, name: s
 }
 
 suite('MetadataXmlRemover — удаление Method/URLTemplate из HTTP-сервиса (донор ServiceEntry.xml)', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('удаление Method "POST" из "PostEntries" — метод исчезает, "ping.GET" не тронут', () => {
     const { xmlPath } = copyDonor();
     const remover = new MetadataXmlRemover();

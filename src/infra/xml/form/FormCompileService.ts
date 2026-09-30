@@ -10,6 +10,7 @@ import {
 } from './FormAddService';
 import { buildFormXmlFromDefinition } from './FormBuilders';
 import {
+  assertFormRootXml,
   detectFormatVersion,
   resolveFormXmlPathForWrite,
   resolveObjectLocation,
@@ -26,7 +27,14 @@ export class FormCompileService {
       ? inferDefinitionFromOutputPath(formPath)
       : options.definition ?? {};
     const compiled = buildFormXmlFromDefinition(definition, formatVersion);
-    const original = fs.existsSync(formPath) ? fs.readFileSync(formPath, 'utf-8') : '';
+    const exists = fs.existsSync(formPath);
+    const original = exists ? fs.readFileSync(formPath, 'utf-8') : '';
+    // Перезаписать можно только тело формы. Отказ обязан произойти ДО создания
+    // каталогов, записи тела и побочных записей (дескриптор, регистрация, Module.bsl),
+    // иначе последствие прежнего дефекта адресации закрепляется новыми файлами.
+    if (exists) {
+      assertFormRootXml(original, formPath);
+    }
     fs.mkdirSync(path.dirname(formPath), { recursive: true });
     writeTextFilePreservingBomAndEol(formPath, original, compiled);
     const changedFiles = [formPath];

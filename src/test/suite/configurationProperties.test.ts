@@ -7,6 +7,7 @@ import {
 } from '../../ui/views/properties/PropertyBuilder';
 import { formatXmlPropertyDisplay } from '../../ui/views/properties/PropertyPresentationRegistry';
 import type { EnumPropertyValue, MultiEnumPropertyValue } from '../../ui/views/properties/_types';
+import { skipWithoutCorpus } from './support/corpus';
 
 const EXAMPLE_CFE_ROOT = path.resolve(__dirname, '../../../example/2.21/src/cfe');
 const EXAMPLE_CF = path.resolve(__dirname, '../../../example/2.20/src/cf');
@@ -28,6 +29,12 @@ function findFirstCfeRoot(): string | null {
 }
 
 suite('Properties — Configuration.xml', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('Показывает свойства основной конфигурации с русскими подписями и enum-значениями', () => {
     const xml = fs.readFileSync(path.join(EXAMPLE_CF, 'Configuration.xml'), 'utf-8');
     const props = buildConfigurationProperties(xml);

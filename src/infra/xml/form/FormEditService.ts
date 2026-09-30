@@ -1,4 +1,3 @@
-import * as fs from 'fs';
 import {
   findDirectElementRanges,
   findNestingAwareElementRange,
@@ -13,6 +12,7 @@ import {
   createIdAllocator,
   escapeRegExp,
   escapeXml,
+  readFormXml,
   resolveFormXmlPath,
 } from './FormShared';
 import type {
@@ -25,7 +25,8 @@ import type {
 export class FormEditService {
   edit(options: EditFormOptions): FormMutationResult {
     const formPath = resolveFormXmlPath(options.formPath);
-    const original = fs.readFileSync(formPath, 'utf-8');
+    // Guard корня — ДО любой мутации: правка формы не должна лечь поверх XML объекта.
+    const original = readFormXml(formPath);
     let next = original;
     const id = createIdAllocator(original);
     const warnings: string[] = [];

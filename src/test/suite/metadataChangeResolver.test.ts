@@ -5,6 +5,7 @@ import * as path from 'path';
 // «абсолютный путь файла → часть объекта метаданных». Модуль ещё не создан.
 import { resolveFilePart } from '../../infra/git/MetadataChangeResolver';
 import { canonicalRootPath } from '../../domain/CanonicalNames';
+import { skipWithoutCorpus } from './support/corpus';
 
 /**
  * Все тест-кейсы построены на РЕАЛЬНЫХ путях выгрузки из `example/2.21`.
@@ -17,6 +18,12 @@ const CF_ROOT = path.resolve(__dirname, '../../../example/2.21/src/cf');
 const CFE_ROOT = path.resolve(__dirname, '../../../example/2.21/src/cfe/EVOLC');
 
 suite('MetadataChangeResolver — resolveFilePart на реальной выгрузке', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('плоский корневой XML свойств (Catalogs/Валюты.xml)', () => {
     const abs = path.join(CF_ROOT, 'Catalogs', 'Валюты.xml');
     assert.ok(fs.existsSync(abs), 'фикстура должна существовать');

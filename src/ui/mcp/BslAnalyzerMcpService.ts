@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { formatCommandLineForLog } from '../../infra/process';
 import type { Logger } from '../../infra/support/Logger';
 import {
   type AiMcpProfile,
@@ -48,7 +49,7 @@ export class BslAnalyzerMcpService {
           enabled: enabled.has(profile),
           running: Boolean(running),
           pid: running?.child.pid ?? null,
-          commandLine: running?.commandLine ?? `${this.getExecutablePath()} ${args.join(' ')}`,
+          commandLine: running?.commandLine ?? formatCommandLineForLog(this.getExecutablePath(), args),
           lastError: running?.lastError ?? null,
         };
       }),
@@ -87,7 +88,9 @@ export class BslAnalyzerMcpService {
 
     const command = this.getExecutablePath();
     const args = buildBslAnalyzerMcpArgs(profile, settings);
-    const commandLine = `${command} ${args.join(' ')}`;
+    // `--onec-password <пароль базы>` попадает и в журнал, и в статус профиля,
+    // который показывается пользователю, — храним уже маскированную строку.
+    const commandLine = formatCommandLineForLog(command, args);
     const child = spawn(command, args, {
       cwd: settings.bslAnalyzerWorkspaceSourceDir,
       shell: false,

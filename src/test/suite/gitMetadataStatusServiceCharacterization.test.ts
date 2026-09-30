@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { GitMetadataStatusService } from '../../infra/git/GitMetadataStatusService';
+import { skipWithoutCorpus } from './support/corpus';
 
 /**
  * ХАРАКТЕРИЗАЦИОННЫЙ тест (ВЕХА 1 «Изменения метаданных», компонент №2 плана).
@@ -25,6 +26,12 @@ function git(repo: string, args: string[]): string {
 }
 
 suite('GitMetadataStatusService — характеризация текущего поведения (до рефакторинга на GitPorcelainReader)', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   let repo: string;
   let catalogsDir: string;
   let modifiedXmlPath: string;

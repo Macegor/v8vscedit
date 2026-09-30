@@ -1,0 +1,55 @@
+import { CLI_COMMANDS } from './commands';
+import { parseArgs } from './core/args';
+
+const BOOLEAN_SWITCHES = new Set([
+  'AllExtensions',
+  'DryRun',
+  'AllowConfigurationChanges',
+  'NoBind',
+  'ForceBindAlreadyBindedUser',
+  'ForceReplaceCfg',
+  'Force',
+  'Overwrite',
+  'Revised',
+  'KeepLocked',
+  'RestoreDeletedUser',
+  'GroupByObject',
+  'GroupByComment',
+  'DoNotIncludeVersionsWithLabels',
+  'IncludeOnlyVersionsWithLabels',
+  'IncludeCommentLinesWithDoubleSlash',
+  'Verbose',
+]);
+
+async function main(): Promise<void> {
+  const [command, ...rest] = process.argv.slice(2);
+  if (!command) {
+    printUsage();
+    process.exit(1);
+  }
+
+  try {
+    const handler = CLI_COMMANDS[command];
+    if (!handler) {
+      console.error(`Error: unknown command "${command}"`);
+      printUsage();
+      process.exit(1);
+    }
+
+    const options = parseArgs(rest, BOOLEAN_SWITCHES);
+    process.exit(await handler(options));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(message);
+    process.exit(1);
+  }
+}
+
+function printUsage(): void {
+  console.log('Usage: node dist/cli/onec-tools.js <command>');
+  console.log('Commands: export-configuration, import-configuration, sync-configuration-partial, sync-configuration-full, update-configuration, import-git-changes, list-db-extensions, dump-cf, load-cf, refresh-hash-cache');
+  console.log('Repository: repository-create, repository-bind, repository-unbind, repository-lock, repository-unlock, repository-commit, repository-update, repository-add-user, repository-copy-users, repository-dump, repository-report, repository-set-label');
+  console.log('Aliases: db-dump-xml, db-load-xml, db-load-git, db-dump-cf, db-load-cf, db-update, update-partial, update-full');
+}
+
+void main();

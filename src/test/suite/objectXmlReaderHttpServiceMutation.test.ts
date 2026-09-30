@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { ObjectXmlReader } from '../../infra/xml/ObjectXmlReader';
+import { skipWithoutCorpus } from './support/corpus';
 
 /**
  * Обновление свойств Method/URLTemplate (HTTPMethod/Handler/Template) через
@@ -42,6 +43,12 @@ function updateMethodProperty(
 }
 
 suite('ObjectXmlReader — обновление свойств HTTP-сервиса (Method/URLTemplate)', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('updatePropertyInObject(Handler) меняет Handler ровно у нужного Method (PostEntries.POST)', () => {
     const { xmlPath } = copyDonor();
     const reader = new ObjectXmlReader();

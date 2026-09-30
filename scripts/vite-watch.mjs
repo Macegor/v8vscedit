@@ -1,7 +1,5 @@
 import { spawn } from 'node:child_process';
 
-/* global console, process */
-
 const commands = [
   ['npm', ['run', 'watch:node']],
   ['npm', ['run', 'watch:webview']],

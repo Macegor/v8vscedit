@@ -76,7 +76,11 @@ npm run coverage:report  # покрытие без падения по поро�
 ```
 
 - **`npm test` требует предварительной сборки.** Скрипт `pretest` делает `typecheck → build:node → build:webview → test:compile` (без `clean` — сборка инкрементальная; компиляция тестов в `out/` через `tsconfig.test.json`). Тестовый runner берётся из `out/`, т.к. Mocha грузит `out/test/suite/*.js`.
-- Запуск под конкретной версией VS Code: `VSCODE_TEST_VERSION=1.85.0 npm test`.
+- Запуск под конкретной версией VS Code: `VSCODE_TEST_VERSION=1.85.0 npm test`. `src/test/runTests.ts`
+  читает эту переменную ДО очистки унаследованного от IDE окружения (`sanitizeInheritedIdeEnv` стирает
+  всё с префиксом `VSCODE_`, включая саму `VSCODE_TEST_VERSION`, если читать её после очистки) —
+  порядок чтения важен, не переставлять. Если версия ещё не скачана, `@vscode/test-electron` при
+  первом запуске сам скачает её в `.vscode-test/` (нужна сеть); повторные запуски используют кэш.
 - **Отдельный тест — быстро и без `.only`.** Runner (`src/test/suite/index.ts`) читает `MOCHA_GREP` и применяет `mocha.grep()`. Итерация: правка теста → `npm run test:compile` → `MOCHA_GREP='<regex по имени suite/теста>' npm run test:fast` (`test:fast` НЕ запускает `pretest`, т.е. не пересобирает Vite — на порядок быстрее полного `npm test`). `.only` больше не нужен.
 - Перед любым коммитом: `npm run compile` и **`npm run lint`** должны проходить без ошибок и предупреждений.
 - Точки входа: `main` = `./dist/extension.js`; CLI — `dist/cli/onec-tools.js`. Целевая среда — VS Code API ≥ 1.85, TypeScript ≥ 5.3, strict, ES2020.
@@ -134,6 +138,12 @@ src/
 │   │   ├── ConfigurationXmlEditor.ts # редактирование Configuration.xml
 │   │   ├── MetadataXmlCreator.ts     # создание новых XML-объектов метаданных
 │   │   ├── MetadataXmlRemover.ts     # удаление XML-объектов метаданных
+│   │   ├── childObjects/             # канон порядка <ChildObjects> (см. docs/xml-format-rulesets.md)
+│   │   │   ├── ChildObjectsOrder.ts  # ДАННЫЕ: CHILD_OBJECTS_ORDER (по MetaKind), childTagRank, hasOrderRule
+│   │   │   └── ChildObjectsEditor.ts # МЕХАНИКА: resolveInsertOffset — не знает ни одного вида метаданных
+│   │   ├── properties/               # канон порядка <Properties> КОРНЕВОГО объекта (docs/xml-format-rulesets.md)
+│   │   │   ├── PropertyOrder.ts      # ДАННЫЕ: ROOT_PROPERTY_ORDER (по MetaKind), rootPropertyRank, hasRootPropertyOrderRule
+│   │   │   └── PropertyInsert.ts     # МЕХАНИКА: insertPropertyBlockInOrder — не знает ни одного вида метаданных
 │   │   └── format/                   # ruleset формата сериализации (см. docs/xml-format-rulesets.md)
 │   │       ├── FormatRuleset.ts      # интерфейс правил генерации одного поколения формата
 │   │       ├── baselineRuleset.ts    # правила текущего формата (2.21)
@@ -141,6 +151,12 @@ src/
 │   ├── fs/
 │   │   ├── ConfigLocator.ts          # рекурсивный поиск Configuration.xml
 │   │   ├── MetaPathResolver.ts       # единый resolver: XML + все модули по ModuleSlot
+│   │   ├── AtomicFileWriter.ts       # writeFileAtomic/resolveAtomicTempPath: ЕДИНСТВЕННАЯ
+│   │   │                              # реализация temp+rename; через неё идёт любая запись файла
+│   │   │                              # выгрузки (docs/architecture.md, «Атомарная запись»)
+│   │   ├── ProjectLayout.ts          # resolveConfigDir: src/cf, src/cfe/<имя> — общее
+│   │   │                              # для расширения и CLI (cli/core/projectLayout.ts —
+│   │   │                              # тонкий re-export)
 │   │   └── ConfigurationCleanWindow.ts # окно тишины по корню конфигурации после
 │   │                                  # импорта/обновления БД (Container.markConfigurationsClean,
 │   │                                  # см. docs/architecture.md)
@@ -158,7 +174,14 @@ src/
 │   │                                  # docs/git-history-graph.md; граф — сворачиваемый блок панели
 │   │                                  # «Изменения метаданных», отдельного webview/вкладки нет)
 │   ├── environment/                  # bsl-analyzer.toml, окружение проекта, реестр баз
-│   ├── process/                      # поиск платформы, spawn, декодер OEM/Win1251
+│   ├── cfFile/                       # CfFileArgs (вектор аргументов /DumpCfg,/LoadCfg),
+│   │                                  # CfFileValidation (guard'ы: суффикс, staging-путь,
+│   │                                  # запрет -AllExtensions, DUMP_STAGING_SUFFIX — маркер
+│   │                                  # принадлежности staging-файла), CfeBatch* (пакетная
+│   │                                  # выгрузка/загрузка всех расширений: Naming/Manifest/
+│   │                                  # Plan/Report) — см. docs/architecture.md
+│   ├── process/                      # поиск платформы, spawn, декодер OEM/Win1251,
+│   │                                  # SensitiveArgs (маскирование -Password в логах)
 │   ├── mcp/                          # McpServerIdentity/McpStartDecision/McpPortProbe/
 │   │                                  # McpConflictPrompt/McpHost — чистая логика жизненного цикла
 │   │                                  # встроенного MCP-сервера (bind/reuse/conflict, закрытие порта),
@@ -166,7 +189,10 @@ src/
 │   └── skills/                       # AiSkillsInstaller — установка ИИ-навыков
 │
 ├── ui/                               # Всё, что знает про vscode API
-│   ├── tree/                         # MetadataTreeProvider (тонкий), TreeNode, nodeBuilders/, decorations/
+│   ├── tree/                         # MetadataTreeProvider (тонкий), TreeNode, nodeBuilders/, decorations/,
+│   │                                  # formNodePaths.ts — ЕДИНЫЙ адаптер «узел формы → файлы формы» для
+│   │                                  # ui/mcp и ui/commands (xmlPath узла формы объекта — это XML
+│   │                                  # ВЛАДЕЛЬЦА, а не форма; docs/metadata-navigator.md)
 │   ├── views/                        # webview-провайдеры
 │   │   ├── universal/                # UniversalPanelViewProvider — ОСНОВНОЙ UI навигатора
 │   │   ├── properties/               # PropertyBuilder по PropertySchema
@@ -197,6 +223,12 @@ src/
 ```
 
 `cli/` — отдельный потребитель `domain/` и `infra/`. Если код нужен и расширению, и CLI — он живёт в `infra/<подпапка>/`, а `cli/core/*` даёт тонкий re-export.
+
+Вне `src/` — `scripts/patch-coverage.mjs` (тонкий оркестратор гейта `coverage:changed`: git, спавны,
+ФС, печать) и `scripts/patch-coverage/` (чистые модули без I/O, покрытые тестами наравне с `src/**`:
+`branchFacts.mjs` — детектор ветвлений по TS AST, `diffBase.mjs` — выбор базы диффа, `verdict.mjs` —
+разбор `lcov` и вердикт, `shards.mjs` — планирование и сверка порций прогона). Подробности —
+[docs/coverage-gate.md](./docs/coverage-gate.md).
 
 ### Центральный контракт — `META_TYPES`
 
@@ -266,6 +298,7 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
 - Реквизиты/ТЧ — прямые сегменты без роли-префикса (`Справочники.Контрагенты.ИНН`; внутри ТЧ — `…ТабличнаяЧасть.Имя.Реквизит.Имя`).
 - Английских алиасов (`Catalog.X`) и legacy-форм нет; любая такая форма отбивается с подсказкой канона.
 - У инструментов, работающих с одним узлом, аргумент называется `path`; парные `compile_*` принимают `parentPath`. Никаких `objectPath`/`formPath`/`modulePath` и т.п.
+- Контракт `resolveFormXmlByCanonical` (`ui/mcp/McpPathResolvers.ts`) — путь к **ТЕЛУ** формы (`…/Ext/Form.xml`), не к дескриптору и не к XML объекта: `Справочники.X.Форма.Y` → `Catalogs/X/Forms/Y/Ext/Form.xml`, `ОбщиеФормы.X` → `CommonForms/X/Ext/Form.xml`. См. [mcp-paths.md](./docs/mcp-paths.md#формы-тело-и-дескриптор).
 
 ### Перенос новой функции из скилов в расширение
 
@@ -279,27 +312,175 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
 
 Для каждого сценария указано, какие файлы трогать. Если требуется править сверх списка — задача решается в другом слое.
 
-- **Новый тип метаданных:** запись в `META_TYPES` → при спец-модуле `ModuleSlot` + карта в `MetaPathResolver` → при наборе свойств схема в `PROPERTY_SCHEMAS` → иконка `src/icons/{light,dark}/<icon>.svg` → при нестандартной сборке узла builder в `ui/tree/nodeBuilders/` → тест `ObjectXmlReader` на пример из `example/`.
+- **Новый тип метаданных:** запись в `META_TYPES` → при спец-модуле `ModuleSlot` + карта в `MetaPathResolver` → при наборе свойств схема в `PROPERTY_SCHEMAS` → **строка в `ROOT_PROPERTY_ORDER`** (`infra/xml/properties/PropertyOrder.ts`, порядок свойств корня в `<Properties>`; снимается с эталона `example/`). **Без неё деградация МОЛЧАЛИВАЯ:** отсутствующее свойство вставляется в конец `<Properties>` мимо порядка платформы, а корпусный гейт этого не поймает — он сверяет только виды с экземплярами в `example/`, у нового вида экземпляров нет, значит нет и требования строки. Вид без экземпляров в корпусе — вакуумный ноль: строку заводить только по реальному эталону, иначе консервативный фолбэк «в конец» (см. [xml-format-rulesets.md](./docs/xml-format-rulesets.md#порядок-прямых-детей-properties-корневого-объекта-по-виду)) → иконка `src/icons/{light,dark}/<icon>.svg` → при нестандартной сборке узла builder в `ui/tree/nodeBuilders/` → тест `ObjectXmlReader` на пример из `example/`.
 - **Новый слот модуля (`ModuleSlot`):** литерал в `domain/ModuleSlot.ts` → путь в карте `MetaPathResolver` → при необходимости `OpenModuleCommandId` + команда → поле `modules` в записях `META_TYPES`.
 - **Новый дочерний тег (`ChildTag`):** значение в `domain/ChildTag.ts` + `CHILD_TAG_CONFIG` → при своём контейнере расширить `ObjectXmlReader.parseChildren` → тег в `childTags` нужных `META_TYPES`.
 - **Новый контейнерный дочерний тип со своими вложенными листьями** (паттерн ТЧ→Колонка; второй прецедент — HTTPСервис→URLШаблон→Метод, см. [mcp-paths.md](./docs/mcp-paths.md#26-расширенные-примеры-путей) и [metadata-navigator.md](./docs/metadata-navigator.md#контейнерные-дочерние-узлы-тчколонка-и-httpсервисurlшаблонметод)): контейнер и лист — обе отдельные записи `MetaKind`/`META_TYPES`/`ChildTag`; лист парсится в `MetaChild.columns` контейнера через `ObjectXmlReader.toXxxChild` (образец `toTabularSectionChild`) → имя родителя-контейнера пробрасывается ПАРАЛЛЕЛЬНЫМ полем контекста (`tabularSectionName`/`urlTemplateName`), а не переименованием существующего слота и не новым реестром → `domain/CanonicalNames.ts` (`canonicalChildPath`) обобщает контейнерную ветку по этому полю → узел дерева строится симметрично в ДВУХ источниках — `infra/cache/MetadataCache.ts` (webview) и `ui/tree/nodeBuilders/metaObjectTreeBuilder.ts` (нативный TreeView/свойства) → `infra/xml/XmlUtils.ts` получает nesting-aware `findXxxRangeInYyy`/`extractXxxXmlFromYyy` (образец `findColumnRangeInTabularSection`) → MCP add-инструмент для листа получает флаг-аналог `inTabularSection` (например `inUrlTemplate`) в `McpAddToolsRegistration.ts`, владелец — сам контейнер (`allowedOwnerKinds: ['<Контейнер>']`).
-- **Новая схема свойств:** объект-схема в `PROPERTY_SCHEMAS` → при новом `PropertyValueKind` расширить `_types.ts` + `PropertyBuilder.ts`. Регулярки — только в `infra/xml/`.
+- **Новая схема свойств / новый ключ в панели свойств корневого объекта:** порядок и состав ключей задаёт
+  `ui/views/properties/propertyKeyOrder.ts` (`getRootPropertyKeyOrder`) → подпись ключа — `PROPERTY_TITLE_RU`,
+  enum/boolean/localized-классификация — `ENUM_OPTIONS`/множества тегов в `infra/xml/PropertySchema.ts` → при
+  новом `PropertyValueKind` расширить `_types.ts` + `PropertyBuilder.ts`. Свойства выбора форм — отдельная
+  таблица `FORM_PROPERTY_KEYS_BY_KIND` (см. следующий пункт) + `FORM_PROPERTY_SECTION`. Регулярки — только в
+  `infra/xml/`. **Реестр `PROPERTY_SCHEMAS` (вместе с `COMMON_ROOT_KEYS`/`ENUM_ROOT_KEYS`) НЕ читается
+  ничем, кроме собственного определения и `export *`** — правка «объекта-схемы» в нём не даёт никакого
+  эффекта в панели; не отправлять агента туда. Его судьба (удалить/оживить) — отдельный пункт бэклога, до
+  решения код не удалять и не «чинить» вскользь.
+- **Новое свойство-ссылка на форму у вида метаданных** (какие теги `*Form` у вида объекта есть в
+  `<Properties>`, см. [xml-format-rulesets.md](./docs/xml-format-rulesets.md#свойства-выбора-форм-по-виду-метаданных)):
+  запись в `FORM_PROPERTY_KEYS_BY_KIND` (`infra/xml/PropertySchema.ts`; порядок — по эталону, читается через
+  `getFormPropertyKeys`/`isFormPropertyKey`, второй список в UI заводить нельзя — `propertyKeyOrder.ts` берёт
+  таблицу спредом) → правило снимается ЭМПИРИЧЕСКИ с `example/` по признаку НАЛИЧИЯ тега, а не
+  заполненности значения (пустой `<DefaultForm/>` доказывает существование свойства), «0 примеров» у вида без
+  экземпляров в корпусе — вакуумный ноль, не доказательство отсутствия → корпусный гейт обеих осей
+  (`formPropertyKeysCorpus.test.ts`: каждый ключ таблицы есть в эталоне и ни один формовый тег эталона не
+  потерян; сшивка с `META_TYPES`) → при новом виде проверить обе генерации формата (`example/2.20` и
+  `example/2.21`, cf и cfe; ось версии — `Auxiliary*` в 2.20 может отсутствовать) → секция «Формы»
+  проставляется через `applyFormPropertySection`, заголовок — только `FORM_PROPERTY_SECTION`
+  (`propertyKeyOrder.ts`), литерал `'Формы'` не дублировать (webview сравнивает его в
+  `PropertiesView.vue`, страж — `formSectionContract.test.ts`).
 - **Новое правило состава свойств типизированного поля** (какие теги `<Properties>` допустимы у
-  реквизита/измерения/ресурса/колонки конкретного вида объекта-владельца, см.
+  реквизита/измерения/ресурса/колонки/адресного реквизита конкретного вида объекта-владельца, см.
   [xml-format-rulesets.md](./docs/xml-format-rulesets.md#состав-свойств-типизированного-поля-по-виду-владельца)):
-  правило регистра-владельца — запись в `REGISTER_FIELD_RULES` (`infra/xml/TypedFieldPropertyRules.ts`,
-  снимается с эталона `example/`) → при новом управляемом ключе свойства — добавить его в
+  правило двумерное — **вид объекта-владельца × роль поля**, живёт в
+  `OWNER_ROLE_RULES` (`infra/xml/typedField/TypedFieldOwnerRules.ts`, ключи верхнего уровня — `MetaKind`,
+  второго — `TypeAwarePropertyOwnerKind`: `Attribute`/`AddressingAttribute`/`Dimension`/`Resource`/
+  `Column`/`Constant`/`CommonAttribute`). Регистры (`InformationRegister`/`AccumulationRegister`/
+  `AccountingRegister`) — не отдельный механизм, а такие же записи этой таблицы. Новая пара
+  владелец×роль добавляется ЯВНОЙ записью в `OWNER_ROLE_RULES` — она НЕ выводится автоматически из
+  `META_TYPES` (в отличие от набора самих ролей, который выводится из
+  `propertySchema === 'typedField'`), поэтому появление нового вида метаданных с измерением/ресурсом
+  само по себе состав не подхватывает. При новом управляемом ключе свойства — добавить его в
   `CONTROLLED_PROPERTY_KEYS` (позиция — по месту в `xs:sequence` схемы 1С, список остаётся единой
   надпоследовательностью всех наблюдаемых в эталонах порядков) → значение по умолчанию в
-  `DEFAULT_VALUES` (или в `getFieldDefaultValues`, если оно зависит от `registerKind`) → тест на
-  реальном объекте из `example/2.20`+`example/2.21` (запись через `normalizeTypedFieldPropertiesAfterTypeChange`,
-  панель свойств через `getDisplayTypedFieldPropertyKeys`, `validate_metadata` с кодом
-  `property-not-allowed`). **Состав задаёт ВИД ОБЪЕКТА-ВЛАДЕЛЬЦА** (корень XML-файла,
-  `ObjectXmlReader.detectRootObjectKind`), **а не тип поля** (`<Type>`) — сужение по типу отдельная
-  политика генератора (`getAllowedPropertyKeys` по `FieldTypeCategory`), не ограничение формата; для
-  видов, правила которых ещё не сняты с эталона (пример — регистр расчёта), свойства владельца
-  ТОЛЬКО сохраняются из исходного XML, а не дописываются «по умолчанию».
+  `DEFAULT_VALUES` (или в `defaults` конкретной пары, если оно зависит от владельца) → тест на реальном
+  объекте из `example/2.20`+`example/2.21` (запись через `normalizeTypedFieldPropertiesAfterTypeChange`
+  в `infra/xml/TypedFieldPropertyRules.ts`, панель свойств через `getDisplayTypedFieldPropertyKeys`,
+  `validate_metadata` с кодом `property-not-allowed`).
+
+  Правило снимается ЭМПИРИЧЕСКИ с эталона `example/` (перемерено на 44 047 полях, обе генерации, cf и
+  cfe), а не выводится из XSD-схемы. **Две точки чтения таблицы — с разным смыслом, путать нельзя:**
+  `getMemberPropertyKeys(role, ownerKind)` — что у поля ДОПУСТИМО существовать (единый критерий и для
+  `property-not-allowed` в валидации, и для удаления лишнего при `set_type` — буквально одна функция);
+  `getGeneratedPropertyKeys(role, ownerKind, typeInner)` — что мы ДОПИСЫВАЕМ (генерация нового поля,
+  довписывание недостающего при смене типа, показ недостающего в панели). Инвариант — `generated ⊆
+  member`. **Состав задаёт ВИД ОБЪЕКТА-ВЛАДЕЛЬЦА** (корень XML-файла,
+  `ObjectXmlReader.detectRootObjectKind`) СОВМЕСТНО С РОЛЬЮ поля, роль передаётся вызывающим ЯВНО
+  (`targetKind`/вид узла дерева) — тег самого элемента XML источником решения не является (у
+  измерения/ресурса/реквизита свой тег, но для владельца это несущественно).
+
+  Ось ТИПА (`<Type>`) в удалении/допустимости больше НЕ участвует — `getMemberPropertyKeys` включает
+  полный набор типозависимых ключей независимо от фактического типа поля; сужение по типу — только
+  политика ГЕНЕРАЦИИ нового поля (`getGeneratedPropertyKeys`/`typeAxisKeys` по `FieldTypeCategory`), не
+  ограничение формата и не критерий валидации/удаления. Основание: 12 326 чисто-ссылочных полей корпуса
+  — 100% несут хотя бы одно из `PasswordMode`/`MultiLine`/`Mask`/`MinValue`/`MaxValue`/`ExtendedEdit`,
+  то есть платформа выгружает типозависимые свойства у поля ЛЮБОГО типа. Единственное известное
+  обратное исключение — `Constant`: `withoutKeys: ['CreateOnInput']` в правиле пары `Constant.Constant`
+  (у 996 констант эталона нет `CreateOnInput` при наличии `QuickChoice`); ось типа/владельца МОЖЕТ иметь
+  такие точечные исключения, они заводятся полем `withoutKeys`, а не отдельным механизмом.
+
+  Для владельца без снятых с эталона правил (на момент написания — регистр расчёта, а также любой
+  неизвестный/отсутствующий `ownerKind`) действует КОНСЕРВАТИВНЫЙ режим: owner-зависимые свойства
+  (`OWNER_DEPENDENT_KEYS`, объединение по всей таблице) только СОХРАНЯЮТСЯ из исходного XML — `set_type`
+  их не удаляет и не дописывает, валидация по ним молчит.
+
+  Любой редактор существующего блока `<Properties>` обязан сохранять два инварианта (иначе следующий
+  агент чинит задачу обратно, а битый XML одного поля делает нечитаемой всю конфигурацию, а не одно
+  поле): **идемпотентность** (повторное применение с тем же типом → файл байт-в-байт, включая отступы и
+  неуправляемые теги — правка точечным splice по диапазонам блоков, `infra/xml/typedField/
+  PropertyBlockEditor.ts`, а не пересборка `<Properties>` из «разрешённых ключей») и **структурный
+  round-trip** (результат — well-formed XML, а прямые дети `<Properties>` меняются РОВНО в ожидаемых
+  ключах — образец проверки: `src/test/suite/support/typedFieldCorpus.ts`,
+  `assertWellFormedXml`/`assertStructuralRoundTrip`).
+- **Новое правило пространства нумерации `id` формы** (какие теги делят одно пространство уникальности
+  id в `Form.xml`, см. [xml-format-rulesets.md](./docs/xml-format-rulesets.md#пространства-нумерации-id-в-formxml)):
+  запись в `ID_SPACE_BY_TAG` (`infra/xml/form/FormIdSpaces.ts`) → тест на эталоне обеих генераций формата
+  (`example/2.20` и `example/2.21`, cf и cfe). Правило снимается ЭМПИРИЧЕСКИ с эталона `example/`, а не
+  выводится из XSD-схемы формы (её у Form.xml нет в проекте) и не из документации платформы. Белый
+  список тегов элементов заводить нельзя — структурный признак («тег несёт `id`, но это не
+  Attribute/Column/Command») уже один раз протёк в виде такого списка (`createIdAllocator` до
+  исправления, см. xml-format-rulesets.md) и пропустил `ColumnGroup`/`SpreadSheetDocumentField`.
+- **Новое правило валидации формата** (проверка в `FormValidateService` и аналогичных валидаторах, см.
+  [xml-format-rulesets.md](./docs/xml-format-rulesets.md#formvalidateservice-платформенная-выгрузка-обязана-проходить-чисто)):
+  платформенная выгрузка корректна по построению, поэтому любое срабатывание на эталоне `example/` —
+  ложное, и прогон по всему корпусу — обязательное условие приёмки правила. Правило снимается с
+  эталона, а не из головы; **severity выбирается по числу срабатываний на эталоне**: ошибка — только то,
+  чего в корректной выгрузке не бывает ВООБЩЕ (0 срабатываний), иначе предупреждение. Число срабатываний
+  заносится в комментарий рядом с правилом (образец — замер «179 команд из 23 417» у `Command` без
+  `<Action>`), чтобы следующий агент не ужесточил его обратно. Корпусный тест пиннит ТОЧНОЕ число
+  смягчённых предупреждений, а не «нет иных видов»; синтетические тесты правила живут в отдельных сьютах
+  без привязки к корпусу (`example/` в `.gitignore`, на чистом клоне корпусные тесты пропускаются) плюс
+  гейт «инструмент ловит» на мутации реальной формы. **Версии формата живут в ОДНОМ реестре**
+  `infra/xml/format/formatRegistry.ts` (`isKnownFormatVersion`/`KNOWN_FORMAT_VERSIONS`) — второго
+  перечня версий в валидаторе или тексте сообщения заводить нельзя (локальный набор уже расходился с
+  реестром: не знал `2.18` — версию, которую сам генератор пишет в новую форму).
+- **Новое правило порядка дочерних элементов `<ChildObjects>`** (в каком порядке вид объекта-владельца
+  сериализует прямых детей — `Attribute`/`TabularSection`/`Form`/`Dimension`/`Resource`/…, см.
+  [xml-format-rulesets.md](./docs/xml-format-rulesets.md#порядок-прямых-детей-childobjects-по-виду-владельца)):
+  строка в `CHILD_OBJECTS_ORDER` (`infra/xml/childObjects/ChildObjectsOrder.ts`), снятая с эталона
+  `example/` СКАНОМ КОНТРПРИМЕРОВ (ноль нарушений на всей выборке корпуса, а не «сто подтверждений») →
+  тест двусторонней сшивки с `META_TYPES.childTags` (набор видов/тегов с правилом порядка не расходится
+  с набором видов/тегов, которые вид реально может содержать) → тест на обеих генерациях формата
+  (`example/2.20` и `example/2.21`, cf и cfe) → механика вставки (`ChildObjectsEditor.resolveInsertOffset`)
+  при этом НЕ трогается — она не знает ни одного конкретного вида метаданных, только ранги из таблицы.
+  Существующие узлы `<ChildObjects>` НЕ переупорядочиваются никогда — правило применяется исключительно
+  к вставке нового элемента, нормализация существующих файлов не делается сознательно (полная
+  перезапись объекта в git-диффе на каждую мелкую правку и потеря идемпотентности операции).
+  **Не путать с осью допустимости:** `META_TYPES.childTags` — какие теги вид МОЖЕТ содержать (читает
+  `validate_metadata`/`disallowed-child`, дерево, `allowedOwnerKinds` MCP add-инструментов),
+  `CHILD_OBJECTS_ORDER` — порядок сериализации. Валидатор допустимости на ось порядка переводить нельзя:
+  пробовалось и откачено (стандартные реквизиты не лежат в `<ChildObjects>` → 16 945 ложных
+  предупреждений на эталоне), см.
+  [xml-format-rulesets.md](./docs/xml-format-rulesets.md#две-оси-допустимость-дочернего-тега-и-порядок-сериализации).
+  Новый дочерний тег вида метаданных → в `childTags` (допустимость) и, если расширение его вставляет, в
+  `CHILD_OBJECTS_ORDER` (порядок); `allowedOwnerKinds` add-инструмента выводится из `childTags` сам.
+- **Новое правило порядка свойств `<Properties>` КОРНЕВОГО объекта** (в каком порядке вид сериализует
+  прямых детей `<Properties>` — `Name`/`Synonym`/`Comment`/…/`DefaultForm`/…, см.
+  [xml-format-rulesets.md](./docs/xml-format-rulesets.md#порядок-прямых-детей-properties-корневого-объекта-по-виду)):
+  строка в `ROOT_PROPERTY_ORDER` (`infra/xml/properties/PropertyOrder.ts`), снятая с эталона `example/`
+  сканом КОНТРПРИМЕРОВ и проверкой АЦИКЛИЧНОСТИ графа предшествования (не «какой порядок чаще» — частотный
+  критерий дал бы ложное «правила нет»: варианты — это разные подмножества необязательных свойств) → три
+  корпусных гейта (`propertyOrderCorpus.test.ts`: прямой — нет пары тегов, чей порядок в таблице
+  противоречит хоть одному файлу; полноты; обратный — каждый ключ строки подтверждён эталоном; критерий
+  НЕ «равно топосортировке») плюс сшивка `propertyOrder.registry.test.ts` → механика вставки
+  (`properties/PropertyInsert.ts`) НЕ трогается — она не знает ни одного вида, только ранги. Существующие
+  блоки `<Properties>` НЕ переупорядочиваются никогда, только вставка отсутствующего тега; валидацию
+  порядка в `validate_metadata` заводить нельзя (0 срабатываний на эталоне, чинить отказались —
+  предупреждение неисполнимо). Фолбэки асимметричны намеренно: писатель объектов (`ObjectXmlReader`)
+  неизвестный ключ дописывает в конец, писатель корня конфигурации (`ConfigurationXmlEditor`) — отказ
+  (опечатка иначе породила бы мусорный тег). **Не сливать четыре разные оси:** `ROOT_PROPERTY_ORDER` —
+  порядок СЕРИАЛИЗАЦИИ свойств корня; `ui/views/properties/propertyKeyOrder.ts` — порядок ПОКАЗА в панели
+  (у справочника `ObjectPresentation` в файле 36–40-й, в панели 4–8-й; у отчёта `MainDataCompositionSchema`
+  в файле между двумя формами, в панели после всех шести); `CONTROLLED_PROPERTY_KEYS` — свойства
+  ДОЧЕРНЕГО элемента; `FORM_PROPERTY_KEYS_BY_KIND` — какие ключи вида — ссылки на форму. Вставка `<Type>`
+  ищет якорь по разобранным блокам (`collectPropertyBlocks`), а не парной регуляркой `<Comment>…</Comment>`
+  — платформа пустой комментарий пишет самозакрытым `<Comment/>`.
+- **Новый вспомогательный XML-файл объекта** (`Ext/Flowchart.xml`, дескриптор формы, макет и т.п.):
+  корневой элемент и пространство имён берутся с эталона `example/`, а НЕ выводятся по аналогии с соседним
+  файлом (`Flowchart.xml` писался как `<Flowchart xmlns=MDClasses/>`, эталон — `<GraphicalSchema
+  xmlns=…/xcf/scheme>`) → пространства имён — ПОЛЕМ `FormatRuleset` (образец — `graphicalSchemaXmlns`;
+  ось версии: у 2.20 нет `xmlns:pal`), а не литералом в builder'е → общий скелет + профиль различий (образец
+  — `buildGraphicalSchemaXml(version, ruleset, grid)`) → golden-фикстура выводится из эталонного файла
+  корпуса, а не снимается с вывода генератора (иначе фикстура закрепит ошибку). Не заявлять «снятым
+  правилом» то, что в корпусе неоднородно. См.
+  [xml-format-rulesets.md](./docs/xml-format-rulesets.md#графическая-схема-flowchartxml-и-макет-графическая-схема).
+- **Любой писатель файла выгрузки (и служебного кэша):** только через `infra/fs/AtomicFileWriter`
+  (`writeFileAtomic`) либо `writeTextFilePreservingBomAndEol`, который делегирует туда. Собственный
+  `fs.writeFileSync`/`rename` для файла выгрузки заводить нельзя — третьей копии temp+rename быть не
+  должно. Граница гарантии — обрыв процесса, не потеря питания (`fsync` нет); временный путь не оканчивается
+  на `.xml` (watcher `src/**/*.xml`). Почему это не та же механика, что staging-выгрузка CF — в
+  [architecture.md](./docs/architecture.md#атомарная-запись-файлов-выгрузки-infrafsatomicfilewriterts).
 - **Новая команда:** класс в `ui/commands/...` с `readonly id` → регистрация в `CommandRegistry.registerAll` → `package.json → contributes.commands` → при меню узла `contributes.menus` c `when: viewItem =~ /…/` → при хоткее `contributes.keybindings`.
+- **Новый потребитель пути формы** (MCP-инструмент или команда навигатора, которым нужно тело
+  `Ext/Form.xml`, дескриптор формы или XML владельца по узлу дерева): только через
+  `ui/tree/formNodePaths.ts` (`resolveObjectFormNodeParts`/`resolveFormBodyFromNode`) → арифметика путей —
+  в `MetaPathResolver` (`resolveFormXmlByDescriptor`/`resolveChildFormDescriptor`/`resolveChildFormXml`;
+  тело считается явно, не через `getObjectLocationFromXml` — его эвристика ломается на форме с именем
+  `Forms`) → тело читается через `readFormXml`/`assertFormRootXml` (`infra/xml/form/FormShared.ts`) —
+  guard по КОРНЕВОМУ элементу, а не по вхождению `<Form`. **`node.xmlPath` узла формы объекта — XML
+  объекта-владельца** (адрес открытия по клику, его же читают панель свойств, гейт блокировок,
+  заимствование CFE, декорации), трактовать его как путь формы нельзя: так `edit_form` писал правку поверх
+  XML справочника. Тестовые узлы формы строить как продакшн-билдер (с `xmlPath` владельца). См.
+  [metadata-navigator.md](./docs/metadata-navigator.md#инвариант-узла-формы-xmlpath-принадлежит-владельцу).
 - **Новый builder узла:** `ui/tree/nodeBuilders/<имя>.ts` → регистрация в диспетчере `metaObjectTreeBuilder.ts`. XML — только через `parseObjectXml`/`ObjectXmlReader`.
 - **Новая декорация узла:** класс в `ui/tree/decorations/` (реализует `vscode.FileDecorationProvider`) → регистрация в `Container.wireTreeView` → суффикс `contextValue` — только в `TreeNode`.
 - **Новый view/webview:** класс в `ui/views/<Имя>ViewProvider.ts` (без XML/FS) → данные готовит отдельный сервис → создание и команда открытия через `Container`.
@@ -319,6 +500,36 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
   списке — явные `showErrorMessage`/`showInformationMessage` по причине и отмена операции, без
   переключения на ручной ввод значения пользователем. Подробности и обоснование —
   [architecture.md](./docs/architecture.md#паттерн-чтение-данных-из-базы-через-пакетный-конфигуратор-file-handoff).
+- **Новая операция обмена с базой через CF/CFE-файл** (бинарная выгрузка/загрузка, не чтение
+  списка/состояния — для последнего см. пункт выше): guard'ы и вектор аргументов Конфигуратора — в
+  `infra/cfFile/` (`CfFileArgs.buildCfFileDesignerArgs`, `CfFileValidation.validateCfFileRequest` —
+  ЕДИНСТВЕННАЯ точка композиции проверок) без `vscode`/spawn → CLI-команда `cli/commands/<name>.ts`
+  парсит и ПОЛНОСТЬЮ валидирует аргументы ДО `resolveConnection` (платформа не диагностирует ни
+  неверный ключ, ни рассинхрон «суффикс↔расширение», а при сбое всё равно оставляет побочные эффекты —
+  см. [architecture.md](./docs/architecture.md#паттерн-бинарный-обмен-cfcfe-через-пакетный-конфигуратор-dumpcfgloadcfg))
+  → тонкая UI-обёртка `ui/commands/ext/CfFileCommandRunner.ts` (переиспользует
+  `resolveConnectionFromSettings`/`runInternalCliCommand` из `ExtensionCommandRunner`, как импорт/
+  обновление) → диалоги в `ui/commands/ext/CfFileCommands.ts` + пункт в `getNodeActions` (не
+  `addModuleActions` — это действие корневого узла конфигурации/расширения, а не слот модуля) →
+  MCP-инструмент в `McpConfigLifecycleTools.ts`, зовущий ТОТ ЖЕ `CfFileCommandRunner`. Любая мутирующая
+  операция такого рода берёт общий `configurationOperationLock` (`ui/commands/ext/
+  configurationOperationLock.ts`) — она работает с той же базой, что импорт/обновление конфигураций,
+  конкурентный запуск повредил бы данные. **Вектор аргументов Конфигуратора обязан быть под точным
+  регресс-тестом** (не полагаться на `exitCode`/лог) — платформа молча принимает и игнорирует
+  неизвестные ключи (проверено: заведомо несуществующий ключ даёт exit 0), поэтому единственная
+  защита от ошибки в векторе — тест самого набора аргументов, а не поведения процесса. Staging-путь
+  для выгрузки — `CfFileValidation.resolveDumpStagingPath` (перенос на целевой путь только при
+  `exitCode === 0`), а не прямая запись в целевой файл. Post-mutation путь для `load`-операции —
+  СОЗНАТЕЛЬНОЕ отклонение от общего (см. architecture.md выше), не «чинить» его к единому пути без
+  повторного замера платформы. **Пакетная версия такой операции («все расширения базы»)** — ЦИКЛ по
+  именам из `/DumpDBCfgList -AllExtensions`, а не флаг `/DumpCfg`/`/LoadCfg` (у них ключа нет, платформа
+  принимает его молча и работает с ОСНОВНОЙ конфигурацией); вектор КАЖДОЙ итерации сверяется поэлементно,
+  включая «`-AllExtensions` есть ровно у `/DumpDBCfgList`». Политики отказа разные намеренно: dump
+  продолжается после сбоя одного расширения, load останавливается на первом с `failedAt`/
+  `stateUncertain`; манифест `cfe-dump.json` описывает только ТЕКУЩИЙ прогон (не сливать записи прошлых);
+  staging-остаток опознаётся по маркеру `DUMP_STAGING_SUFFIX`, а не по форме суффикса; перенос staging —
+  `moveStagingToTarget` из `cli/core/onecCommon.ts`, второй копии temp+rename не заводить. Подробности и
+  обоснования — [architecture.md](./docs/architecture.md#пакетный-случай-все-расширения-базы-одной-операцией-dump-cfe-allload-cfe-all).
 - **Открытие BSL-модулей:** только реальные `file://` документы (виртуальная схема `onec://` удалена). Readonly — через `ui/readonly/BslReadonlyGuard.ts`.
 - **Изменение жизненного цикла/безопасности встроенного MCP-сервера** (порт, идентичность процесса,
   graceful shutdown, Host/Origin, отличается от «новый MCP-инструмент» из раздела выше): чистая логика —
@@ -388,7 +599,7 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
 9. **Не сохранять пароли/токены в файлы проекта.** Секреты — через VS Code SecretStorage.
 10. **Не создавать файлы при команде «Открыть».** Создание — только явным командам добавления/генерации.
 11. **Не вешать синхронный I/O на getters, tooltip, decoration и hot path дерева.**
-12. **Не терять формат XML.** Любой редактор существующего XML сохраняет BOM и стиль переводов строк исходного файла (`writeTextFilePreservingBomAndEol`).
+12. **Не терять формат XML.** Любой редактор существующего XML сохраняет BOM и стиль переводов строк исходного файла (`writeTextFilePreservingBomAndEol`). **Ловушка:** в `originalContent` передаётся текст, прочитанный ДО замены (отдельная константа перед `replace`), а не уже изменённый — иначе эталон стиля берётся с результата, и сохранение BOM/EOL становится пустой операцией (прецедент — `CfeBorrowService`).
 13. **Справочники свойств не живут в UI** — только в `infra/xml/PropertySchema.ts` (или спец-реестре infra); UI рендерит готовое.
 14. **Команды контекстного меню не хардкодятся в `UniversalPanelViewProvider`** — `addModuleActions` читает `META_TYPES[kind].modules` через `MODULE_SLOT_ACTIONS`.
 15. **Нативный TreeView — не основной UI**; не дублировать логику меню в `package.json`, если она есть в `addModuleActions`.
@@ -407,11 +618,19 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
 ## TDD и покрытие
 
 1. **Любое изменение поведения начинается с теста** (красный → код → зелёный).
-2. **Покрытие кода, ЗАТРОНУТОГО изменением, — 100%** по строкам, веткам, функциям, операторам. Гейт задачи — `npm run coverage:changed` (проверяет ровно изменённые/новые production-файлы). Глобальный `npm run coverage --100` сейчас красный из-за унаследованного легаси-долга в несвязанных областях (`ui/tree/nodeBuilders/*`, `ExtensionCommandRunner`, `RepositoryCommandRunner`, `InitializeProjectCommand`, `infra/xml/form/*` и др.) — это **известное состояние, не предмет каждой задачи**; не трать время, доказывая это заново через stash/baseline. `Container.ts`/`extension.ts` исполняются в Extension Host и c8 не инструментируются — покрываются интеграционно, из гейта изменённых файлов исключены.
+2. **Покрытие кода, ЗАТРОНУТОГО изменением, — 100%** по строкам, веткам, функциям, операторам. Гейт задачи — `npm run coverage:changed` (проверяет ровно изменённые/новые production-файлы). Полное описание вердикта, кодов возврата (0/1/2), канарейки деградации и переменных окружения — [docs/coverage-gate.md](./docs/coverage-gate.md); **код 2 — «данным нельзя верить, перемерь», не «допиши тест»**, спутать эти два случая — не диагностировать регресс. Глобальный `npm run coverage --100` сейчас красный из-за унаследованного легаси-долга в несвязанных областях (`ui/tree/nodeBuilders/*`, `ExtensionCommandRunner`, `RepositoryCommandRunner`, `InitializeProjectCommand`, `infra/xml/form/*` и др.) — это **известное состояние, не предмет каждой задачи**; не трать время, доказывая это заново через stash/baseline. `Container.ts`/`extension.ts` исполняются в Extension Host и c8 не инструментируются — покрываются интеграционно, из гейта изменённых файлов исключены.
 3. **Заглушки/фиктивные ассёрты/тесты ради покрытия запрещены.** Тест проверяет реальное поведение на настоящих XML-фикстурах (`example/src/cf`, `example/src/cfe/EVOLC`), реальных временных файлах или реальном процессе; mock/stub допустимы только для внешней недоступной системы с обоснованием. Тесты **детерминированы** — без гонок/угадывания таймингов; учитывай фоновое поведение SDK/клиентов.
-4. Непокрываемую из-за VS Code API логику выносить в `domain/`/`infra/` и покрывать unit-тестом; тонкий UI-адаптер — интеграционным тестом. Осознанно недостижимую защитную ветку — `/* c8 ignore */` с обоснованием, а не оставлять пробел для qa.
-5. **Покрытие новых файлов доводится до 100% за один проход автора тестов** (перечислить ветки заранее: ошибки, таймауты, guard'ы, граничные входы; параметризовать по конечным множествам значений — enum/настройки, напр. `host ∈ {127.0.0.1, localhost, ::1}`), чтобы не гонять лишний ре-цикл через qa.
-6. Перед завершением задачи — `npm test` (регресс) и `npm run coverage:changed` (100% на изменённом). Если нельзя выполнить локально — зафиксировать причину, задачу не считать завершённой.
+4. **Тест не пишет в `example/`.** Корпус — реальные выгрузки пользователя, и git его не
+   отслеживает, поэтому испорченный тестом файл теряется безвозвратно. Мутационные сьюты копируют
+   нужное во временный каталог (`fs.mkdtempSync`) и работают там. Резервирование в `setup` с
+   восстановлением в `teardown` защитой НЕ является: обрыв прогона между ними оставляет файл
+   испорченным навсегда — прецедент был, `example/2.20/env.json` пролежал с `[1,2,3]` и ронял три
+   теста своего же сьюта на каждом последующем прогоне, а исходное содержимое восстановить оказалось
+   нечем.
+5. Непокрываемую из-за VS Code API логику выносить в `domain/`/`infra/` и покрывать unit-тестом; тонкий UI-адаптер — интеграционным тестом. Осознанно недостижимую защитную ветку — `/* c8 ignore */` с обоснованием, а не оставлять пробел для qa.
+6. **Покрытие новых файлов доводится до 100% за один проход автора тестов** (перечислить ветки заранее: ошибки, таймауты, guard'ы, граничные входы; параметризовать по конечным множествам значений — enum/настройки, напр. `host ∈ {127.0.0.1, localhost, ::1}`), чтобы не гонять лишний ре-цикл через qa.
+7. Перед завершением задачи — `npm test` (регресс) и `npm run coverage:changed` (100% на изменённом). Если нельзя выполнить локально — зафиксировать причину, задачу не считать завершённой.
+8. Прогон `coverage:changed` дробится на несколько свежих процессов (`COVERAGE_SHARDS`, дефолт 8) — долгоживущий процесс тестов теряет поблочную детализацию V8 целиком, и «покрытие веток» без дробления становится недостоверным молчаливым зелёным. Если вердикт даёт код 2 («ДЕГРАДАЦИЯ ПОКРЫТИЯ»/«НЕТ ДАННЫХ О ВЕТКАХ») — это не повод чинить тест, см. [docs/coverage-gate.md](./docs/coverage-gate.md).
 
 ## Рабочий процесс и отладка
 

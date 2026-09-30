@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { buildMetadataTypeInnerXml, ensureDefaultQualifiers, parseMetadataType } from '../../ui/views/properties/MetadataTypeService';
+import { buildMetadataTypeInnerXml, buildMetadataTypeItem, ensureDefaultQualifiers, parseMetadataType } from '../../ui/views/properties/MetadataTypeService';
 import { ObjectXmlReader } from '../../infra/xml/ObjectXmlReader';
 
 suite('metadataType', () => {
@@ -23,6 +23,43 @@ suite('metadataType', () => {
     assert.strictEqual(parsed.stringQualifiers?.length, 50);
     assert.ok(parsed.presentation.includes('Строка'));
     assert.ok(parsed.presentation.includes('СправочникСсылка.Номенклатура'));
+  });
+
+  /**
+   * Ссылочный тип в корневом XML объекта метаданных пишется префиксом `cfg:`.
+   * Правило снято с эталона сканом контрпримеров, а не выведено из схемы:
+   * 27 847 корней `MetaDataObject` в `example/2.20` и `example/2.21` (cf и cfe) —
+   * у 100% объявлен `xmlns:cfg`, и все ссылочные типы платформенных выгрузок несут
+   * именно `cfg:` (18 953 `cfg:CatalogRef`, 7 455 `cfg:DocumentRef`, 6 193 `cfg:EnumRef`).
+   * Форма `dNpM:` с инлайн-объявлением того же URI встречается только в макетах СКД
+   * и XDTO, где корневого объявления `cfg` нет, — там она каноничная и не трогается.
+   * Раньше генератор писал инлайн-форму: XML-эквивалентно, но давало вечный дифф
+   * с платформенной выгрузкой на каждом объекте со ссылочным реквизитом.
+   */
+  test('Ссылочный тип пишется префиксом cfg, без инлайн-объявления неймспейса', () => {
+    for (const canonical of ['CatalogRef.Номенклатура', 'DocumentRef.ЗаказПокупателя', 'EnumRef.СтавкиНДС']) {
+      const inner = buildMetadataTypeInnerXml({
+        items: [buildMetadataTypeItem(canonical)],
+        presentation: '',
+        rawInnerXml: '',
+      });
+      assert.strictEqual(inner, `<v8:Type>cfg:${canonical}</v8:Type>`, canonical);
+      assert.ok(!inner.includes('xmlns:d5p1'), `${canonical}: инлайн-объявление неймспейса вернулось`);
+    }
+  });
+
+  /**
+   * Разбор обязан понимать ОБЕ формы: в реальных выгрузках уже лежат файлы,
+   * записанные прежней версией расширения (инлайн `d5p1:`), и ломать их чтение
+   * нельзя. Ось записи и ось чтения здесь разные — сужается только запись.
+   */
+  test('Разбор понимает и cfg:, и инлайн-форму d5p1: — сужается только запись', () => {
+    const viaCfg = parseMetadataType('<v8:Type>cfg:CatalogRef.Номенклатура</v8:Type>');
+    const viaInline = parseMetadataType(
+      '<v8:Type xmlns:d5p1="http://v8.1c.ru/8.1/data/enterprise/current-config">d5p1:CatalogRef.Номенклатура</v8:Type>'
+    );
+    assert.strictEqual(viaCfg.items[0].canonical, 'CatalogRef.Номенклатура');
+    assert.strictEqual(viaInline.items[0].canonical, 'CatalogRef.Номенклатура');
   });
 
   test('Собирает XML внутренности блока Type', () => {

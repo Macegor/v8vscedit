@@ -28,6 +28,7 @@ import { ProjectSecretStorage } from '../../infra/environment/ProjectSecretStora
 import type { SecretStore } from '../../infra/ai/AiSecretStorage';
 import type { Logger } from '../../infra/support/Logger';
 import type { CommandServices } from '../../ui/commands/_shared';
+import { skipWithoutCorpus } from './support/corpus';
 
 /** Фейковый SecretStore на Map — структурный контракт vscode.SecretStorage. */
 function createFakeSecretStore(): SecretStore {
@@ -61,6 +62,12 @@ class TestLogger implements Logger {
 }
 
 suite('MetadataMutationService — проверка SupportMode.Locked при add (C4)', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   let tempDir: string;
   let configRoot: string;
 

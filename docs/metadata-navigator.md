@@ -82,6 +82,37 @@ class MetadataNode extends vscode.TreeItem {
 
 `contextValue` = `nodeKind` или `nodeKind-hasXml` (суффикс `-hasXml` добавляется при наличии `xmlPath`). Этот суффикс используется в `when`-условиях контекстного меню `package.json`.
 
+### Инвариант узла формы: `xmlPath` принадлежит владельцу
+
+У узла формы **объекта** (`nodeKind === 'Form'`, `Справочники.X.Форма.Y`) `xmlPath` — это XML
+**объекта-владельца** (`Catalogs/X.xml`), а не путь формы. Так задумано: `resolveLeafXmlPath`
+(`ui/tree/nodeBuilders/metaObjectTreeBuilder.ts`, симметрично `infra/cache/MetadataCache.ts`) задаёт адрес
+открытия по клику, и то же поле читают панель свойств (`PropertiesTargetResolver`), гейт блокировок
+(`McpMutationGate`), заимствование в CFE и декорации. Смена контракта затронула бы шесть потребителей поля (перечислены основные).
+У общей формы (`nodeKind === 'CommonForm'`) `xmlPath` — дескриптор `CommonForms/X.xml`, поэтому на ней
+ошибочная трактовка «работала», и дефект выглядел плавающим.
+
+Следствие: поле по названию «лжёт», поэтому **адрес самой формы обязан выводиться арифметикой, а не
+читаться из `xmlPath`**. Единая точка — `ui/tree/formNodePaths.ts`
+(`resolveObjectFormNodeParts` → XML владельца + имя формы, `resolveFormBodyFromNode` → тело
+`…/Ext/Form.xml`), внутри — `MetaPathResolver.resolveChildFormXml`/`resolveChildFormDescriptor`/
+`resolveFormXmlByDescriptor`. Модуль лежит в `ui/tree/`, а не в `ui/mcp/`: MCP-инструменты и команды
+навигатора (`v8vscedit.form.info`/`validate`/`remove`) — равноправные потребители дерева, адаптер в одном
+из них связал бы их между собой.
+
+**Новый потребитель, которому нужен путь формы** (тело, дескриптор, каталог формы), обязан идти через
+этот адаптер. Трактовка `node.xmlPath` узла формы как пути формы воспроизводит исходный дефект: до
+исправления `validate_form` давал ложное «AutoCommandBar element missing» (разбирал XML справочника как
+форму), `compile_form` строил `Catalogs/X.xml/Ext/Form.xml` и падал на ENOTDIR (и для общей формы тоже),
+а `edit_form` **писал правку формы поверх XML объекта метаданных**. Вторая линия защиты — guard по
+корневому элементу в `infra/xml/form/FormShared.ts` (см.
+[mcp-paths.md](./mcp-paths.md#формы-тело-и-дескриптор)).
+
+Тестовая ловушка: фикстура узла формы должна строиться так же, как продакшн-билдер — с `xmlPath`
+владельца. Прежняя фикстура в `mcpToolsCatalog.test.ts` вела `xmlPath` прямо на `Ext/Form.xml`, чего
+билдер не делает никогда, — `edit_form` был зелёным в тестах и разрушающим в жизни. Тест на контракт
+узла — `formNodeContract.test.ts`.
+
 ## Дескриптор-ориентированная архитектура (nodes/)
 
 Каждый тип узла описан отдельным файлом-дескриптором `NodeDescriptor`:
@@ -180,6 +211,9 @@ MCP-инструментов `v8vscedit_add_url_template`/`v8vscedit_add_method`
 | `getCommonCommandModulePath` | `{objectDir}/Ext/CommandModule.bsl` |
 | `getCommonModuleCodePath` | `{objectDir}/Ext/Module.bsl` |
 | `getFormModulePathForChild` | `{objectDir}/Forms/{name}/Ext/Form/Module.bsl` |
+| `resolveChildFormXml` (тело формы) | `{objectDir}/Forms/{name}/Ext/Form.xml` |
+| `resolveChildFormDescriptor` | `{objectDir}/Forms/{name}.xml` |
+| `resolveFormXmlByDescriptor` | `<dir>/<имя>/Ext/Form.xml` по `<dir>/<имя>.xml` |
 | `getCommandModulePathForChild` | `{objectDir}/Commands/{name}/Ext/CommandModule.bsl` |
 
 `resolveObjectXmlPath(configRoot, objectType, objectName)` находит XML объекта: сначала пробует глубокую структуру, затем плоскую.
@@ -189,6 +223,28 @@ MCP-инструментов `v8vscedit_add_url_template`/`v8vscedit_add_method`
 `getIconUris(nodeKind, ownershipTag, extensionUri)` возвращает пару URI для светлой и тёмной темы. Для заимствованных объектов (`BORROWED`) добавляет суффикс `-borrowed` к имени иконки.
 
 `getIconName(kind)` в `iconMap.ts` читает `descriptor.icon` и возвращает имя SVG-файла. Иконки хранятся в `src/icons/light/` и `src/icons/dark/`.
+
+## Панель свойств: где живёт порядок ключей и секция «Формы»
+
+Порядок и состав ключей свойств корневого объекта в панели задаёт `ui/views/properties/propertyKeyOrder.ts`
+(`getRootPropertyKeyOrder(rootMetaKind)`), а не реестр `PROPERTY_SCHEMAS` из `infra/xml/PropertySchema.ts`:
+последний ничем не читается (кроме собственного определения и `export *`), правка его наборов
+(`COMMON_ROOT_KEYS`/`ENUM_ROOT_KEYS`) поведения не меняет. Его судьба (удалить или оживить) — открытый пункт
+бэклога; до решения не править его «чтобы появилось свойство». Действующие источники в `PropertySchema.ts` —
+`PROPERTY_TITLE_RU` (подписи), `ENUM_OPTIONS`, множества boolean/localized-тегов и
+`FORM_PROPERTY_KEYS_BY_KIND`.
+
+Секция «Формы» (контрол выбора формы `PropertyFormsSection.vue`) показывается у всех видов, у которых по
+эталону есть свойства форм: справочник, план видов характеристик, документ, обработка, отчёт, регистры (сведений, накопления,
+бухгалтерии, расчёта), перечисление, план обмена, бизнес-процесс, задача, планы счетов и видов расчёта,
+журнал документов, критерий отбора, хранилище настроек, константа, а также корень конфигурации и
+расширения. Состав ключей по виду — `FORM_PROPERTY_KEYS_BY_KIND` (`infra/xml/PropertySchema.ts`), методика
+снятия и оговорка про виды без экземпляров в эталоне —
+[xml-format-rulesets.md](./xml-format-rulesets.md#свойства-выбора-форм-по-виду-метаданных). Секцию
+проставляет `applyFormPropertySection` по `isFormPropertyKey`; заголовок — константа
+`FORM_PROPERTY_SECTION` (`propertyKeyOrder.ts`), с которой webview сравнивает
+`card.section.title` (`src-ui/apps/dynamic-panel/views/properties/PropertiesView.vue`). Литерал `'Формы'`
+в расширении не дублируется — его стережёт `formSectionContract.test.ts`.
 
 ## Отдельно: панель «Изменения метаданных»
 

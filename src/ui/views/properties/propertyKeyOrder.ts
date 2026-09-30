@@ -1,100 +1,124 @@
 import type { NodeKind } from '../../tree/TreeNode';
 import type { ObjectPropertiesCollection } from './_types';
-import { extractOpeningTagName } from '../../../infra/xml';
 import {
   getDisplayTypedFieldPropertyKeys,
   type TypeAwarePropertyOwnerKind,
 } from '../../../infra/xml/TypedFieldPropertyRules';
-import { stripXmlTagNamespacePrefix, summarizeTypeBlock } from './propertyExtractors';
+import { summarizeTypeBlock } from './propertyExtractors';
+import { getFormPropertyKeys, isFormPropertyKey } from '../../../infra/xml/PropertySchema';
 
-/** Общие поля корневого объекта (справочник, документ, план обмена, …) */
-const COMMON_ROOT_META_PROPERTY_KEYS: string[] = [
-  'Name',
-  'Synonym',
-  'Comment',
-  'ObjectBelonging',
-  'ExtendedConfigurationObject',
-  'DefaultObjectForm',
-  'DefaultRecordForm',
-  'DefaultListForm',
-  'DefaultChoiceForm',
-  'AuxiliaryObjectForm',
-  'AuxiliaryRecordForm',
-  'AuxiliaryListForm',
-  'AuxiliaryChoiceForm',
-  'InputByString',
-  'SearchStringModeOnInputByString',
-  'FullTextSearchOnInputByString',
-  'ChoiceDataGetModeOnInputByString',
-  'CreateOnInput',
-  'ChoiceHistoryOnInput',
-  'DataLockControlMode',
-  'FullTextSearch',
-  'ObjectPresentation',
-  'ExtendedObjectPresentation',
-  'ListPresentation',
-  'ExtendedListPresentation',
-  'Explanation',
-  'BasedOn',
-];
+/**
+ * Заголовок и порядок секции выбора форм — единые для всех видов метаданных.
+ *
+ * Экспортируется не ради удобства: тот же литерал заголовка стоит в webview
+ * (`src-ui/apps/dynamic-panel/views/properties/PropertiesView.vue`), и именно
+ * по нему панель включает контрол выбора формы. Связка неявная и через границу
+ * сборки, поэтому её стережёт тест `formSectionContract.test.ts`.
+ */
+export const FORM_PROPERTY_SECTION = { title: 'Формы', order: 80 } as const;
+
+/**
+ * Общие поля корневого объекта (план обмена, бизнес-процесс, задача, …).
+ *
+ * Свойства выбора форм не перечисляются здесь списком: их состав у каждого вида
+ * свой и снят с эталона — единственный источник `FORM_PROPERTY_KEYS_BY_KIND`.
+ * Вид, которого нет в той таблице (служебные узлы, дочерние элементы), получает
+ * набор вообще без форм — панель не должна предлагать записать свойство,
+ * которого у вида не бывает.
+ */
+function buildCommonRootKeys(rootMetaKind: NodeKind): string[] {
+  return [
+    'Name',
+    'Synonym',
+    'Comment',
+    'ObjectBelonging',
+    'ExtendedConfigurationObject',
+    ...getObjectFormPropertyKeys(rootMetaKind),
+    'InputByString',
+    'SearchStringModeOnInputByString',
+    'FullTextSearchOnInputByString',
+    'ChoiceDataGetModeOnInputByString',
+    'CreateOnInput',
+    'ChoiceHistoryOnInput',
+    'DataLockControlMode',
+    'FullTextSearch',
+    'ObjectPresentation',
+    'ExtendedObjectPresentation',
+    'ListPresentation',
+    'ExtendedListPresentation',
+    'Explanation',
+    'BasedOn',
+  ];
+}
+
+/**
+ * Свойства выбора форм ОБЪЕКТА метаданных.
+ *
+ * Корень выгрузки в этот набор не попадает: у конфигурации и расширения формы
+ * уровня приложения (`DefaultReportForm`, `DefaultConstantsForm`, …), и место им
+ * в собственном каноне {@link CONFIGURATION_PROPERTY_KEYS}, а не в общем наборе
+ * свойств объекта метаданных, куда общая ветка подставляет формы по виду.
+ */
+function getObjectFormPropertyKeys(rootMetaKind: NodeKind): readonly string[] {
+  if (rootMetaKind === 'configuration' || rootMetaKind === 'extension') {
+    return [];
+  }
+  return getFormPropertyKeys(rootMetaKind);
+}
 
 /** Поля корня «Справочник» по разделам конфигуратора, без реквизитов и табличных частей. */
-export const CATALOG_ROOT_META_PROPERTY_KEYS: string[] = [
-  'Name',
-  'Synonym',
-  'Comment',
-  'ObjectPresentation',
-  'ExtendedObjectPresentation',
-  'ListPresentation',
-  'ExtendedListPresentation',
-  'Explanation',
-  'ObjectBelonging',
-  'ExtendedConfigurationObject',
-  'Hierarchical',
-  'HierarchyType',
-  'FoldersOnTop',
-  'LimitLevelCount',
-  'LevelCount',
-  'Owners',
-  'SubordinationUse',
-  'CodeLength',
-  'DescriptionLength',
-  'CodeType',
-  'CodeAllowedLength',
-  'CodeSeries',
-  'CheckUnique',
-  'Autonumbering',
-  'DefaultPresentation',
-  'DefaultObjectForm',
-  'DefaultFolderForm',
-  'DefaultListForm',
-  'DefaultChoiceForm',
-  'DefaultFolderChoiceForm',
-  'AuxiliaryObjectForm',
-  'AuxiliaryFolderForm',
-  'AuxiliaryListForm',
-  'AuxiliaryChoiceForm',
-  'AuxiliaryFolderChoiceForm',
-  'QuickChoice',
-  'CreateOnInput',
-  'InputByString',
-  'SearchStringModeOnInputByString',
-  'FullTextSearchOnInputByString',
-  'ChoiceDataGetModeOnInputByString',
-  'ChoiceHistoryOnInput',
-  'UseStandardCommands',
-  'BasedOn',
-  'DataLockFields',
-  'DataLockControlMode',
-  'FullTextSearch',
-  'DataHistory',
-  'UpdateDataHistoryImmediatelyAfterWrite',
-  'ExecuteAfterWriteDataHistoryVersionProcessing',
-  'PredefinedDataUpdate',
-  'Characteristics',
-  'EditType',
-  'IncludeHelpInContents',
-];
+function buildCatalogLikeRootKeys(rootMetaKind: NodeKind): string[] {
+  return [
+    'Name',
+    'Synonym',
+    'Comment',
+    'ObjectPresentation',
+    'ExtendedObjectPresentation',
+    'ListPresentation',
+    'ExtendedListPresentation',
+    'Explanation',
+    'ObjectBelonging',
+    'ExtendedConfigurationObject',
+    'Hierarchical',
+    'HierarchyType',
+    'FoldersOnTop',
+    'LimitLevelCount',
+    'LevelCount',
+    'Owners',
+    'SubordinationUse',
+    'CodeLength',
+    'DescriptionLength',
+    'CodeType',
+    'CodeAllowedLength',
+    'CodeSeries',
+    'CheckUnique',
+    'Autonumbering',
+    'DefaultPresentation',
+    ...getFormPropertyKeys(rootMetaKind),
+    'QuickChoice',
+    'CreateOnInput',
+    'InputByString',
+    'SearchStringModeOnInputByString',
+    'FullTextSearchOnInputByString',
+    'ChoiceDataGetModeOnInputByString',
+    'ChoiceHistoryOnInput',
+    'UseStandardCommands',
+    'BasedOn',
+    'DataLockFields',
+    'DataLockControlMode',
+    'FullTextSearch',
+    'DataHistory',
+    'UpdateDataHistoryImmediatelyAfterWrite',
+    'ExecuteAfterWriteDataHistoryVersionProcessing',
+    'PredefinedDataUpdate',
+    'Characteristics',
+    'EditType',
+    'IncludeHelpInContents',
+  ];
+}
+
+/** Порядок свойств корня «Справочник» (переиспользуется планами счетов/видов расчёта через merge). */
+export const CATALOG_ROOT_META_PROPERTY_KEYS: string[] = buildCatalogLikeRootKeys('Catalog');
 
 const CATALOG_HIDDEN_PROPERTIES = new Set([
   'Characteristics',
@@ -128,16 +152,16 @@ const CATALOG_PROPERTY_SECTIONS: Readonly<Record<string, { title: string; order:
   CodeSeries: { title: 'Нумерация', order: 70 },
   CheckUnique: { title: 'Нумерация', order: 70 },
   Autonumbering: { title: 'Нумерация', order: 70 },
-  DefaultObjectForm: { title: 'Формы', order: 80 },
-  DefaultFolderForm: { title: 'Формы', order: 80 },
-  DefaultListForm: { title: 'Формы', order: 80 },
-  DefaultChoiceForm: { title: 'Формы', order: 80 },
-  DefaultFolderChoiceForm: { title: 'Формы', order: 80 },
-  AuxiliaryObjectForm: { title: 'Формы', order: 80 },
-  AuxiliaryFolderForm: { title: 'Формы', order: 80 },
-  AuxiliaryListForm: { title: 'Формы', order: 80 },
-  AuxiliaryChoiceForm: { title: 'Формы', order: 80 },
-  AuxiliaryFolderChoiceForm: { title: 'Формы', order: 80 },
+  DefaultObjectForm: FORM_PROPERTY_SECTION,
+  DefaultFolderForm: FORM_PROPERTY_SECTION,
+  DefaultListForm: FORM_PROPERTY_SECTION,
+  DefaultChoiceForm: FORM_PROPERTY_SECTION,
+  DefaultFolderChoiceForm: FORM_PROPERTY_SECTION,
+  AuxiliaryObjectForm: FORM_PROPERTY_SECTION,
+  AuxiliaryFolderForm: FORM_PROPERTY_SECTION,
+  AuxiliaryListForm: FORM_PROPERTY_SECTION,
+  AuxiliaryChoiceForm: FORM_PROPERTY_SECTION,
+  AuxiliaryFolderChoiceForm: FORM_PROPERTY_SECTION,
   QuickChoice: { title: 'Поле ввода', order: 90 },
   CreateOnInput: { title: 'Поле ввода', order: 90 },
   InputByString: { title: 'Поле ввода', order: 90 },
@@ -179,12 +203,7 @@ const DOCUMENT_ROOT_META_PROPERTY_KEYS: string[] = [
   'NumberPeriodicity',
   'CheckUnique',
   'Autonumbering',
-  'DefaultObjectForm',
-  'DefaultListForm',
-  'DefaultChoiceForm',
-  'AuxiliaryObjectForm',
-  'AuxiliaryListForm',
-  'AuxiliaryChoiceForm',
+  ...getFormPropertyKeys('Document'),
   'CreateOnInput',
   'InputByString',
   'SearchStringModeOnInputByString',
@@ -234,12 +253,12 @@ const DOCUMENT_PROPERTY_SECTIONS: Readonly<Record<string, { title: string; order
   NumberPeriodicity: { title: 'Нумерация', order: 50 },
   CheckUnique: { title: 'Нумерация', order: 50 },
   Autonumbering: { title: 'Нумерация', order: 50 },
-  DefaultObjectForm: { title: 'Формы', order: 80 },
-  DefaultListForm: { title: 'Формы', order: 80 },
-  DefaultChoiceForm: { title: 'Формы', order: 80 },
-  AuxiliaryObjectForm: { title: 'Формы', order: 80 },
-  AuxiliaryListForm: { title: 'Формы', order: 80 },
-  AuxiliaryChoiceForm: { title: 'Формы', order: 80 },
+  DefaultObjectForm: FORM_PROPERTY_SECTION,
+  DefaultListForm: FORM_PROPERTY_SECTION,
+  DefaultChoiceForm: FORM_PROPERTY_SECTION,
+  AuxiliaryObjectForm: FORM_PROPERTY_SECTION,
+  AuxiliaryListForm: FORM_PROPERTY_SECTION,
+  AuxiliaryChoiceForm: FORM_PROPERTY_SECTION,
   CreateOnInput: { title: 'Поле ввода', order: 90 },
   InputByString: { title: 'Поле ввода', order: 90 },
   SearchStringModeOnInputByString: { title: 'Поле ввода', order: 90 },
@@ -299,10 +318,7 @@ const ENUM_ROOT_META_PROPERTY_KEYS: string[] = [
   'UseStandardCommands',
   'QuickChoice',
   'ChoiceMode',
-  'DefaultListForm',
-  'DefaultChoiceForm',
-  'AuxiliaryListForm',
-  'AuxiliaryChoiceForm',
+  ...getFormPropertyKeys('Enum'),
   'ListPresentation',
   'ExtendedListPresentation',
   'Explanation',
@@ -325,13 +341,8 @@ const REPORT_ROOT_META_PROPERTY_KEYS: string[] = [
   'Synonym',
   'Comment',
   'UseStandardCommands',
-  'DefaultForm',
-  'AuxiliaryForm',
+  ...getFormPropertyKeys('Report'),
   'MainDataCompositionSchema',
-  'DefaultSettingsForm',
-  'AuxiliarySettingsForm',
-  'DefaultVariantForm',
-  'AuxiliaryVariantForm',
   'VariantsStorage',
   'SettingsStorage',
   'IncludeHelpInContents',
@@ -344,8 +355,7 @@ const DATA_PROCESSOR_ROOT_META_PROPERTY_KEYS: string[] = [
   'Synonym',
   'Comment',
   'UseStandardCommands',
-  'DefaultForm',
-  'AuxiliaryForm',
+  ...getFormPropertyKeys('DataProcessor'),
   'IncludeHelpInContents',
   'ExtendedPresentation',
   'Explanation',
@@ -355,8 +365,7 @@ const DOCUMENT_JOURNAL_ROOT_META_PROPERTY_KEYS: string[] = [
   'Name',
   'Synonym',
   'Comment',
-  'DefaultForm',
-  'AuxiliaryForm',
+  ...getFormPropertyKeys('DocumentJournal'),
   'UseStandardCommands',
   'RegisteredDocuments',
   'IncludeHelpInContents',
@@ -372,8 +381,7 @@ const FILTER_CRITERION_ROOT_META_PROPERTY_KEYS: string[] = [
   'Type',
   'UseStandardCommands',
   'Content',
-  'DefaultForm',
-  'AuxiliaryForm',
+  ...getFormPropertyKeys('FilterCriterion'),
   'ListPresentation',
   'ExtendedListPresentation',
   'Explanation',
@@ -413,10 +421,7 @@ const SETTINGS_STORAGE_ROOT_META_PROPERTY_KEYS: string[] = [
   'Name',
   'Synonym',
   'Comment',
-  'DefaultSaveForm',
-  'DefaultLoadForm',
-  'AuxiliarySaveForm',
-  'AuxiliaryLoadForm',
+  ...getFormPropertyKeys('SettingsStorage'),
 ];
 
 const COMMAND_GROUP_ROOT_META_PROPERTY_KEYS: string[] = [
@@ -508,41 +513,43 @@ const STYLE_ITEM_ROOT_META_PROPERTY_KEYS: string[] = [
   'Value',
 ];
 
-const INFORMATION_REGISTER_ROOT_META_PROPERTY_KEYS: string[] = [
-  'Name',
-  'Synonym',
-  'Comment',
-  'UseStandardCommands',
-  'EditType',
-  'DefaultRecordForm',
-  'DefaultListForm',
-  'AuxiliaryRecordForm',
-  'AuxiliaryListForm',
-  'InformationRegisterPeriodicity',
-  'WriteMode',
-  'MainFilterOnPeriod',
-  'IncludeHelpInContents',
-  'DataLockControlMode',
-  'FullTextSearch',
-  'EnableTotalsSliceFirst',
-  'EnableTotalsSliceLast',
-  'RecordPresentation',
-  'ExtendedRecordPresentation',
-  'ListPresentation',
-  'ExtendedListPresentation',
-  'Explanation',
-  'DataHistory',
-  'UpdateDataHistoryImmediatelyAfterWrite',
-  'ExecuteAfterWriteDataHistoryVersionProcessing',
-];
+/**
+ * Поля корня регистра сведений и регистра расчёта: отличаются только составом
+ * форм — у регистра расчёта в эталоне нет формы записи.
+ */
+function buildInformationRegisterLikeKeys(rootMetaKind: NodeKind): string[] {
+  return [
+    'Name',
+    'Synonym',
+    'Comment',
+    'UseStandardCommands',
+    'EditType',
+    ...getFormPropertyKeys(rootMetaKind),
+    'InformationRegisterPeriodicity',
+    'WriteMode',
+    'MainFilterOnPeriod',
+    'IncludeHelpInContents',
+    'DataLockControlMode',
+    'FullTextSearch',
+    'EnableTotalsSliceFirst',
+    'EnableTotalsSliceLast',
+    'RecordPresentation',
+    'ExtendedRecordPresentation',
+    'ListPresentation',
+    'ExtendedListPresentation',
+    'Explanation',
+    'DataHistory',
+    'UpdateDataHistoryImmediatelyAfterWrite',
+    'ExecuteAfterWriteDataHistoryVersionProcessing',
+  ];
+}
 
 const ACCUMULATION_REGISTER_ROOT_META_PROPERTY_KEYS: string[] = [
   'Name',
   'Synonym',
   'Comment',
   'UseStandardCommands',
-  'DefaultListForm',
-  'AuxiliaryListForm',
+  ...getFormPropertyKeys('AccumulationRegister'),
   'RegisterType',
   'IncludeHelpInContents',
   'DataLockControlMode',
@@ -562,8 +569,7 @@ const ACCOUNTING_REGISTER_ROOT_META_PROPERTY_KEYS: string[] = [
   'ChartOfAccounts',
   'Correspondence',
   'PeriodAdjustmentLength',
-  'DefaultListForm',
-  'AuxiliaryListForm',
+  ...getFormPropertyKeys('AccountingRegister'),
   'DataLockControlMode',
   'EnableTotalsSplitting',
   'FullTextSearch',
@@ -705,24 +711,11 @@ export const CONFIGURATION_PROPERTY_KEYS: string[] = [
   'DynamicListsUserSettingsStorage',
   'URLExternalDataStorage',
   'Content',
-  'DefaultReportForm',
-  'DefaultReportVariantForm',
-  'DefaultReportSettingsForm',
+  // Формы уровня приложения — из общего реестра, как и у видов метаданных.
+  // `DefaultReportAppearanceTemplate` в блок не входит: это макет оформления,
+  // а не форма, и ему не место в секции выбора форм.
+  ...getFormPropertyKeys('configuration'),
   'DefaultReportAppearanceTemplate',
-  'DefaultDynamicListSettingsForm',
-  'DefaultSearchForm',
-  'DefaultDataHistoryChangeHistoryForm',
-  'DefaultDataHistoryVersionDataForm',
-  'DefaultDataHistoryVersionDifferencesForm',
-  'DefaultCollaborationSystemUsersChoiceForm',
-  'AuxiliaryReportForm',
-  'AuxiliaryReportVariantForm',
-  'AuxiliaryReportSettingsForm',
-  'AuxiliaryDynamicListSettingsForm',
-  'AuxiliaryDataHistoryChangeHistoryForm',
-  'AuxiliaryDataHistoryVersionDataForm',
-  'AuxiliaryDataHistoryVersionDifferencesForm',
-  'AuxiliaryCollaborationSystemUsersChoiceForm',
   'RequiredMobileApplicationPermissions',
   'UsedMobileApplicationFunctionalities',
   'StandaloneConfigurationRestrictionRoles',
@@ -750,7 +743,6 @@ export const CONFIGURATION_PROPERTY_KEYS: string[] = [
   'Version85InterfaceMigrationMode',
   'DatabaseTablespacesUseMode',
   'CompatibilityMode',
-  'DefaultConstantsForm',
 ];
 
 /** Порядок ключей корня по типу объекта */
@@ -759,7 +751,7 @@ export function getRootPropertyKeyOrder(rootMetaKind: NodeKind): string[] {
     return ['Name', 'Synonym', 'Comment', 'Type'];
   }
   if (rootMetaKind === 'ExchangePlan') {
-    return [...COMMON_ROOT_META_PROPERTY_KEYS, ...EXCHANGE_PLAN_ROOT_EXTRA_KEYS];
+    return [...buildCommonRootKeys(rootMetaKind), ...EXCHANGE_PLAN_ROOT_EXTRA_KEYS];
   }
   if (rootMetaKind === 'Enum') {
     return ENUM_ROOT_META_PROPERTY_KEYS;
@@ -837,7 +829,7 @@ export function getRootPropertyKeyOrder(rootMetaKind: NodeKind): string[] {
     return STYLE_ITEM_ROOT_META_PROPERTY_KEYS;
   }
   if (rootMetaKind === 'InformationRegister' || rootMetaKind === 'CalculationRegister') {
-    return INFORMATION_REGISTER_ROOT_META_PROPERTY_KEYS;
+    return buildInformationRegisterLikeKeys(rootMetaKind);
   }
   if (rootMetaKind === 'AccumulationRegister') {
     return ACCUMULATION_REGISTER_ROOT_META_PROPERTY_KEYS;
@@ -846,10 +838,10 @@ export function getRootPropertyKeyOrder(rootMetaKind: NodeKind): string[] {
     return ACCOUNTING_REGISTER_ROOT_META_PROPERTY_KEYS;
   }
   if (rootMetaKind === 'BusinessProcess') {
-    return mergePropertyKeys(COMMON_ROOT_META_PROPERTY_KEYS, DOCUMENT_LIKE_ROOT_EXTRA_KEYS, ['Task', 'CreateTaskInPrivilegedMode']);
+    return mergePropertyKeys(buildCommonRootKeys(rootMetaKind), DOCUMENT_LIKE_ROOT_EXTRA_KEYS, ['Task', 'CreateTaskInPrivilegedMode']);
   }
   if (rootMetaKind === 'Task') {
-    return mergePropertyKeys(COMMON_ROOT_META_PROPERTY_KEYS, DOCUMENT_LIKE_ROOT_EXTRA_KEYS, [
+    return mergePropertyKeys(buildCommonRootKeys(rootMetaKind), DOCUMENT_LIKE_ROOT_EXTRA_KEYS, [
       'TaskNumberAutoPrefix',
       'DescriptionLength',
       'Addressing',
@@ -858,10 +850,10 @@ export function getRootPropertyKeyOrder(rootMetaKind: NodeKind): string[] {
     ]);
   }
   if (rootMetaKind === 'ChartOfCharacteristicTypes') {
-    return mergePropertyKeys(CATALOG_ROOT_META_PROPERTY_KEYS, ['CharacteristicExtValues', 'Type']);
+    return mergePropertyKeys(buildCatalogLikeRootKeys(rootMetaKind), ['CharacteristicExtValues', 'Type']);
   }
   if (rootMetaKind === 'ChartOfAccounts') {
-    return mergePropertyKeys(CATALOG_ROOT_META_PROPERTY_KEYS, [
+    return mergePropertyKeys(buildCatalogLikeRootKeys(rootMetaKind), [
       'ExtDimensionTypes',
       'MaxExtDimensionCount',
       'CodeMask',
@@ -870,13 +862,13 @@ export function getRootPropertyKeyOrder(rootMetaKind: NodeKind): string[] {
     ]);
   }
   if (rootMetaKind === 'ChartOfCalculationTypes') {
-    return mergePropertyKeys(CATALOG_ROOT_META_PROPERTY_KEYS, [
+    return mergePropertyKeys(buildCatalogLikeRootKeys(rootMetaKind), [
       'DependenceOnCalculationTypes',
       'BaseCalculationTypes',
       'ActionPeriodUse',
     ]);
   }
-  return COMMON_ROOT_META_PROPERTY_KEYS;
+  return buildCommonRootKeys(rootMetaKind);
 }
 
 export function hasExplicitRootPropertyContract(rootMetaKind: NodeKind): boolean {
@@ -917,39 +909,56 @@ export function applyDocumentPropertySections(properties: ObjectPropertiesCollec
   });
 }
 
+/**
+ * Относит свойства выбора форм к секции «Формы».
+ *
+ * Секция не косметика: панель рендерит блок с этим заголовком отдельным
+ * контролом выбора формы (вкладки «Основные»/«Дополнительные», кнопки выбора и
+ * очистки). Пока секцию проставляли только справочник и документ, у остальных
+ * видов — обработки, отчёта, журнала, регистров, перечисления, хранилища
+ * настроек — свойства форм попадали в общий список как безымянная строка, и
+ * выбора формы не было вовсе. Применяется ко всем видам, поверх собственных
+ * карт секций справочника/документа (там для этих ключей ровно те же значения).
+ */
+export function applyFormPropertySection(properties: ObjectPropertiesCollection): ObjectPropertiesCollection {
+  return properties.map((property) => (isFormPropertyKey(property.key)
+    ? { ...property, section: FORM_PROPERTY_SECTION.title, sectionOrder: FORM_PROPERTY_SECTION.order }
+    : property));
+}
+
 export function isTypeAwareRootKind(rootMetaKind: NodeKind): rootMetaKind is 'Constant' | 'CommonAttribute' {
   return rootMetaKind === 'Constant' || rootMetaKind === 'CommonAttribute';
 }
 
-export function getTypedFieldPropertyKeyOrder(elementFullXml: string, ownerKind?: string): string[] {
-  const openingTag = extractOpeningTagName(elementFullXml);
-  const tag = openingTag ? stripXmlTagNamespacePrefix(openingTag) : '';
-  const typeInner = summarizeTypeBlock(elementFullXml);
-  if (
-    typeInner &&
-    (tag === 'Attribute' || tag === 'AddressingAttribute' || tag === 'Dimension' || tag === 'Resource' || tag === 'Column')
-  ) {
-    return [
-      'Name',
-      'Synonym',
-      'Comment',
-      'Type',
-      ...getDisplayTypedFieldPropertyKeys(toTypedFieldOwnerKind(tag), typeInner, ownerKind, elementFullXml),
-    ];
-  }
-  return TYPED_FIELD_PROPERTY_KEYS;
-}
-
-function toTypedFieldOwnerKind(tagName: 'Attribute' | 'AddressingAttribute' | 'Dimension' | 'Resource' | 'Column'): TypeAwarePropertyOwnerKind {
-  return tagName === 'Column' ? 'Attribute' : tagName;
+/**
+ * Порядок ключей панели свойств типизированного поля.
+ *
+ * `role` передаёт вызывающий (узел дерева знает, реквизит это или колонка ТЧ):
+ * тег XML источником решения быть не может — колонка ТЧ сериализуется тем же
+ * `<Attribute>`, что и реквизит верхнего уровня, а состав свойств у них разный.
+ * Неизвестная роль/владелец — не повод уходить на общий список без учёта
+ * владельца: состав объединяется по кандидатам (см. getDisplayTypedFieldPropertyKeys).
+ */
+export function getTypedFieldPropertyKeyOrder(
+  elementFullXml: string,
+  ownerKind?: string,
+  role?: TypeAwarePropertyOwnerKind
+): string[] {
+  return [
+    'Name',
+    'Synonym',
+    'Comment',
+    'Type',
+    ...getDisplayTypedFieldPropertyKeys(role, summarizeTypeBlock(elementFullXml), ownerKind, elementFullXml),
+  ];
 }
 
 export function getTypeAwarePropertyKeyOrder(elementFullXml: string, kind: TypeAwarePropertyOwnerKind): string[] {
-  const typeInner = summarizeTypeBlock(elementFullXml);
-  if (!typeInner) {
-    return ['Name', 'Synonym', 'Comment', 'Type'];
-  }
-  return ['Name', 'Synonym', 'Comment', 'Type', ...getDisplayTypedFieldPropertyKeys(kind, typeInner)];
+  // Константа и общий реквизит — самовладеющие: роль и владелец совпадают.
+  // Основная форма константы — не свойство типизированного поля, а свойство
+  // самого объекта (999 из 999 констант эталона несут `<DefaultForm/>`),
+  // поэтому она добавляется поверх набора типизированного поля.
+  return [...getTypedFieldPropertyKeyOrder(elementFullXml, kind, kind), ...getFormPropertyKeys(kind)];
 }
 
 function mergePropertyKeys(...groups: string[][]): string[] {

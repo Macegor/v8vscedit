@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { ObjectXmlReader } from '../../infra/xml/ObjectXmlReader';
+import { skipWithoutCorpus } from './support/corpus';
 
 /**
  * Донор: `example/2.21/src/cf/HTTPServices/ServiceEntry.xml` — HTTPService
@@ -14,6 +15,12 @@ import { ObjectXmlReader } from '../../infra/xml/ObjectXmlReader';
 const SERVICE_ENTRY_XML = path.resolve(__dirname, '../../../example/2.21/src/cf/HTTPServices/ServiceEntry.xml');
 
 suite('ObjectXmlReader.parse — HTTPService → URLTemplate → Method (донор ServiceEntry.xml)', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('читает ровно 2 URLTemplate верхнего уровня с именами/синонимами из донора', () => {
     const reader = new ObjectXmlReader();
     const result = reader.read(SERVICE_ENTRY_XML);

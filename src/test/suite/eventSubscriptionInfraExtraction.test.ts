@@ -5,6 +5,7 @@ import * as path from 'path';
 import { readDefinedTypeInnerXml, resolveConfigurationXml, stripXmlTags } from '../../infra/xml';
 import { EventSubscriptionPropertyService } from '../../ui/views/properties/EventSubscriptionPropertyService';
 import { parseMetadataType } from '../../ui/views/properties/MetadataTypeService';
+import { skipWithoutCorpus } from './support/corpus';
 
 const EXAMPLE_CF = path.resolve(__dirname, '../../../example/2.20/src/cf');
 const DEFINED_TYPES_DIR = path.join(EXAMPLE_CF, 'DefinedTypes');
@@ -31,7 +32,9 @@ const CONFIG_XML_PATH = path.join(EXAMPLE_CF, 'Configuration.xml');
  * stripXmlText внутри EventSubscriptionPropertyService).
  */
 suite('infra/xml — вынос чтения источников EventSubscription (A1)', () => {
-  test('resolveConfigurationXml поднимается от вложенного XML-пути реального объекта к Configuration.xml (walk-up)', () => {
+  test('resolveConfigurationXml поднимается от вложенного XML-пути реального объекта к Configuration.xml (walk-up)', function () {
+    // Тест работает на эталоне `example/` (не в git) — без корпуса пропускается.
+    skipWithoutCorpus(this);
     // Берём реальный вложенный путь: example/2.20/src/cf/EventSubscriptions/ПриЗаписиКонтрагента.xml —
     // Configuration.xml лежит на 2 уровня выше (EventSubscriptions/ → cf/).
     const eventSubscriptionXmlPath = path.join(EXAMPLE_CF, 'EventSubscriptions', 'ПриЗаписиКонтрагента.xml');
@@ -41,7 +44,9 @@ suite('infra/xml — вынос чтения источников EventSubscript
     assert.strictEqual(resolved, CONFIG_XML_PATH, 'walk-up должен найти корневой Configuration.xml конфигурации');
   });
 
-  test('resolveConfigurationXml поднимается от ГЛУБОКО вложенного пути (колонка табличной части документа)', () => {
+  test('resolveConfigurationXml поднимается от ГЛУБОКО вложенного пути (колонка табличной части документа)', function () {
+    // Тест работает на эталоне `example/` (не в git) — без корпуса пропускается.
+    skipWithoutCorpus(this);
     // Ещё более глубокая вложенность: Documents/<Doc>.xml — сам путь к файлу объекта,
     // а не гипотетический вложенный каталог, потому что колонки ТЧ не имеют отдельных
     // XML-файлов в выгрузке 1С (они — узлы внутри Documents/<Doc>.xml).

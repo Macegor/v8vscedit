@@ -4,10 +4,17 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { sessionParameterHandler } from '../../ui/tree/nodeBuilders/sessionParameter';
 import { MetadataNode } from '../../ui/tree/TreeNode';
+import { skipWithoutCorpus } from './support/corpus';
 
 const EXAMPLE_CF = path.resolve(__dirname, '../../../example/2.20/src/cf');
 
 suite('sessionParameterHandler', () => {
+  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
+  // (единый гейт: support/corpus.ts).
+  suiteSetup(function () {
+    skipWithoutCorpus(this);
+  });
+
   test('Свойства параметра сеанса: порядок как в XML и тип', function () {
     const xmlPath = path.join(EXAMPLE_CF, 'SessionParameters', 'АвторизованныйПользователь.xml');
     if (!fs.existsSync(xmlPath)) {

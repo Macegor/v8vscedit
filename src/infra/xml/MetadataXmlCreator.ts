@@ -56,12 +56,17 @@ export class MetadataXmlCreator {
     fs.mkdirSync(typeDir, { recursive: true });
     const formatVersion = resolveConfigFormatVersion(options.configRoot);
     const ruleset = resolveFormatRuleset(formatVersion);
-    const templateType = options.kind === 'CommonTemplate' ? resolveTemplateType(options.templateType) : undefined;
+    // `resolveTemplateType` всегда возвращает значение, поэтому внутри ветки
+    // CommonTemplate фолбэк недостижим. Вычисляем тип макета отдельно от
+    // расширенного `TemplateType | undefined`, который нужен только генератору
+    // корневого XML, — иначе появляется ветка, которую нечем покрыть.
+    const commonTemplateType = resolveTemplateType(options.templateType);
+    const templateType = options.kind === 'CommonTemplate' ? commonTemplateType : undefined;
     fs.writeFileSync(xmlPath, buildRootObjectXml(options.kind, options.name, formatVersion, ruleset, templateType), 'utf-8');
 
     const changedFiles = [xmlPath];
     if (options.kind === 'CommonTemplate') {
-      changedFiles.push(...ensureTemplateContentFiles(objectDir, templateType ?? 'SpreadsheetDocument', formatVersion));
+      changedFiles.push(...ensureTemplateContentFiles(objectDir, commonTemplateType, formatVersion, ruleset));
     }
     for (const modulePath of getDefaultModulePaths(options.kind, objectDir)) {
       ensureEmptyFile(modulePath);
@@ -84,7 +89,7 @@ export class MetadataXmlCreator {
     if (options.kind === 'BusinessProcess') {
       const flowchartPath = path.join(objectDir, 'Ext', 'Flowchart.xml');
       fs.mkdirSync(path.dirname(flowchartPath), { recursive: true });
-      fs.writeFileSync(flowchartPath, buildBusinessProcessFlowchartXml(formatVersion), 'utf-8');
+      fs.writeFileSync(flowchartPath, buildBusinessProcessFlowchartXml(formatVersion, ruleset), 'utf-8');
       changedFiles.push(flowchartPath);
     }
 

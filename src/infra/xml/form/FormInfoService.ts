@@ -3,7 +3,6 @@
  * Структурно строит отчёт по форме: иерархия элементов, свойства,
  * AutoCommandBar, реквизиты, параметры, команды, события, BaseForm.
  */
-import * as fs from 'fs';
 import * as path from 'path';
 import {
   attr,
@@ -11,6 +10,7 @@ import {
   extractBlock,
   extractLocalizedContent,
   extractTag,
+  readFormXml,
   resolveFormXmlPath,
 } from './FormShared';
 import type {
@@ -35,12 +35,17 @@ const ALL_ELEMENT_TAGS = [
   'CalendarField', 'Table', 'Button', 'Pages', 'Page', 'CommandBar', 'Popup',
   'ButtonGroup', 'ExtendedTooltip', 'ContextMenu', 'AutoCommandBar',
   'SearchStringAddition', 'ViewStatusAddition', 'SearchControlAddition',
+  // «Широкие» виды полей управляемой формы: без них отчёт и проверки
+  // DataPath/CommandName просто не видели такие элементы.
+  'SpreadSheetDocumentField', 'HTMLDocumentField', 'TextDocumentField',
+  'ProgressBarField', 'FormattedDocumentField', 'ChartField', 'TrackBarField',
+  'PDFDocumentField', 'PlannerField', 'GraphicalSchemaField', 'GeographicalSchemaField',
 ];
 
 export class FormInfoService {
   info(options: FormInfoOptions): FormInfoResult {
     const formPath = resolveFormXmlPath(options.formPath);
-    const xml = fs.readFileSync(formPath, 'utf-8');
+    const xml = readFormXml(formPath);
     const elements = collectElements(xml);
     const attributes = collectAttributes(xml);
     const commands = collectCommands(xml);
