@@ -25,9 +25,12 @@ import {
 } from './TypedFieldPropertyRules';
 import {
   collectPropertyBlocks,
+  detectEol,
   detectPropertyIndent,
   findPropertiesRange,
+  insertBlockInCanonicalPosition,
 } from './typedField/PropertyBlockEditor';
+import { insertPropertyBlockInOrder } from './properties/PropertyInsert';
 
 interface XmlTextNode { '#text': string }
 type XmlElementNode = Record<string, XmlNodeList>;
@@ -329,7 +332,8 @@ export class ObjectXmlReader {
       // Фактически недостижим: `xml` здесь — целиком прочитанный файл объекта
       // метаданных по пути из MetaPathResolver, а такой файл всегда обёрнут
       // <MetaDataObject>. Отказ от флага — отдельное решение, не косметика.
-      detectRootObjectKind(xml, true)
+      detectRootObjectKind(xml, true),
+      isRootTypeTargetKind(options.targetKind)
     );
     if (updatedTarget === targetXml) {
       return false;
@@ -405,7 +409,16 @@ export class ObjectXmlReader {
     }
 
     const targetXml = xml.slice(targetRange.start, targetRange.end);
-    const updatedTarget = updatePropertyInElement(targetXml, options.propertyKey, options.valueKind, options.value);
+    const updatedTarget = updatePropertyInElement(
+      targetXml,
+      options.propertyKey,
+      options.valueKind,
+      options.value,
+      // Канон порядка снят с КОРНЕЙ выгрузки, поэтому вид владельца передаётся
+      // только для самого объекта: у дочернего элемента (реквизит, колонка,
+      // команда) своя ось состава свойств, и ранг ключа корня там не при чём.
+      options.targetKind === 'Self' ? detectRootObjectKind(xml) : undefined
+    );
     if (updatedTarget === targetXml) {
       return false;
     }
@@ -549,7 +562,8 @@ function updateTypeInElement(
   typeInnerXml: string,
   propertyName: 'Type' | 'Source' | 'CommandParameterType' = 'Type',
   role?: TypeAwarePropertyOwnerKind,
-  ownerKind?: string
+  ownerKind?: string,
+  isRootTarget = false
 ): string {
   // Отступ берётся у заменяемого блока (или у соседнего свойства), а не
   // захардкожен: у колонки ТЧ он на два уровня глубже, чем у реквизита
@@ -560,7 +574,8 @@ function updateTypeInElement(
     elementXml,
     propertyName,
     `<${propertyName}>\n${innerXml}\n${indent}</${propertyName}>`,
-    indent
+    ownerKind,
+    isRootTarget
   );
   // Состав свойств перестраивается только у типизированного поля и только при
   // смене <Type>: у Source подписки на событие и CommandParameterType команды
@@ -571,12 +586,25 @@ function updateTypeInElement(
   return normalizeTypedFieldPropertiesAfterTypeChange(updated, role, innerXml, ownerKind);
 }
 
-/** Ставит готовый блок типа на место свойства; `null` — ставить некуда. */
+/**
+ * Ставит готовый блок типа на место свойства; `null` — ставить некуда.
+ *
+ * Отсутствующий блок КОРНЕВОГО объекта (`isRootTarget`) встаёт по рангу из
+ * `ROOT_PROPERTY_ORDER`: прежняя эвристика «сразу за Comment» давала верное
+ * место случайно и только у части видов — у общей команды эталон кладёт
+ * `CommandParameterType` десятым, после `IncludeHelpInContents`.
+ *
+ * У типизированного ПОЛЯ канон свой (`Name, Synonym, Comment, Type`), поэтому
+ * там якорь остаётся прежним — но ищется по разобранным блокам, а не регэкспом
+ * `<Comment>…</Comment>`: пустой комментарий платформа пишет самозакрытым
+ * `<Comment/>`, и парная регулярка на нём промахивалась на `<Name>`.
+ */
 function replaceOrInsertTypeBlock(
   elementXml: string,
   propertyName: string,
   typeBlock: string,
-  indent: string
+  ownerKind?: string,
+  isRootTarget = false
 ): string | null {
   const propertyRe = new RegExp(`<${propertyName}>[\\s\\S]*?<\\/${propertyName}>`);
   if (propertyRe.test(elementXml)) {
@@ -591,13 +619,36 @@ function replaceOrInsertTypeBlock(
     return null;
   }
   const propsInner = propertiesMatch[1];
-  const indentedBlock = `${indent}${typeBlock}`;
-  const nextPropsInner = /<Comment[\s\S]*?<\/Comment>/.test(propsInner)
-    ? propsInner.replace(/(<Comment[\s\S]*?<\/Comment>)/, (_m, g1: string) => `${g1}\n${indentedBlock}`)
-    : /<Name[\s\S]*?<\/Name>/.test(propsInner)
-    ? propsInner.replace(/(<Name[\s\S]*?<\/Name>)/, (_m, g1: string) => `${g1}\n${indentedBlock}`)
-    : `${propsInner}\n${indentedBlock}`;
-  return elementXml.replace(propsInner, () => nextPropsInner);
+  const nextPropsInner = isRootTarget
+    ? insertPropertyBlockInOrder(propsInner, ownerKind, propertyName, typeBlock)
+    : insertTypeBlockAfterCommentOrName(propsInner, typeBlock);
+  // Подстановка по смещению, а не `replace(propsInner, …)`: на пустом парном
+  // `<Properties></Properties>` содержимое — пустая строка, и `String.replace('')`
+  // вставил бы блок в позицию 0 (см. updatePropertyInElement).
+  const innerStart = propertiesMatch.index + '<Properties>'.length;
+  return elementXml.slice(0, innerStart) + nextPropsInner + elementXml.slice(innerStart + propsInner.length);
+}
+
+/**
+ * Якоря канона типизированного ПОЛЯ: `Name`, `Synonym`, `Comment`, `Type`.
+ * `Synonym` в карте не нужен — он между двумя якорями, и место типа от него не
+ * зависит; вставляемому блоку даётся ранг 2, то есть «после обоих».
+ */
+const TYPED_FIELD_TYPE_ANCHOR_RANKS: ReadonlyMap<string, number> = new Map([
+  ['Name', 0],
+  ['Comment', 1],
+]);
+
+/** Тип поля встаёт сразу за комментарием, иначе — за именем (та же механика, что у корня). */
+function insertTypeBlockAfterCommentOrName(propsInner: string, typeBlock: string): string {
+  return insertBlockInCanonicalPosition(
+    propsInner,
+    collectPropertyBlocks(propsInner),
+    (key) => TYPED_FIELD_TYPE_ANCHOR_RANKS.get(key),
+    2,
+    typeBlock,
+    detectEol(propsInner)
+  );
 }
 
 /**
@@ -633,11 +684,24 @@ function indentTypeInner(typeInnerXml: string, indent: string): string {
     .join('\n');
 }
 
+/**
+ * Правит одно свойство внутри `<Properties>` элемента.
+ *
+ * Фолбэк «ключ без ранга» здесь РАЗРЕШАЮЩИЙ (свойство дописывается в конец) и
+ * этим намеренно отличается от `ConfigurationXmlEditor.modifyConfigurationProperty`,
+ * где неизвестный ключ по-прежнему отбивается отказом: сюда приходят и свойства
+ * дочерних элементов, у которых канона порядка нет вовсе, и запрет ломал бы
+ * существующую запись их свойств.
+ *
+ * @param ownerKind корневой тег XML владельца (`Catalog`, `Configuration`, …)
+ *   или `undefined` для дочернего элемента — вход {@link insertPropertyBlockInOrder}.
+ */
 function updatePropertyInElement(
   elementXml: string,
   propertyKey: string,
   valueKind: 'string' | 'boolean' | 'localizedString' | 'metadataReferenceList' | 'metadataFieldList',
-  value: string | boolean | string[]
+  value: string | boolean | string[],
+  ownerKind?: string
 ): string {
   const propertiesMatch = /<Properties>([\s\S]*?)<\/Properties>/.exec(elementXml);
   if (!propertiesMatch) {
@@ -656,20 +720,24 @@ function updatePropertyInElement(
     ? updateLocalizedPropertyContent(propertyMatch[0], value)
     : buildPropertyValueBlock(propertyKey, valueKind, value, detectPropertyBlockIndent(elementXml, propertyKey));
 
-  // Если свойство ещё не объявлено в Properties, вставляем его в конец блока
-  // перед закрывающим </Properties>. Раньше вставка шла сразу после <Name> или
-  // <Comment>, из-за чего ServerCall у CommonModule оказывался перед Synonym и
-  // 1С не принимал такой порядок (xs:sequence в схеме).
+  // Отсутствующее свойство встаёт на КАНОНИЧЕСКОЕ место (ROOT_PROPERTY_ORDER),
+  // а не в конец блока: 1С принимает `<Properties>` только в порядке xs:sequence
+  // своей схемы, а выбор формы на выгрузке 2.20 (тега в файле нет) до этого
+  // уезжал за Explanation.
   const nextPropsInner = propertyMatch
     ? propsInner.replace(propertyMatch[0], () => nextValueBlock)
     : selfClosingRe.test(propsInner)
     ? propsInner.replace(selfClosingRe, () => nextValueBlock)
-    : appendPropertyAtEnd(propsInner, nextValueBlock);
+    : insertPropertyBlockInOrder(propsInner, ownerKind, propertyKey, nextValueBlock);
 
   if (nextPropsInner === propsInner) {
     return elementXml;
   }
-  return elementXml.replace(propsInner, () => nextPropsInner);
+  // Подстановка по СМЕЩЕНИЮ, а не `elementXml.replace(propsInner, …)`: на пустом
+  // парном `<Properties></Properties>` содержимое — пустая строка, и
+  // `String.replace('')` вставил бы свойство в позицию 0, то есть перед `<?xml`.
+  const innerStart = propertiesMatch.index + '<Properties>'.length;
+  return elementXml.slice(0, innerStart) + nextPropsInner + elementXml.slice(innerStart + propsInner.length);
 }
 
 function buildPropertyValueBlock(
@@ -740,15 +808,4 @@ function updateLocalizedPropertyContent(propertyBlock: string, value: string | b
     return propertyBlock.replace(/<v8:content\s*\/>/, () => `<v8:content>${content}</v8:content>`);
   }
   return propertyBlock.replace(contentRe, (_m, open: string, close: string) => `${open}${content}${close}`);
-}
-
-function appendPropertyAtEnd(propsInner: string, valueBlock: string): string {
-  const trailingWhitespaceMatch = /([\t ]*)$/.exec(propsInner);
-  const trailingIndent = trailingWhitespaceMatch ? trailingWhitespaceMatch[1] : '';
-  // Восстанавливаем закрывающий отступ Properties (например, "\t\t"), чтобы
-  // новая строка вставала на ту же глубину, что и существующие свойства.
-  const innerIndent = trailingIndent ? `${trailingIndent}\t` : '';
-  const base = propsInner.replace(/[\t ]*$/, '');
-  const baseTrimmed = base.replace(/\n+$/, '');
-  return `${baseTrimmed}\n${innerIndent}${valueBlock}\n${trailingIndent}`;
 }
