@@ -161,7 +161,9 @@ src/
 │   │                                  # импорта/обновления БД (Container.markConfigurationsClean,
 │   │                                  # см. docs/architecture.md)
 │   ├── cfe/                          # расширения: CfeBorrowService, CfeDiffService, CfePatchMethodService
-│   ├── support/                      # SupportInfoReader/Service (ParentConfigurations.bin), Logger
+│   ├── support/                      # ParentConfigurationsParser (чистый разбор bin), SupportMode,
+│   │                                  # SupportInfoService (кэш + режим по пути), Logger — см.
+│   │                                  # docs/metadata-navigator.md#поддержка-поставщика-parentconfigurationsbin
 │   ├── cache/                        # MetadataCache, hashCache (CLI)
 │   ├── repository/                   # хранилище 1С, локальные захваты
 │   ├── git/                          # статус Git для узлов метаданных (GitMetadataStatusService,
@@ -209,6 +211,8 @@ src/
 │   │   │                              # historyGraphController — read-only переиспользование движка
 │   │   │                              # changes/; см. docs/git-history-graph.md
 │   │   └── subsystem|search|repository|environment|standalone|…
+│   ├── support/                      # supportPresentation (единая таблица представления режимов
+│   │                                  # поддержки, чистая), SupportWatcher (сброс кэша по bin)
 │   ├── commands/                     # CommandRegistry.registerAll + подпапки по доменам
 │   ├── git/                          # OnecGitContentProvider — схема onec-git для diff HEAD/индекс
 │   ├── mcp/                          # V8McpServer (тонкий HTTP-фасад: транспорт MCP, служебные
@@ -469,6 +473,11 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
   должно. Граница гарантии — обрыв процесса, не потеря питания (`fsync` нет); временный путь не оканчивается
   на `.xml` (watcher `src/**/*.xml`). Почему это не та же механика, что staging-выгрузка CF — в
   [architecture.md](./docs/architecture.md#атомарная-запись-файлов-выгрузки-infrafsatomicfilewriterts).
+- **Новый режим/состояние поддержки** (см. [metadata-navigator.md](./docs/metadata-navigator.md#поддержка-поставщика-parentconfigurationsbin)):
+  значение в `infra/support/SupportMode.ts` → код в таблице `CODE_TO_MODE` (+ `STRICTNESS`) парсера
+  `ParentConfigurationsParser.ts` → запись в `SUPPORT_PRESENTATION` (`ui/support/supportPresentation.ts`) →
+  иконка `src/icons/{light,dark}/support-<имя>.svg` → значение DTO в `src-ui/shared/types/tree.ts` и
+  `src/ui/views/universal/_types.ts`. Гейты блокировок читают только `Locked` — новый режим их не меняет.
 - **Новая команда:** класс в `ui/commands/...` с `readonly id` → регистрация в `CommandRegistry.registerAll` → `package.json → contributes.commands` → при меню узла `contributes.menus` c `when: viewItem =~ /…/` → при хоткее `contributes.keybindings`.
 - **Новый потребитель пути формы** (MCP-инструмент или команда навигатора, которым нужно тело
   `Ext/Form.xml`, дескриптор формы или XML владельца по узлу дерева): только через
@@ -673,6 +682,14 @@ Vue-приложения (сборка `vite.webview.config.ts`, проверк�
    `git log --max-count` на каждый `historyLoadMore` (без курсора/`--skip`, осознанно ради детерминизма
    дорожек); резолвинг принадлежности файлов коммита объектам идёт по ТЕКУЩЕМУ списку `configRoots`, а не
    по структуре выгрузки на момент коммита — см. [git-history-graph.md](./docs/git-history-graph.md#известные-ограничения).
+10. Поддержка поставщика (см. [metadata-navigator.md](./docs/metadata-navigator.md#поддержка-поставщика-parentconfigurationsbin)):
+    команды-индикаторы `v8vscedit.support.*` не привязаны к меню (мёртвые) и не знают режима `removed`.
+11. `UUID_ATTR_RE` (regex по XML) живёт в `infra/support/SupportInfoService.ts`, а не в `infra/xml/`.
+12. Узел формы в дереве показывает режим владельца, а не самой формы (см. инвариант `xmlPath` узла формы).
+13. `SupportModeDto` объявлен дважды в `src/ui` (`ui/support/supportPresentation.ts` и `ui/views/universal/_types.ts`).
+14. Сегмент `Ext` в `resolveOwnerXmlForExtContent` ищется по первому вхождению: объект/папка с именем `Ext`
+    даст режим `None`.
+15. `SupportInfoService.loadConfig` не обрабатывает `EBUSY` при чтении bin (платформа может держать файл).
 
 ## `.cursor/`, `.codex/`, `.claude/skills/` — это доменные 1С-скилы, а не разработка расширения
 
