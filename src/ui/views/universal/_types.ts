@@ -7,6 +7,9 @@
 /** Признак принадлежности объекта к основной конфигурации или расширению */
 export type OwnershipKind = 'own' | 'borrowed' | 'unknown';
 
+/** Режим поддержки объекта — зеркало `src-ui/shared/types/tree.ts` */
+export type SupportModeDto = 'none' | 'editable' | 'locked' | 'removed';
+
 /** DTO иконки */
 export interface IconDto {
   readonly kind: 'codicon' | 'metadata' | 'asset' | 'none';
@@ -32,8 +35,8 @@ export interface TreeNodeDto {
   readonly icon?: IconDto;
   readonly kind?: string;
   readonly ownership?: OwnershipKind;
-  /** Режим поддержки: none / editable / locked */
-  readonly supportMode?: 'none' | 'editable' | 'locked';
+  /** Режим поддержки: none / editable / locked / removed */
+  readonly supportMode?: SupportModeDto;
   readonly hasChildren: boolean;
   readonly loaded: boolean;
   readonly children?: TreeNodeDto[];

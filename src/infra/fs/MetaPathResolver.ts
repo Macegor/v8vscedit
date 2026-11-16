@@ -36,16 +36,38 @@ export class MetaPathResolver {
       return null;
     }
 
-    const deepPath = path.join(configRoot, folder, name, `${name}.xml`);
-    if (fs.existsSync(deepPath)) {
-      return deepPath;
-    }
+    return this.firstExisting(objectXmlCandidates(path.join(configRoot, folder), name));
+  }
 
-    const flatPath = path.join(configRoot, folder, `${name}.xml`);
-    if (fs.existsSync(flatPath)) {
-      return flatPath;
+  /**
+   * XML-владелец файла из каталога `Ext` (модуль, тело формы, содержимое макета,
+   * командный интерфейс и т.п.): дескриптор формы/команды/макета или объект.
+   * Кандидаты для каталога `<Папка>/<Имя>` — плоский `<Папка>/<Имя>.xml`, затем
+   * глубокий `<Папка>/<Имя>/<Имя>.xml`. Если дескриптора нет (у формы бывает только
+   * тело), подъём идёт на ДВА уровня — через `Forms/<Имя>` к объекту-владельцу.
+   * `Ext` прямо в корне — модули конфигурации, их владелец `Configuration.xml`.
+   */
+  resolveOwnerXmlForExtContent(configRoot: string, filePath: string): string | null {
+    const rel = path.relative(configRoot, filePath);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) {
+      return null;
     }
-
+    const segments = rel.split(/[\\/]/);
+    const extIdx = segments.findIndex((s) => s.toLowerCase() === 'ext');
+    if (extIdx < 0) {
+      return null;
+    }
+    if (extIdx === 0) {
+      return this.firstExisting([path.join(configRoot, 'Configuration.xml')]);
+    }
+    // Каталог ближе двух сегментов от корня — это папка вида (`Documents/Ext`), не объект.
+    for (let depth = extIdx; depth >= 2; depth -= 2) {
+      const parent = path.join(configRoot, ...segments.slice(0, depth - 1));
+      const found = this.firstExisting(objectXmlCandidates(parent, segments[depth - 1]).reverse());
+      if (found) {
+        return found;
+      }
+    }
     return null;
   }
 
@@ -196,6 +218,11 @@ export class MetaPathResolver {
   }
 }
 
+/** Глубокая `<Папка>/<Имя>/<Имя>.xml` и плоская `<Папка>/<Имя>.xml` раскладки выгрузки. */
+function objectXmlCandidates(folderDir: string, name: string): string[] {
+  return [path.join(folderDir, name, `${name}.xml`), path.join(folderDir, `${name}.xml`)];
+}
+
 // ---------------------------------------------------------------------------
 // Функции-фасады для совместимости с legacy-кодом.
 // Точно так же, как работал `ModulePathResolver.ts`; внутри — делегат в класс.
@@ -240,6 +267,11 @@ export function resolveObjectXmlPath(
   objectName: string
 ): string | null {
   return singleton.resolveXml(configRoot, objectType as MetaKind, objectName);
+}
+
+/** XML-владелец файла из каталога `Ext` (см. {@link MetaPathResolver.resolveOwnerXmlForExtContent}) */
+export function resolveOwnerXmlForExtContent(configRoot: string, filePath: string): string | null {
+  return singleton.resolveOwnerXmlForExtContent(configRoot, filePath);
 }
 
 export function getObjectModulePath(node: NodeLike): string | null {

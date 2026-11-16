@@ -13,6 +13,11 @@ import { resolveWebviewLocalResourceRoots } from '../webview/webviewResourceRoot
 import { isWebviewCommandAllowed } from '../webview/webviewCommandGuard';
 import type { MetadataTreeProvider } from '../../tree/MetadataTreeProvider';
 import type { MetadataNode } from '../../tree/TreeNode';
+import {
+  SUPPORT_PRESENTATION,
+  supportModeFromContextValue,
+  type SupportModeDto,
+} from '../../support/supportPresentation';
 
 // ── DTO-типы (зеркалят src-ui/shared/types) ──
 
@@ -43,7 +48,7 @@ interface TreeNodeDto {
   readonly icon?: IconDto;
   readonly kind?: string;
   readonly ownership?: 'own' | 'borrowed' | 'unknown';
-  readonly supportMode?: 'none' | 'editable' | 'locked';
+  readonly supportMode?: SupportModeDto;
   readonly hasChildren: boolean;
   readonly loaded: boolean;
   readonly children?: TreeNodeDto[];
@@ -515,10 +520,10 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
     return 'unknown';
   }
 
-  private supportMode(ctx: string): 'none' | 'editable' | 'locked' {
-    if (ctx.includes('-support2')) {return 'locked';}
-    if (ctx.includes('-support1')) {return 'editable';}
-    return 'none';
+  /** Без суффикса (конфигурация без данных поддержки) — 'none', как и для собственного объекта. */
+  private supportMode(ctx: string): SupportModeDto {
+    const mode = supportModeFromContextValue(ctx);
+    return mode === undefined ? 'none' : SUPPORT_PRESENTATION[mode].dto;
   }
 
   /** Действия узла повторяют меню старой HTML-панели из main. */
@@ -547,12 +552,11 @@ export class UniversalPanelViewProvider implements vscode.WebviewViewProvider, v
   private buildStateIcons(node: MetadataNode): TreeNodeStateIconDto[] {
     const contextValue = node.contextValue ?? '';
     const result: TreeNodeStateIconDto[] = [];
-    if (contextValue.includes('-support2')) {
-      result.push(this.themeStateIcon('support-locked', 'На поддержке, редактирование запрещено'));
-    } else if (contextValue.includes('-support1')) {
-      result.push(this.themeStateIcon('support-editable', 'На поддержке, редактирование разрешено'));
-    } else if (contextValue.includes('-support0')) {
-      result.push(this.themeStateIcon('support-none', 'Не на поддержке'));
+    // Иконка только при наличии суффикса: у конфигурации без bin индикатор поддержки не показывается.
+    const supportMode = supportModeFromContextValue(contextValue);
+    if (supportMode !== undefined) {
+      const presentation = SUPPORT_PRESENTATION[supportMode];
+      result.push(this.themeStateIcon(presentation.icon, presentation.title));
     }
 
     if (contextValue.includes('-repoLocked')) {

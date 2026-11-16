@@ -17,6 +17,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import type { ConfigEntry } from '../../../infra/fs/ConfigLocator';
+import type { SupportInfoService } from '../../../infra/support/SupportInfoService';
 import { GitMetadataStatusService } from '../../../infra/git/GitMetadataStatusService';
 import { MetadataTreeProvider } from '../../../ui/tree/MetadataTreeProvider';
 import { UniversalPanelViewProvider } from '../../../ui/views/universal/UniversalPanelViewProvider';
@@ -32,11 +33,29 @@ export interface ActionDto {
   readonly icon?: { readonly kind: string; readonly name?: string };
 }
 
+export interface StateIconDtoLike {
+  readonly title: string;
+  readonly icon: { readonly kind: string; readonly lightUri?: string; readonly darkUri?: string; readonly name?: string };
+}
+
 export interface TreeNodeDtoLike {
   readonly id: string;
   readonly kind?: string;
   readonly label: string;
   readonly actions: readonly ActionDto[];
+  readonly supportMode?: string;
+  readonly hasChildren?: boolean;
+  readonly stateIcons?: readonly StateIconDtoLike[];
+}
+
+/**
+ * Параметры фикстуры. Без них — прежнее поведение (две конфигурации из
+ * `example/`). `entries` + `supportService` позволяют строить панель над
+ * синтетической конфигурацией во временном каталоге и реальным сервисом поддержки.
+ */
+export interface UniversalPanelFixtureOptions {
+  readonly entries?: ConfigEntry[];
+  readonly supportService?: SupportInfoService;
 }
 
 interface InitialStateLike {
@@ -93,13 +112,15 @@ function extractInitialState(html: string): InitialStateLike {
   return JSON.parse(match[1]) as InitialStateLike;
 }
 
-export function createUniversalPanelFixture(): UniversalPanelFixture {
+export function createUniversalPanelFixture(options: UniversalPanelFixtureOptions = {}): UniversalPanelFixture {
   const cacheRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'v8vscedit-universal-panel-')));
-  const entries: ConfigEntry[] = [
+  const entries: ConfigEntry[] = options.entries ?? [
     { kind: 'cf', rootPath: CF_ROOT },
     { kind: 'cfe', rootPath: CFE_EVOLC_ROOT },
   ];
-  const treeProvider = new MetadataTreeProvider(entries, vscode.Uri.file(EXTENSION_ROOT), cacheRoot);
+  const treeProvider = new MetadataTreeProvider(
+    entries, vscode.Uri.file(EXTENSION_ROOT), cacheRoot, undefined, options.supportService
+  );
 
   const standaloneStatus = {
     configured: false,

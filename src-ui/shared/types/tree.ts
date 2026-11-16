@@ -4,7 +4,7 @@ import type { IconDto } from './icon';
 export type OwnershipKind = 'own' | 'borrowed' | 'unknown';
 
 /** Режим поддержки объекта */
-export type SupportMode = 'none' | 'editable' | 'locked';
+export type SupportMode = 'none' | 'editable' | 'locked' | 'removed';
 
 /** Действие, доступное для узла дерева */
 export interface TreeNodeActionDto {

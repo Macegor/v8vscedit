@@ -145,8 +145,8 @@ suite('UniversalPanelViewProvider — пункты меню CF-файла в к�
     skipWithoutCorpus(this);
   });
 
-  let cacheRoot: string;
-  let treeProvider: MetadataTreeProvider;
+  let cacheRoot: string | undefined;
+  let treeProvider: MetadataTreeProvider | undefined;
   let provider: UniversalPanelViewProvider;
   let fakeWebview: ReturnType<typeof createFakeWebview>;
   let initialState: InitialStateLike;
@@ -201,8 +201,11 @@ suite('UniversalPanelViewProvider — пункты меню CF-файла в к�
   });
 
   suiteTeardown(() => {
-    treeProvider.dispose();
-    fs.rmSync(cacheRoot, { recursive: true, force: true });
+    // Без корпуса setup пропущен — фикстуры не созданы, освобождать нечего.
+    treeProvider?.dispose();
+    if (cacheRoot) {
+      fs.rmSync(cacheRoot, { recursive: true, force: true });
+    }
   });
 
   test('корень основной конфигурации (configuration-hasXml) получает пункты выгрузки/загрузки CF с непустыми title/icon', () => {

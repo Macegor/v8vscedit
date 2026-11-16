@@ -5,6 +5,7 @@ import type { RepositoryService } from '../../infra/repository/RepositoryService
 import { parseConfigXml } from '../../infra/xml';
 import { getObjectLocationFromXml } from '../../infra/fs/MetaPathResolver';
 import type { SupportInfoService } from '../../infra/support/SupportInfoService';
+import { withSupportSuffix, withoutSupportSuffix } from '../support/supportPresentation';
 import {
   buildMetadataCacheScopeKey,
   type MetadataCacheAddTarget,
@@ -237,12 +238,12 @@ export class MetadataTreeProvider implements vscode.TreeDataProvider<MetadataNod
       return;
     }
     if (!this.supportService.hasConfigData(element.xmlPath)) {
+      // bin мог исчезнуть после прошлого getTreeItem — узел не должен хранить устаревший режим.
+      element.contextValue = withoutSupportSuffix(element.contextValue);
       return;
     }
 
-    const mode = this.supportService.getSupportMode(element.xmlPath);
-    const baseContextValue = (element.contextValue ?? '').replace(/-support\d$/, '');
-    element.contextValue = `${baseContextValue}-support${String(mode)}`;
+    element.contextValue = withSupportSuffix(element.contextValue, this.supportService.getSupportMode(element.xmlPath));
   }
 
   /** Привязывает узел к реальному файлу или каталогу, чтобы работали штатные git-декорации VS Code. */

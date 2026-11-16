@@ -8,11 +8,9 @@
  * репозиторный захват и не знает про `supportService` вовсе — эти тесты
  * фиксируют ожидаемое поведение и должны падать до реализации фикса.
  *
- * Фикстуры реальные: минимальный справочник копируется из
- * `example/2.21/src/cf`, а `ParentConfigurations.bin` синтезируется на
- * временной копии с UUID этого справочника/конфигурации и нужным кодом
- * режима — формат `<uuid>,<uuid>,<mode>` совпадает с тем, что разбирает
- * `SupportInfoService.parseBinFile`.
+ * Фикстуры синтетические: справочник создаёт реальный `MetadataXmlCreator`,
+ * а `ParentConfigurations.bin` строится общим хелпером с UUID этого
+ * справочника/конфигурации и кодом режима (0 — запрещено).
  */
 import * as assert from 'assert';
 import * as fs from 'fs';
@@ -22,13 +20,13 @@ import * as vscode from 'vscode';
 import { MetadataMutationService } from '../../ui/commands/metadata/MetadataMutationService';
 import { MetadataXmlCreator } from '../../infra/xml/MetadataXmlCreator';
 import { MetadataXmlRemover } from '../../infra/xml/MetadataXmlRemover';
-import { SupportInfoService } from '../../infra/support/SupportInfoService';
+import { SupportInfoService, SupportMode } from '../../infra/support/SupportInfoService';
 import { RepositoryService } from '../../infra/repository/RepositoryService';
 import { ProjectSecretStorage } from '../../infra/environment/ProjectSecretStorage';
 import type { SecretStore } from '../../infra/ai/AiSecretStorage';
 import type { Logger } from '../../infra/support/Logger';
 import type { CommandServices } from '../../ui/commands/_shared';
-import { skipWithoutCorpus } from './support/corpus';
+import { writeBin } from './support/parentConfigurationsBin';
 
 /** Фейковый SecretStore на Map — структурный контракт vscode.SecretStorage. */
 function createFakeSecretStore(): SecretStore {
@@ -51,8 +49,6 @@ function createFakeProjectSecretStorage(root: string): ProjectSecretStorage {
   return new ProjectSecretStorage(createFakeSecretStore(), root);
 }
 
-const EXAMPLE_CF = path.resolve(__dirname, '../../../example/2.21/src/cf');
-const SAMPLE_CATALOG_XML = path.join(EXAMPLE_CF, 'Catalogs', 'АвансовыйОтчетПрисоединенныеФайлы.xml');
 
 class TestLogger implements Logger {
   readonly messages: string[] = [];
@@ -62,12 +58,6 @@ class TestLogger implements Logger {
 }
 
 suite('MetadataMutationService — проверка SupportMode.Locked при add (C4)', () => {
-  // `example/` не отслеживается git — без корпуса сьют пропускается, а не падает
-  // (единый гейт: support/corpus.ts).
-  suiteSetup(function () {
-    skipWithoutCorpus(this);
-  });
-
   let tempDir: string;
   let configRoot: string;
 
@@ -99,31 +89,25 @@ suite('MetadataMutationService — проверка SupportMode.Locked при ad
     fs.writeFileSync(path.join(configRoot, 'Configuration.xml'), xml, 'utf-8');
   }
 
-  /** Копирует реальный справочник из example/2.21 в подготовленный configRoot и возвращает его uuid. */
+  /** Создаёт справочник реальным MetadataXmlCreator (плоская раскладка) и возвращает его путь и uuid. */
   function copySampleCatalog(): { xmlPath: string; uuid: string } {
-    const catalogsDir = path.join(configRoot, 'Catalogs');
-    fs.mkdirSync(catalogsDir, { recursive: true });
-    const content = fs.readFileSync(SAMPLE_CATALOG_XML, 'utf-8');
-    const destName = 'ТестовыйСправочник.xml';
-    fs.writeFileSync(path.join(catalogsDir, destName), content, 'utf-8');
-    const uuidMatch = /uuid="([0-9a-f-]{36})"/i.exec(content);
-    assert.ok(uuidMatch, 'В образце справочника должен быть uuid — иначе фикстура сломана');
-    return { xmlPath: path.join(catalogsDir, destName), uuid: uuidMatch[1].toLowerCase() };
+    const created = new MetadataXmlCreator().addRootObject({ configRoot, kind: 'Catalog', name: 'ТестовыйСправочник' });
+    assert.ok(created.success, `Не удалось создать справочник-фикстуру: ${created.errors.join('; ')}`);
+    const xmlPath = path.join(configRoot, 'Catalogs', 'ТестовыйСправочник.xml');
+    const uuidMatch = /uuid="([0-9a-f-]{36})"/i.exec(fs.readFileSync(xmlPath, 'utf-8'));
+    assert.ok(uuidMatch, 'В созданном справочнике должен быть uuid — иначе фикстура сломана');
+    return { xmlPath, uuid: uuidMatch[1].toLowerCase() };
   }
 
   /**
-   * Синтезирует `Ext/ParentConfigurations.bin` в формате, который разбирает
-   * `SupportInfoService.parseBinFile`: строки `<uuid>,<uuid>,<mode>`.
-   * Реальный `.bin` из example/ не подходит — там нет объектов с mode=2
-   * (запрет редактирования), поэтому режим синтезируется явно под тест.
+   * Синтезирует `Ext/ParentConfigurations.bin` общим хелпером: код 0 — «запрещено»
+   * (SupportMode.Locked), код — ПЕРВОЕ поле записи `code,0,uuid,uuid`.
    */
-  function writeParentConfigurationsBin(uuidToMode: ReadonlyMap<string, number>): void {
-    const extDir = path.join(configRoot, 'Ext');
-    fs.mkdirSync(extDir, { recursive: true });
-    const rows = [...uuidToMode.entries()]
-      .map(([uuid, mode]) => `${uuid},${uuid},${String(mode)}`)
-      .join(',');
-    fs.writeFileSync(path.join(extDir, 'ParentConfigurations.bin'), `{6,0,1,${rows}}`, 'latin1');
+  function writeParentConfigurationsBin(uuidToCode: ReadonlyMap<string, number>): void {
+    writeBin(configRoot, [{
+      name: 'Поставщик',
+      records: [...uuidToCode.entries()].map(([uuid, code]) => ({ code, uuid })),
+    }]);
   }
 
   function createCommandServices(overrides: {
@@ -151,12 +135,12 @@ suite('MetadataMutationService — проверка SupportMode.Locked при ad
   test('Отклоняет добавление дочернего элемента к объекту, помеченному SupportMode.Locked', async () => {
     writeConfigurationXml('11111111-1111-1111-1111-111111111111');
     const { xmlPath: catalogXmlPath, uuid: catalogUuid } = copySampleCatalog();
-    writeParentConfigurationsBin(new Map([[catalogUuid, 2]]));
+    writeParentConfigurationsBin(new Map([[catalogUuid, 0]]));
 
     const supportService = new SupportInfoService(new TestLogger());
     supportService.loadConfig(configRoot);
     // Убедимся, что фикстура действительно даёт Locked — иначе тест бессмыслен.
-    assert.strictEqual(supportService.getSupportMode(catalogXmlPath), 2, 'Фикстура должна давать SupportMode.Locked для справочника');
+    assert.strictEqual(supportService.getSupportMode(catalogXmlPath), SupportMode.Locked, 'Фикстура должна давать SupportMode.Locked для справочника');
 
     const repositoryService = new RepositoryService(tempDir, createFakeProjectSecretStorage(tempDir));
     const services = createCommandServices({ supportService, repositoryService });
@@ -186,12 +170,12 @@ suite('MetadataMutationService — проверка SupportMode.Locked при ad
   test('Отклоняет добавление корневого объекта, если корень конфигурации помечен SupportMode.Locked', async () => {
     const configUuid = '22222222-2222-2222-2222-222222222222';
     writeConfigurationXml(configUuid);
-    writeParentConfigurationsBin(new Map([[configUuid, 2]]));
+    writeParentConfigurationsBin(new Map([[configUuid, 0]]));
 
     const supportService = new SupportInfoService(new TestLogger());
     supportService.loadConfig(configRoot);
     const configXmlPath = path.join(configRoot, 'Configuration.xml');
-    assert.strictEqual(supportService.getSupportMode(configXmlPath), 2, 'Фикстура должна давать SupportMode.Locked для корня конфигурации');
+    assert.strictEqual(supportService.getSupportMode(configXmlPath), SupportMode.Locked, 'Фикстура должна давать SupportMode.Locked для корня конфигурации');
 
     const repositoryService = new RepositoryService(tempDir, createFakeProjectSecretStorage(tempDir));
     const services = createCommandServices({ supportService, repositoryService });
@@ -225,7 +209,7 @@ suite('MetadataMutationService — проверка SupportMode.Locked при ad
 
     const supportService = new SupportInfoService(new TestLogger());
     supportService.loadConfig(configRoot);
-    assert.strictEqual(supportService.getSupportMode(catalogXmlPath), 0, 'Без ParentConfigurations.bin режим должен быть None');
+    assert.strictEqual(supportService.getSupportMode(catalogXmlPath), SupportMode.None, 'Без ParentConfigurations.bin режим должен быть None');
 
     const repositoryService = new RepositoryService(tempDir, createFakeProjectSecretStorage(tempDir));
     const services = createCommandServices({ supportService, repositoryService });

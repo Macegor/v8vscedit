@@ -45,7 +45,6 @@ import { MetadataChangesViewProvider } from './ui/views/changes/MetadataChangesV
 import { OnecGitContentProvider, ONEC_GIT_SCHEME } from './ui/git/OnecGitContentProvider';
 import { AiSkillsInstaller } from './infra/skills/AiSkillsInstaller';
 import { StandaloneServerService } from './infra/standalone';
-import { SupportDecorationProvider } from './ui/tree/decorations/SupportDecorationProvider';
 import { GitMetadataDecorationProvider } from './ui/tree/decorations/GitMetadataDecorationProvider';
 import { LspManager } from './lsp/LspManager';
 import { BslReadonlyGuard } from './ui/readonly/BslReadonlyGuard';
@@ -85,7 +84,6 @@ import type { GitApiLike, GitExtensionLike } from './ui/git/gitExtensionApi';
 export class Container {
   readonly outputChannel: vscode.OutputChannel;
   readonly supportService: SupportInfoService;
-  readonly decorationProvider: SupportDecorationProvider;
   readonly treeProvider: MetadataTreeProvider;
   readonly subsystemEditorViewProvider: SubsystemEditorViewProvider;
   readonly projectSecretStorage: ProjectSecretStorage;
@@ -186,10 +184,7 @@ export class Container {
     this.changesConfigRoots = findConfigurations(workspaceFolder.uri.fsPath);
     this.onecGitContentProvider = new OnecGitContentProvider();
 
-    this.decorationProvider = new SupportDecorationProvider();
     context.subscriptions.push(
-      vscode.window.registerFileDecorationProvider(this.decorationProvider),
-      this.decorationProvider,
       vscode.window.registerFileDecorationProvider(this.gitMetadataDecorationProvider),
       this.gitMetadataDecorationProvider
     );
@@ -431,7 +426,6 @@ export class Container {
       this.workspaceFolder,
       this.context,
       this.supportService,
-      this.decorationProvider,
       () => this.treeProvider.refresh()
     );
   }
